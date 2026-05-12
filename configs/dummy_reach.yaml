@@ -1,0 +1,93 @@
+benchmark:
+  name: dummy_reach_v0
+  num_episodes: 2
+  seed: 42
+
+simulator:
+  type: dummy
+  control_dt: 0.1
+  workspace_bounds:
+    low: [-1.0, -1.0, 0.0]
+    high: [1.0, 1.0, 1.0]
+
+task:
+  type: reach_target
+  max_steps: 50
+  success_threshold: 0.05
+  target_position: [0.4, 0.2, 0.3]
+  initial_ee_position: [0.0, 0.0, 0.2]
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: front
+      type: dummy_rgb
+      width: 256
+      height: 256
+      pose: [1.0, 0.0, 0.8, 0.0, 0.6, 3.14]
+
+action_space:
+  type: joystick
+  channels:
+    joystick_0:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_1:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_2:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_3:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_4:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_5:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_6:
+      kind: continuous
+      min: 0.0
+      max: 1.0
+
+mapping:
+  type: fixed
+  visible_to_agent: true
+  channels:
+    joystick_0: dx
+    joystick_1: dy
+    joystick_2: dz
+    joystick_3: droll
+    joystick_4: dpitch
+    joystick_5: dyaw
+    joystick_6: gripper
+
+controller:
+  type: ee_delta_pose
+  frame: base
+  scales:
+    dx: 0.02
+    dy: 0.02
+    dz: 0.02
+    droll: 0.05
+    dpitch: 0.05
+    dyaw: 0.05
+
+frame_transform:
+  type: identity
+  visible_to_agent: true
+
+agent:
+  type: scripted
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/dummy_reach
+  save_images: true
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true

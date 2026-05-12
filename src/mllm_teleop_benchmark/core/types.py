@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+Vec3 = tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class Pose:
+    position: Vec3
+    rotation_rpy: Vec3 = (0.0, 0.0, 0.0)
+
+
+@dataclass(frozen=True)
+class Observation:
+    step_id: int
+    images: dict[str, Any]
+    state: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SimAction:
+    delta_position: Vec3
+    delta_rotation_rpy: Vec3
+    gripper: float
+
+
+@dataclass(frozen=True)
+class StepResult:
+    observation: Observation
+    terminated: bool
+    truncated: bool
+    info: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    is_valid: bool
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class StepTransition:
+    step_id: int
+    observation: Observation
+    raw_action: Any
+    parsed_action: dict[str, float] | None
+    validation: ValidationResult
+    sim_action: SimAction
+    next_observation: Observation
+    terminated: bool
+    truncated: bool
+    info: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EpisodeResult:
+    episode_id: int
+    seed: int
+    success: bool
+    steps: int
+    metrics: dict[str, Any]
+    log_dir: str | None = None
+
+
+@dataclass(frozen=True)
+class BenchmarkResult:
+    episodes: list[EpisodeResult]
+    aggregate_metrics: dict[str, Any]
