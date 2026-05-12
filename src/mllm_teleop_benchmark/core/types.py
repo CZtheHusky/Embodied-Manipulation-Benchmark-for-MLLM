@@ -21,10 +21,21 @@ class Observation:
 
 
 @dataclass(frozen=True)
-class SimAction:
+class SimulatorAction:
+    """Base class for actions after benchmark-level controller translation."""
+
+
+@dataclass(frozen=True)
+class SimAction(SimulatorAction):
     delta_position: Vec3
     delta_rotation_rpy: Vec3
     gripper: float
+
+
+@dataclass(frozen=True)
+class GymBoxAction(SimulatorAction):
+    values: tuple[float, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -48,7 +59,7 @@ class StepTransition:
     raw_action: Any
     parsed_action: dict[str, float] | None
     validation: ValidationResult
-    sim_action: SimAction
+    sim_action: SimulatorAction
     next_observation: Observation
     terminated: bool
     truncated: bool

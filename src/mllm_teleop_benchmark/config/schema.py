@@ -31,6 +31,12 @@ class SimulatorConfig:
     control_dt: float = 0.1
     workspace_low: tuple[float, float, float] = (-1.0, -1.0, 0.0)
     workspace_high: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    env_id: str | None = None
+    render_mode: str | None = None
+    frame_skip: int | None = None
+    env_kwargs: dict[str, Any] = field(default_factory=dict)
+    wrappers: tuple[str, ...] = ()
+    params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SimulatorConfig":
@@ -39,7 +45,18 @@ class SimulatorConfig:
         high = tuple(float(v) for v in bounds.get("high", (1.0, 1.0, 1.0)))
         if len(low) != 3 or len(high) != 3:
             raise ValueError("simulator.workspace_bounds low/high must be 3D")
-        return cls(type=str(_require(data, "type")), control_dt=float(data.get("control_dt", 0.1)), workspace_low=low, workspace_high=high)
+        return cls(
+            type=str(_require(data, "type")),
+            control_dt=float(data.get("control_dt", 0.1)),
+            workspace_low=low,
+            workspace_high=high,
+            env_id=str(data["env_id"]) if "env_id" in data else None,
+            render_mode=str(data["render_mode"]) if data.get("render_mode") is not None else None,
+            frame_skip=int(data["frame_skip"]) if "frame_skip" in data else None,
+            env_kwargs=dict(data.get("env_kwargs", {})),
+            wrappers=tuple(str(v) for v in data.get("wrappers", ())),
+            params=dict(data.get("params", {})),
+        )
 
 
 @dataclass(frozen=True)
@@ -47,13 +64,15 @@ class TaskConfig:
     type: str
     max_steps: int
     success_threshold: float
-    target_position: tuple[float, float, float]
-    initial_ee_position: tuple[float, float, float]
+    target_position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    initial_ee_position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    goal_hold_steps: int = 1
+    params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskConfig":
-        target = tuple(float(v) for v in _require(data, "target_position"))
-        initial = tuple(float(v) for v in _require(data, "initial_ee_position"))
+        target = tuple(float(v) for v in data.get("target_position", (0.0, 0.0, 0.0)))
+        initial = tuple(float(v) for v in data.get("initial_ee_position", (0.0, 0.0, 0.0)))
         if len(target) != 3 or len(initial) != 3:
             raise ValueError("task target_position and initial_ee_position must be 3D")
         return cls(
@@ -62,6 +81,8 @@ class TaskConfig:
             success_threshold=float(_require(data, "success_threshold")),
             target_position=target,
             initial_ee_position=initial,
+            goal_hold_steps=int(data.get("goal_hold_steps", 1)),
+            params=dict(data.get("params", {})),
         )
 
 
@@ -72,6 +93,7 @@ class CameraSpec:
     width: int
     height: int
     pose: tuple[float, ...] = ()
+    params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CameraSpec":
@@ -81,6 +103,7 @@ class CameraSpec:
             width=int(data.get("width", 256)),
             height=int(data.get("height", 256)),
             pose=tuple(float(v) for v in data.get("pose", ())),
+            params=dict(data.get("params", {})),
         )
 
 
@@ -89,13 +112,19 @@ class CameraConfig:
     manager: str
     visible_metadata: bool
     cameras: tuple[CameraSpec, ...]
+    params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CameraConfig":
         cameras = tuple(CameraSpec.from_dict(item) for item in _require(data, "cameras"))
         if not cameras:
             raise ValueError("camera.cameras must contain at least one camera")
-        return cls(manager=str(data.get("manager", "fixed")), visible_metadata=bool(data.get("visible_metadata", True)), cameras=cameras)
+        return cls(
+            manager=str(data.get("manager", "fixed")),
+            visible_metadata=bool(data.get("visible_metadata", True)),
+            cameras=cameras,
+            params=dict(data.get("params", {})),
+        )
 
 
 @dataclass(frozen=True)
@@ -142,10 +171,16 @@ class ControllerConfig:
     type: str
     frame: str
     scales: dict[str, float]
+    params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControllerConfig":
-        return cls(type=str(_require(data, "type")), frame=str(data.get("frame", "base")), scales={k: float(v) for k, v in _require(data, "scales").items()})
+        return cls(
+            type=str(_require(data, "type")),
+            frame=str(data.get("frame", "base")),
+            scales={k: float(v) for k, v in data.get("scales", {}).items()},
+            params=dict(data.get("params", {})),
+        )
 
 
 @dataclass(frozen=True)

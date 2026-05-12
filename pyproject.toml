@@ -11,6 +11,11 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Cao Zhe" }]
 dependencies = [
+  "gymnasium>=1.0",
+  "imageio>=2.0",
+  "mujoco>=3.0",
+  "numpy>=1.24",
+  "pygame>=2.5",
   "PyYAML>=6.0",
 ]
 
@@ -21,6 +26,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mllm_teleop_benchmark = ["sim/gymnasium_envs/envs/assets/*.xml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

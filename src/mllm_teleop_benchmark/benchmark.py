@@ -4,15 +4,18 @@ from mllm_teleop_benchmark.action.parser import ActionParser
 from mllm_teleop_benchmark.action.space import ActionSpace
 from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
-from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
 from mllm_teleop_benchmark.core.episode import EpisodeManager
-from mllm_teleop_benchmark.core.registry import build_agent, build_sim, build_task
+from mllm_teleop_benchmark.core.registry import (
+    build_agent,
+    build_camera_manager,
+    build_controller,
+    build_mapping,
+    build_observation_provider,
+    build_sim,
+    build_task,
+)
 from mllm_teleop_benchmark.core.types import BenchmarkResult, EpisodeResult
 from mllm_teleop_benchmark.evaluation.evaluator import aggregate_episode_results
-from mllm_teleop_benchmark.mapping.frame_transform import IdentityControlFrameTransform
-from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
-from mllm_teleop_benchmark.observation.camera import CameraManager
-from mllm_teleop_benchmark.observation.provider import ObservationProvider
 from mllm_teleop_benchmark.utils.seeding import episode_seed
 
 
@@ -31,13 +34,11 @@ class BenchmarkRunner:
     def _build_episode_manager(self, seed: int) -> EpisodeManager:
         sim = build_sim(self.config)
         task = build_task(self.config)
-        camera_manager = CameraManager(self.config.camera)
-        camera_manager.reset(seed)
-        observation_provider = ObservationProvider(camera_manager)
+        camera_manager = build_camera_manager(self.config.camera, seed)
+        observation_provider = build_observation_provider(self.config, camera_manager)
         action_space = ActionSpace.from_config(self.config.action_space)
-        mapping = FixedJoystickMapping.from_config(self.config.mapping)
-        frame_transform = IdentityControlFrameTransform.from_config(self.config.frame_transform)
-        controller = EEDeltaPoseController.from_config(self.config.controller, mapping, frame_transform)
+        mapping = build_mapping(self.config)
+        controller = build_controller(self.config, mapping)
         agent = build_agent(self.config, seed)
         parser = ActionParser()
         validator = ActionValidator(action_space)

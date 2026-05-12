@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import Observation, Pose, SimAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, Pose, SimAction, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.utils.math import add_vec3, clamp, distance
 
@@ -27,7 +27,9 @@ class DummySimAdapter(SimAdapter):
         self.gripper = 0.0
         return self._observation()
 
-    def step(self, action: SimAction) -> StepResult:
+    def step(self, action: SimulatorAction) -> StepResult:
+        if not isinstance(action, SimAction):
+            raise TypeError(f"DummySimAdapter requires SimAction, got {type(action).__name__}")
         self.step_id += 1
         raw_pos = add_vec3(self.ee_pose.position, action.delta_position)
         low = self.config.workspace_low

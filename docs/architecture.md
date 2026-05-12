@@ -23,3 +23,13 @@ Episode logging writes:
 - `trajectory.jsonl`
 
 The dummy simulator stores a small kinematic state and renders metadata dictionaries instead of image arrays. Real image and video persistence can be added later through `ObservationProvider` and `EpisodeLogger`.
+
+## Gymnasium/MuJoCo Environments
+
+Gymnasium is used as a dependency, not as a vendored or forked repository. Benchmark-specific environments live inside this package under `sim/gymnasium_envs`.
+
+The Reacher delta-EEF environment owns its XML asset, kinematics helper, goal termination helper, and MuJoCo camera configuration helper. The benchmark interacts with it only through `GymnasiumSimAdapter`, `GymnasiumObservationProvider`, and a controller that translates joystick actions into a native Gymnasium box action.
+
+The manual Reacher interface currently uses a separate two-process path: Pygame runs in the main process, while Gymnasium/MuJoCo runs in a worker process. This is an intentional stability choice after single-process Pygame/MuJoCo rendering caused GL context conflicts on X11. The benchmark runner path still uses the normal `SimAdapter` / `ObservationProvider` / `Controller` architecture.
+
+Long term, the worker path should be reconciled with the benchmark action parser, controller, and logger so human play is fully comparable to MLLM policy evaluation.

@@ -38,6 +38,32 @@ The initial config runs a deterministic dummy reach-target task with:
 pytest
 ```
 
+## Run Reacher
+
+The first real MuJoCo-backed environment is a local Gymnasium environment:
+
+```bash
+python scripts/run_benchmark.py --config configs/reacher_delta_eef.yaml
+```
+
+For stable human evaluation of the local Reacher environment:
+
+```bash
+python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml
+```
+
+The default manual Reacher player uses a two-process backend: Pygame runs in the main process and MuJoCo/Gymnasium rendering runs in a worker process. This avoids local OpenGL context conflicts. The `--backend benchmark` option is still available for exercising the generic benchmark runner path, but the direct backend is the tested manual-play path for Reacher.
+
+Keyboard controls:
+
+- `W/S`: Reacher delta x
+- `A/D`: Reacher delta y
+- `Q/E/Z/X`: diagonal moves
+- `R`: reset
+- `Esc` or `P`: quit
+
+More details are in `docs/manual_play.md` and `docs/reacher_integration.md`.
+
 ## Package Layout
 
 ```text
@@ -52,7 +78,10 @@ src/mllm_teleop_benchmark/
   mapping/      joystick mapping and control-frame transforms
   observation/  camera manager and observation provider
   sim/          simulator adapter interface and dummy simulator
+  sim/gymnasium_envs/
+               local Gymnasium/MuJoCo envs and adapters
   tasks/        task interface and reach-target task
+  ui/           human keyboard/Pygame evaluation interface
 ```
 
 ## Scope

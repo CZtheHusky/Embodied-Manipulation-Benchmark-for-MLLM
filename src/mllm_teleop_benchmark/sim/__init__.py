@@ -1,4 +1,5 @@
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.sim.dummy import DummySimAdapter
+from mllm_teleop_benchmark.sim.gymnasium_envs import GymnasiumSimAdapter
 
-__all__ = ["DummySimAdapter", "SimAdapter"]
+__all__ = ["DummySimAdapter", "GymnasiumSimAdapter", "SimAdapter"]

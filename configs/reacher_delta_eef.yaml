@@ -1,0 +1,111 @@
+benchmark:
+  name: reacher_delta_eef_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: gymnasium
+  env_id: MLLMTeleop/ReacherDeltaEEF-v0
+  render_mode: rgb_array
+  frame_skip: 1
+  params:
+    max_episode_steps: 500
+  env_kwargs:
+    eef_step_scale: 0.02
+    goal_distance_threshold: 0.02
+    goal_hold_steps: 3
+    random_goal: true
+
+task:
+  type: gymnasium_reacher
+  max_steps: 80
+  success_threshold: 0.02
+  goal_hold_steps: 3
+
+camera:
+  manager: mujoco_randomized
+  visible_metadata: true
+  params:
+    distance_range: [0.7, 1.4]
+    azimuth_range: [0.0, 90.0]
+    elevation_range: [-75.0, -30.0]
+    lookat: [0.0, 0.0, 0.0]
+  cameras:
+    - name: front
+      type: mujoco_rgb
+      width: 256
+      height: 256
+
+action_space:
+  type: joystick
+  channels:
+    joystick_0:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_1:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_2:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_3:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_4:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_5:
+      kind: discrete
+      values: [-1, 0, 1]
+    joystick_6:
+      kind: continuous
+      min: 0.0
+      max: 1.0
+
+mapping:
+  type: fixed
+  visible_to_agent: true
+  channels:
+    joystick_0: dx
+    joystick_1: dy
+    joystick_2: dz
+    joystick_3: droll
+    joystick_4: dpitch
+    joystick_5: dyaw
+    joystick_6: gripper
+
+controller:
+  type: reacher_delta_eef
+  frame: world_xy
+  scales:
+    dx: 1.0
+    dy: 1.0
+  params:
+    dimensions: [dx, dy]
+
+frame_transform:
+  type: identity
+  visible_to_agent: true
+
+agent:
+  type: random
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/reacher_delta_eef
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: direct_reacher
+  window_width: 640
+  window_height: 480
+  fps: 20
+  max_steps: 500
+  step_when_idle: false
+  simple_blit: true
+  debug_screenshots: true
+  mujoco_gl: egl

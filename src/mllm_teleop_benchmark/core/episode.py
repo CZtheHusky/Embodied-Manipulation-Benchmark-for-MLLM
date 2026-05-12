@@ -43,6 +43,21 @@ class EpisodeManager:
         metrics = MetricsRecorder()
         history: list[StepTransition] = []
 
+        try:
+            result = self._run_episode_body(episode_id, seed, logger, metrics, history)
+        finally:
+            if hasattr(self.sim, "close"):
+                self.sim.close()
+        return result
+
+    def _run_episode_body(
+        self,
+        episode_id: int,
+        seed: int,
+        logger: EpisodeLogger,
+        metrics: MetricsRecorder,
+        history: list[StepTransition],
+    ) -> EpisodeResult:
         self.task.reset(self.sim, seed)
         observation = self.observation_provider.get_observation(self.sim)
         logger.start(
@@ -66,7 +81,7 @@ class EpisodeManager:
             )
             raw_action = self.agent.act(context)
             parsed_action, validation = self._parse_and_validate(raw_action)
-            sim_action = self.controller.translate(parsed_action) if validation.is_valid else self._noop_action()
+            sim_action = self.controller.translate(parsed_action if validation.is_valid else self._noop_joystick_action())
             step_result = self.sim.step(sim_action)
             next_observation = self.observation_provider.get_observation(self.sim)
             success = self.task.is_success(next_observation, self.sim.get_state())

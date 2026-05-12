@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, TaskConfig
-from mllm_teleop_benchmark.core.types import Observation, SimAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, SimulatorAction, StepResult
 
 
 class SimAdapter(ABC):
@@ -13,7 +13,7 @@ class SimAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def step(self, action: SimAction) -> StepResult:
+    def step(self, action: SimulatorAction) -> StepResult:
         raise NotImplementedError
 
     @abstractmethod

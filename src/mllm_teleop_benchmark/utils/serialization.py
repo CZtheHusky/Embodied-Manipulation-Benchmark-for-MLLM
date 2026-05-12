@@ -5,6 +5,17 @@ from typing import Any
 
 
 def to_jsonable(value: Any) -> Any:
+    try:
+        import numpy as np
+
+        if isinstance(value, np.ndarray):
+            if value.size <= 32:
+                return value.tolist()
+            return {"array_shape": list(value.shape), "dtype": str(value.dtype)}
+        if isinstance(value, np.generic):
+            return value.item()
+    except Exception:
+        pass
     if is_dataclass(value):
         return to_jsonable(asdict(value))
     if isinstance(value, dict):

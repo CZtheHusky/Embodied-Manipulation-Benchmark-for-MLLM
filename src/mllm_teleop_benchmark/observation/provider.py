@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+
 from mllm_teleop_benchmark.core.types import Observation
 from mllm_teleop_benchmark.observation.camera import CameraManager
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 
-class ObservationProvider:
+class ObservationProvider(ABC):
+    @abstractmethod
+    def get_observation(self, sim: SimAdapter) -> Observation:
+        raise NotImplementedError
+
+
+class DefaultObservationProvider(ObservationProvider):
     def __init__(self, camera_manager: CameraManager) -> None:
         self.camera_manager = camera_manager
 

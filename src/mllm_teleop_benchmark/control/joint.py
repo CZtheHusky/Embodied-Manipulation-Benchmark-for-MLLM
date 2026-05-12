@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.control.controller import Controller
-from mllm_teleop_benchmark.core.types import SimAction
+from mllm_teleop_benchmark.core.types import SimulatorAction
 
 
 class JointDeltaController(Controller):
     """Placeholder for future joint-space control modes."""
 
-    def translate(self, action: JoystickAction) -> SimAction:
+    def translate(self, action: JoystickAction) -> SimulatorAction:
         raise NotImplementedError("JointDeltaController is reserved for a later benchmark version")
 
     def metadata(self) -> dict[str, object]:
