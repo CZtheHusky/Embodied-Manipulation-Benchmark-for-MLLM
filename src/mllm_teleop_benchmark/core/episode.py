@@ -7,6 +7,7 @@ from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.agents.base import Agent, AgentContext
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
+from mllm_teleop_benchmark.core.registry import control_interface_metadata
 from mllm_teleop_benchmark.core.types import EpisodeResult, SimAction, StepTransition, ValidationResult
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
@@ -65,6 +66,7 @@ class EpisodeManager:
                 "task_instruction": self.task.instruction(),
                 "action_schema": self.action_space.schema(),
                 "controller": self.controller.metadata(),
+                "control_interface": control_interface_metadata(self.config, seed),
                 "agent": self.agent.metadata(),
             }
         )
@@ -76,7 +78,7 @@ class EpisodeManager:
                 task_instruction=self.task.instruction(),
                 action_space=self.action_space,
                 action_schema=self.action_space.schema(),
-                metadata={"controller": self.controller.metadata()},
+                metadata={"controller": self.controller.metadata(), "control_interface": control_interface_metadata(self.config, seed)},
                 history=tuple(history[-self.config.agent.history_window :]),
             )
             raw_action = self.agent.act(context)

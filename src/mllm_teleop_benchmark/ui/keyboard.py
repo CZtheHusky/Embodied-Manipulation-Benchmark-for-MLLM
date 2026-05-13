@@ -37,17 +37,7 @@ class KeyboardJoystickMapper:
 
     def action_from_key(self, key_name: str) -> dict[str, float] | None:
         action = {channel: 0.0 for channel in self.channels}
-        diagonal = {
-            "q": {"joystick_0": -0.707, "joystick_1": -0.707},
-            "e": {"joystick_0": -0.707, "joystick_1": 0.707},
-            "z": {"joystick_0": 0.707, "joystick_1": -0.707},
-            "x": {"joystick_0": 0.707, "joystick_1": 0.707},
-        }
-        if key_name in diagonal:
-            for channel, value in diagonal[key_name].items():
-                if channel in action:
-                    action[channel] = value
-        elif key_name in self.key_bindings:
+        if key_name in self.key_bindings:
             channel, value = self.key_bindings[key_name]
             if channel in action:
                 action[channel] = value

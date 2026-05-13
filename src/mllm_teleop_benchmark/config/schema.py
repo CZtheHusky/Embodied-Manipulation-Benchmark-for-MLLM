@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import random
 from typing import Any
 
 
@@ -144,6 +145,125 @@ class ChannelConfig:
         )
 
 
+CONTROL_INTERFACE_DIMS = ("dx", "dy", "dz", "droll", "dpitch", "dyaw")
+GRIPPER_DIMS = ("gripper",)
+
+
+@dataclass(frozen=True)
+class ControlInterfaceConfig:
+    mode: str
+    active_dimensions: tuple[str, ...]
+    gripper: str = "none"
+    channel_kind: str = "discrete"
+    channel_values: tuple[float, ...] = (-1.0, 0.0, 1.0)
+    channel_minimum: float | None = None
+    channel_maximum: float | None = None
+    mapping_strategy: str = "fixed"
+    visible_metadata: bool = True
+    mapping_visible_to_agent: bool = True
+    frame_transform: str = "identity"
+    frame_visible_to_agent: bool = True
+    params: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ControlInterfaceConfig":
+        active_dimensions = tuple(str(v) for v in _require(data, "active_dimensions"))
+        for dim in active_dimensions:
+            if dim not in CONTROL_INTERFACE_DIMS:
+                raise ValueError(f"Unsupported control_interface active dimension: {dim}")
+        gripper = str(data.get("gripper", "none"))
+        if gripper not in {"none", "direct", "binary"}:
+            raise ValueError("control_interface.gripper must be one of: none, direct, binary")
+        channel_kind = str(data.get("channel_kind", "discrete"))
+        return cls(
+            mode=str(data.get("mode", "eef_delta_pose")),
+            active_dimensions=active_dimensions,
+            gripper=gripper,
+            channel_kind=channel_kind,
+            channel_values=tuple(float(v) for v in data.get("channel_values", (-1.0, 0.0, 1.0))),
+            channel_minimum=float(data["channel_min"]) if "channel_min" in data else None,
+            channel_maximum=float(data["channel_max"]) if "channel_max" in data else None,
+            mapping_strategy=str(data.get("mapping_strategy", "fixed")),
+            visible_metadata=bool(data.get("visible_metadata", True)),
+            mapping_visible_to_agent=bool(data.get("mapping_visible_to_agent", data.get("visible_metadata", True))),
+            frame_transform=str(data.get("frame_transform", "identity")),
+            frame_visible_to_agent=bool(data.get("frame_visible_to_agent", data.get("visible_metadata", True))),
+            params=dict(data.get("params", {})),
+        )
+
+    def channel_names(self) -> tuple[str, ...]:
+        names = [f"joystick_{idx}" for idx, _ in enumerate(self.active_dimensions)]
+        if self.gripper != "none":
+            names.append(f"joystick_{len(names)}")
+        return tuple(names)
+
+    def control_dimensions(self) -> tuple[str, ...]:
+        dims = list(self.active_dimensions)
+        if self.gripper != "none":
+            dims.append("gripper")
+        return tuple(dims)
+
+    def to_action_space_config(self) -> "ActionSpaceConfig":
+        channels: dict[str, ChannelConfig] = {}
+        for name, dim in zip(self.channel_names(), self.control_dimensions(), strict=True):
+            if dim == "gripper" and self.gripper == "direct":
+                channels[name] = ChannelConfig(kind="continuous", minimum=0.0, maximum=1.0)
+            elif dim == "gripper" and self.gripper == "binary":
+                channels[name] = ChannelConfig(kind="discrete", values=(0.0, 1.0))
+            elif self.channel_kind == "discrete":
+                channels[name] = ChannelConfig(kind="discrete", values=self.channel_values)
+            elif self.channel_kind == "continuous":
+                channels[name] = ChannelConfig(kind="continuous", minimum=self.channel_minimum, maximum=self.channel_maximum)
+            else:
+                raise ValueError(f"Unsupported control_interface.channel_kind: {self.channel_kind}")
+        return ActionSpaceConfig(type="joystick", channels=channels)
+
+    def to_mapping_config(self, seed: int | None = None) -> "MappingConfig":
+        if self.mapping_strategy not in {"fixed", "permuted", "sign_flipped", "permuted_sign_flipped"}:
+            raise ValueError(f"Unsupported control_interface.mapping_strategy: {self.mapping_strategy}")
+        motion_channels = list(self.channel_names()[: len(self.active_dimensions)])
+        motion_dims = list(self.active_dimensions)
+        rng = random.Random(seed if seed is not None else 0)
+        if self.mapping_strategy in {"permuted", "permuted_sign_flipped"}:
+            rng.shuffle(motion_dims)
+        channels = dict(zip(motion_channels, motion_dims, strict=True))
+        signs = {channel: 1.0 for channel in motion_channels}
+        if self.mapping_strategy in {"sign_flipped", "permuted_sign_flipped"}:
+            signs = {channel: float(rng.choice((-1.0, 1.0))) for channel in motion_channels}
+        if self.gripper != "none":
+            gripper_channel = self.channel_names()[-1]
+            channels[gripper_channel] = "gripper"
+            signs[gripper_channel] = 1.0
+        return MappingConfig(
+            type="fixed",
+            visible_to_agent=self.mapping_visible_to_agent,
+            channels=channels,
+            signs=signs,
+        )
+
+    def metadata(self) -> dict[str, Any]:
+        if not self.visible_metadata:
+            return {
+                "mode": self.mode,
+                "joystick_channels": list(self.channel_names()),
+                "visible_metadata": False,
+            }
+        visible = {
+            "mode": self.mode,
+            "active_dimensions": list(self.active_dimensions),
+            "gripper": self.gripper,
+            "joystick_channels": list(self.channel_names()),
+            "mapping_strategy": self.mapping_strategy,
+            "frame_transform": self.frame_transform,
+            "visible_metadata": self.visible_metadata,
+            "scale_mode": self.params.get("scale_mode", "configured_by_controller"),
+        }
+        if self.mapping_visible_to_agent:
+            visible["mapping"] = self.to_mapping_config().channels
+            visible["mapping_signs"] = self.to_mapping_config().signs
+        return visible
+
+
 @dataclass(frozen=True)
 class ActionSpaceConfig:
     type: str
@@ -160,10 +280,16 @@ class MappingConfig:
     type: str
     visible_to_agent: bool
     channels: dict[str, str]
+    signs: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MappingConfig":
-        return cls(type=str(data.get("type", "fixed")), visible_to_agent=bool(data.get("visible_to_agent", True)), channels=dict(_require(data, "channels")))
+        return cls(
+            type=str(data.get("type", "fixed")),
+            visible_to_agent=bool(data.get("visible_to_agent", True)),
+            channels=dict(_require(data, "channels")),
+            signs={str(k): float(v) for k, v in data.get("signs", {}).items()},
+        )
 
 
 @dataclass(frozen=True)
@@ -187,10 +313,15 @@ class ControllerConfig:
 class FrameTransformConfig:
     type: str
     visible_to_agent: bool
+    params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FrameTransformConfig":
-        return cls(type=str(data.get("type", "identity")), visible_to_agent=bool(data.get("visible_to_agent", True)))
+        return cls(
+            type=str(data.get("type", "identity")),
+            visible_to_agent=bool(data.get("visible_to_agent", True)),
+            params=dict(data.get("params", {})),
+        )
 
 
 @dataclass(frozen=True)
@@ -235,20 +366,41 @@ class BenchmarkConfig:
     frame_transform: FrameTransformConfig
     agent: AgentConfig
     logging: LoggingConfig
+    control_interface: ControlInterfaceConfig | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BenchmarkConfig":
+        control_interface = ControlInterfaceConfig.from_dict(data["control_interface"]) if "control_interface" in data else None
+        action_space = (
+            control_interface.to_action_space_config()
+            if control_interface is not None
+            else ActionSpaceConfig.from_dict(_require(data, "action_space"))
+        )
+        mapping = (
+            control_interface.to_mapping_config()
+            if control_interface is not None
+            else MappingConfig.from_dict(_require(data, "mapping"))
+        )
         return cls(
             benchmark=BenchmarkSection.from_dict(_require(data, "benchmark")),
             simulator=SimulatorConfig.from_dict(_require(data, "simulator")),
             task=TaskConfig.from_dict(_require(data, "task")),
             camera=CameraConfig.from_dict(_require(data, "camera")),
-            action_space=ActionSpaceConfig.from_dict(_require(data, "action_space")),
-            mapping=MappingConfig.from_dict(_require(data, "mapping")),
+            action_space=action_space,
+            mapping=mapping,
             controller=ControllerConfig.from_dict(_require(data, "controller")),
-            frame_transform=FrameTransformConfig.from_dict(_require(data, "frame_transform")),
+            frame_transform=FrameTransformConfig.from_dict(
+                {
+                    "type": control_interface.frame_transform,
+                    "visible_to_agent": control_interface.frame_visible_to_agent,
+                    "params": control_interface.params.get("frame_transform", {}),
+                }
+                if control_interface is not None
+                else _require(data, "frame_transform")
+            ),
             agent=AgentConfig.from_dict(_require(data, "agent")),
             logging=LoggingConfig.from_dict(_require(data, "logging")),
+            control_interface=control_interface,
             raw=data,
         )

@@ -4,11 +4,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.action.parser import ActionParser
-from mllm_teleop_benchmark.action.space import ActionSpace
 from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
-from mllm_teleop_benchmark.core.registry import build_camera_manager, build_controller, build_mapping, build_observation_provider, build_sim, build_task
+from mllm_teleop_benchmark.core.registry import build_action_space, build_camera_manager, build_controller, build_mapping, build_observation_provider, build_sim, build_task, control_interface_metadata
 from mllm_teleop_benchmark.core.types import EpisodeResult, StepTransition
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
@@ -20,13 +20,16 @@ class PygameBenchmarkApp:
         self.config = config
         ui_config = config.raw.get("ui", {}) if isinstance(config.raw.get("ui", {}), dict) else {}
         self.width = int(ui_config.get("window_width", 960))
-        self.height = int(ui_config.get("window_height", 640))
+        self.image_height = int(ui_config.get("window_height", 640))
+        self.panel_height = int(ui_config.get("info_panel_height", 170))
+        self.height = self.image_height + self.panel_height
         self.fps = int(ui_config.get("fps", 20))
         self.max_steps = int(ui_config.get("max_steps", config.task.max_steps))
         self.simple_blit = bool(ui_config.get("simple_blit", True))
         self.debug_screenshots = bool(ui_config.get("debug_screenshots", True))
         self.mujoco_gl = str(ui_config.get("mujoco_gl", "egl"))
         self._last_valid_frame: Any = None
+        self._panel_lines: tuple[str, ...] = ()
 
     def run(self) -> EpisodeResult:
         os.environ["MUJOCO_GL"] = self.mujoco_gl
@@ -39,10 +42,10 @@ class PygameBenchmarkApp:
         task = build_task(self.config)
         camera_manager = build_camera_manager(self.config.camera, seed)
         observation_provider = build_observation_provider(self.config, camera_manager)
-        action_space = ActionSpace.from_config(self.config.action_space)
+        action_space = build_action_space(self.config)
         parser = ActionParser()
         validator = ActionValidator(action_space)
-        controller = build_controller(self.config, build_mapping(self.config))
+        controller = build_controller(self.config, build_mapping(self.config, seed), seed)
         key_mapper = KeyboardJoystickMapper(tuple(action_space.channels))
         logger = EpisodeLogger(self.config, 0, seed)
         metrics = MetricsRecorder()
@@ -50,7 +53,9 @@ class PygameBenchmarkApp:
 
         task.reset(sim, seed)
         observation = observation_provider.get_observation(sim)
-        logger.start({"mode": "human_pygame", "action_schema": action_space.schema(), "controller": controller.metadata()})
+        control_metadata = control_interface_metadata(self.config, seed)
+        logger.start({"mode": "human_pygame", "action_schema": action_space.schema(), "controller": controller.metadata(), "control_interface": control_metadata})
+        self._panel_lines = ControlInstructionBuilder().build(control_metadata, action_space.schema()).panel_lines
 
         import pygame
 
@@ -137,7 +142,9 @@ class PygameBenchmarkApp:
             surface = self._frame_to_surface(frame, pygame)
             if surface is not None:
                 if self.simple_blit:
-                    screen.blit(surface, (0, 0))
+                    self._draw_panel(screen, font, observation, action, success)
+                    scaled = pygame.transform.scale(surface, (self.width, self.image_height))
+                    screen.blit(scaled, (0, self.panel_height))
                     self._draw_overlay(screen, font, observation, action, success)
                     return
                 surface = pygame.transform.smoothscale(surface, (600, 600))
@@ -153,7 +160,7 @@ class PygameBenchmarkApp:
             "Keys:",
             "W/S: joystick_0",
             "A/D: joystick_1",
-            "Q/E/Z/X: diagonal xy",
+            "Q/E: joystick_2",
             "Space: gripper",
             "R: reset  Esc: quit",
             "",
@@ -195,18 +202,35 @@ class PygameBenchmarkApp:
         lines = [
             f"step {observation.step_id}",
             f"dist {float(observation.state.get('distance_to_target', 0.0)):.4f}",
-            "W/S A/D Q/E/Z/X",
+            "W/S A/D Q/E",
             "R reset  Esc quit",
         ]
         if success:
             lines.append("success")
-        y = 10
+        y = self.panel_height + 10
         for line in lines:
             shadow = font.render(line, True, (0, 0, 0))
             text = font.render(line, True, (255, 255, 255))
             screen.blit(shadow, (11, y + 1))
             screen.blit(text, (10, y))
             y += 22
+
+    def _draw_panel(self, screen: Any, font: Any, observation: Any, action: dict[str, float], success: bool) -> None:
+        lines = [
+            self.config.benchmark.name,
+            f"step {observation.step_id}",
+            f"success {success}",
+            f"distance {float(observation.state.get('distance_to_target', 0.0)):.4f}",
+            *self._panel_lines,
+            "keys: W/S j0  A/D j1  Q/E j2  J/L j3  K/I j4  U/O j5  R reset  Esc quit",
+            "action: " + " ".join(f"{name}={value:g}" for name, value in action.items()),
+        ]
+        y = 8
+        for line in lines:
+            screen.blit(font.render(line, True, (255, 255, 255)), (10, y))
+            y += 18
+            if y > self.panel_height - 18:
+                break
 
     def _present(self, pygame: Any) -> None:
         pygame.event.pump()

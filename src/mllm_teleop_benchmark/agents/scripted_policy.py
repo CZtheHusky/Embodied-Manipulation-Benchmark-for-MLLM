@@ -15,12 +15,16 @@ class ScriptedPolicy(Agent):
         channels = {name: 0.0 for name in context.action_space.channels}
         axis_channels = ("joystick_0", "joystick_1", "joystick_2")
         for idx, channel in enumerate(axis_channels):
+            if channel not in channels:
+                continue
             diff = target[idx] - ee[idx]
             if abs(diff) > 1e-9:
                 channels[channel] = 1.0 if diff > 0 else -1.0
         for channel in ("joystick_3", "joystick_4", "joystick_5"):
-            channels[channel] = 0.0
-        channels["joystick_6"] = 0.0
+            if channel in channels:
+                channels[channel] = 0.0
+        if "joystick_6" in channels:
+            channels["joystick_6"] = 0.0
         return channels
 
     def metadata(self) -> dict[str, object]:

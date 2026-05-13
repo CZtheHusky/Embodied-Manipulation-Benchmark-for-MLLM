@@ -27,7 +27,43 @@ This file records implementation decisions that matter for future maintenance.
   - Main process: Pygame window and keyboard events.
   - Worker process: Gymnasium/MuJoCo environment and `rgb_array` rendering with EGL.
 - Implemented this in `DirectReacherPlayer` with `env_worker`, `WorkerCommand`, and `WorkerResult`.
-- Current manual player is for human debugging/evaluation. It does not yet fully reuse the benchmark parser/controller/logger path.
+- Initial manual player was for human debugging/evaluation and did not yet fully reuse the benchmark parser/controller/logger path.
+
+## 2026-05-12: Manual player rejoined benchmark action path
+
+- Kept the two-process manual player because it is the stable rendering path on the local X11 desktop.
+- Moved keyboard action interpretation back to the main process benchmark pipeline:
+  - keyboard input -> joystick action dict
+  - `ActionParser` / `ActionValidator`
+  - configured joystick mapping and controller
+  - `GymBoxAction` sent to the worker process
+- The worker now handles environment lifecycle, stepping, rendering, and state return only.
+- Manual play records standard `StepTransition` entries through `EpisodeLogger`, so human play logs are comparable to policy evaluation logs.
+
+## 2026-05-12: Agent-visible control interface
+
+- Added `control_interface` as the preferred config section for the virtual joystick interface shown to humans and MLLMs.
+- Kept legacy `action_space` and `mapping` config support as a compatibility path.
+- Reacher now exposes only two virtual joysticks, `dx` and `dy`, and no gripper channel.
+- Prompt payloads now include a control instruction derived from the control interface.
+- Mapping remains separate from frame transforms: joystick-to-dimension mapping is applied first, then coordinate-frame transforms. This preserves room for future joystick permutation/sign confusion and rotated control frames, independently or together.
+
+## 2026-05-12: Human play information panel and motion-only confusion
+
+- Human play windows now reserve a top information panel above the environment RGB frame.
+- Panel content is generated from `ControlInstructionBuilder`, the same source used by MLLM prompt payloads.
+- Control-interface mapping strategies can permute and sign-flip motion dimensions.
+- Gripper channels are fixed as the final virtual joystick and are never permuted or sign-flipped.
+- Removed diagonal human-only macro keys so human play uses the same joystick action schema exposed to MLLM policies.
+- Added CLI config overrides through `--set key.path=value` for both benchmark and human play scripts.
+
+## 2026-05-12: Cross-environment control-frame rotation
+
+- Added shared 2D and 3D rotation frame transforms at the benchmark control layer.
+- `rotation_2d` rotates `dx/dy` around z; `random_rotation_2d` samples uniformly on SO(2).
+- `rotation_3d` rotates `dx/dy/dz` with fixed roll/pitch/yaw; `random_rotation_3d` samples uniformly on SO(3) by default.
+- Euler-range random 3D rotation is still available through explicit `sampling=euler_ranges`.
+- Gymnasium box controllers, including Reacher, now apply the same frame transform path as EE delta-pose controllers.
 
 ## Documentation rule
 

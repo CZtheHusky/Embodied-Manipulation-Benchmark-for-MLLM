@@ -21,6 +21,13 @@ The Reacher environment is implemented locally in this repository and registered
 - action[1] controls world-frame end-effector delta y
 - `eef_step_scale` converts normalized commands to meter-scale deltas
 
+The benchmark-facing `control_interface` exposes exactly two virtual joysticks:
+
+- `joystick_0 -> dx`
+- `joystick_1 -> dy`
+
+No gripper channel is exposed for Reacher because the environment has no gripper. This keeps human play and MLLM play aligned with the actual controllable dimensions.
+
 The environment uses a small `PlanarReacherKinematics` helper:
 
 - maintain an internal end-effector target in world XY
@@ -40,5 +47,4 @@ Avoid reintroducing `mujoco.Renderer` direct rendering into the default path unl
 
 - Reacher only supports delta-EEF control in the current local env.
 - Pusher is not implemented yet.
-- The manual player currently sends native 2D Reacher actions in the worker path. It should later be reconciled with benchmark joystick parser/controller/logging.
-- Camera randomization metadata is supported in the benchmark path; the direct manual player does not yet consume it.
+- Camera randomization metadata is supported in the benchmark path; the direct manual player uses the worker-rendered view.

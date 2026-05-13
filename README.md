@@ -52,15 +52,34 @@ For stable human evaluation of the local Reacher environment:
 python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml
 ```
 
-The default manual Reacher player uses a two-process backend: Pygame runs in the main process and MuJoCo/Gymnasium rendering runs in a worker process. This avoids local OpenGL context conflicts. The `--backend benchmark` option is still available for exercising the generic benchmark runner path, but the direct backend is the tested manual-play path for Reacher.
+The default manual Reacher player uses a two-process backend: Pygame runs in the main process and MuJoCo/Gymnasium rendering runs in a worker process. This avoids local OpenGL context conflicts while still using the standard joystick parser, control interface, controller, metrics, and trajectory logger. The window shows a control-information panel above the environment RGB frame. The `--backend benchmark` option is still available for single-process debugging, but the direct backend is the tested manual-play path for Reacher.
 
 Keyboard controls:
 
 - `W/S`: Reacher delta x
 - `A/D`: Reacher delta y
-- `Q/E/Z/X`: diagonal moves
 - `R`: reset
 - `Esc` or `P`: quit
+
+Reacher exposes two virtual joystick channels to both humans and MLLM policies: `joystick_0 -> dx` and `joystick_1 -> dy`.
+
+Config values can be overridden from the CLI for both benchmark and human play:
+
+```bash
+python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --set control_interface.mapping_strategy=permuted_sign_flipped
+```
+
+2D control-frame rotation can also be selected from the same interface:
+
+```bash
+python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --set control_interface.frame_transform=rotation_2d --set control_interface.params.frame_transform.angle_degrees=90
+```
+
+Random 2D rotation samples uniformly from SO(2). Random 3D rotation samples uniformly from SO(3) by default:
+
+```bash
+python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --set control_interface.frame_transform=random_rotation_3d
+```
 
 More details are in `docs/manual_play.md` and `docs/reacher_integration.md`.
 

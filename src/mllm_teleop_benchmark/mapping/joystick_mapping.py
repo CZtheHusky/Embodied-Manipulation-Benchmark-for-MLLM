@@ -30,28 +30,29 @@ class JoystickMapping(ABC):
 
 
 class FixedJoystickMapping(JoystickMapping):
-    def __init__(self, channels: dict[str, str], visible_to_agent: bool = True) -> None:
+    def __init__(self, channels: dict[str, str], visible_to_agent: bool = True, signs: dict[str, float] | None = None) -> None:
         for dim in channels.values():
             if dim not in CONTROL_DIMS:
                 raise ValueError(f"Unknown control dimension: {dim}")
         self.channels = dict(channels)
+        self.signs = {channel: float(value) for channel, value in (signs or {}).items()}
         self.visible_to_agent = visible_to_agent
 
     @classmethod
     def from_config(cls, config: MappingConfig) -> "FixedJoystickMapping":
         if config.type != "fixed":
             raise ValueError(f"Unsupported mapping type: {config.type}")
-        return cls(config.channels, config.visible_to_agent)
+        return cls(config.channels, config.visible_to_agent, config.signs)
 
     def map_action(self, action: JoystickAction) -> ControlCommand:
         values: dict[str, float] = {}
         for channel, dim in self.channels.items():
             if channel not in action.channels:
                 raise ValueError(f"Action is missing mapped channel: {channel}")
-            values[dim] = float(action.channels[channel])
+            values[dim] = float(action.channels[channel]) * self.signs.get(channel, 1.0)
         return ControlCommand(values)
 
     def metadata(self) -> dict[str, object]:
         if not self.visible_to_agent:
             return {"type": "fixed", "visible_to_agent": False}
-        return {"type": "fixed", "visible_to_agent": True, "channels": dict(self.channels)}
+        return {"type": "fixed", "visible_to_agent": True, "channels": dict(self.channels), "signs": dict(self.signs)}

@@ -16,6 +16,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Play a benchmark environment with keyboard controls.")
     parser.add_argument("--config", default="configs/reacher_delta_eef.yaml")
     parser.add_argument("--backend", choices=["benchmark", "direct_reacher"], default=None)
+    parser.add_argument("--set", dest="overrides", action="append", default=[], help="Override config values, e.g. --set control_interface.mapping_strategy=permuted")
     args = parser.parse_args()
 
     backend = args.backend or os.environ.get("MLLM_TELEOP_PLAYER_BACKEND")
@@ -24,7 +25,7 @@ def main() -> None:
     from mllm_teleop_benchmark.config.loader import load_config
     from mllm_teleop_benchmark.ui import DirectReacherPlayer, PygameBenchmarkApp
 
-    config = load_config(args.config)
+    config = load_config(args.config, tuple(args.overrides))
     ui_config = config.raw.get("ui", {}) if isinstance(config.raw.get("ui", {}), dict) else {}
     backend = backend or str(ui_config.get("backend", "direct_reacher"))
     if backend == "direct_reacher":

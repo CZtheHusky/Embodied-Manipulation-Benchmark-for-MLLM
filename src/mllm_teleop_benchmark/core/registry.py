@@ -4,12 +4,13 @@ from mllm_teleop_benchmark.agents.base import Agent
 from mllm_teleop_benchmark.agents.mllm_policy import MLLMPolicy
 from mllm_teleop_benchmark.agents.random_policy import RandomPolicy
 from mllm_teleop_benchmark.agents.scripted_policy import ScriptedPolicy
+from mllm_teleop_benchmark.action.space import ActionSpace
 from mllm_teleop_benchmark.config.schema import CameraConfig
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
 from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionController, ReacherDeltaEEFJoystickController
-from mllm_teleop_benchmark.mapping.frame_transform import IdentityControlFrameTransform
+from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
 from mllm_teleop_benchmark.observation.camera import CameraManager, FixedCameraManager, RandomizedMujocoCameraManager
 from mllm_teleop_benchmark.observation.provider import DefaultObservationProvider, ObservationProvider
@@ -18,6 +19,14 @@ from mllm_teleop_benchmark.sim.dummy import DummySimAdapter
 from mllm_teleop_benchmark.tasks.base import Task
 from mllm_teleop_benchmark.tasks.gymnasium_reacher import GymnasiumReacherTask
 from mllm_teleop_benchmark.tasks.reach_target import ReachTargetTask
+
+
+def build_frame_transform(config: BenchmarkConfig, seed: int | None = None) -> ControlFrameTransform:
+    if config.frame_transform.type == "identity":
+        return IdentityControlFrameTransform.from_config(config.frame_transform)
+    if config.frame_transform.type in {"rotation_2d", "rotation_3d", "random_rotation_2d", "random_rotation_3d"}:
+        return RotationControlFrameTransform.from_config(config.frame_transform, seed)
+    raise ValueError(f"Unsupported frame transform type: {config.frame_transform.type}")
 
 
 def build_sim(config: BenchmarkConfig) -> SimAdapter:
@@ -67,18 +76,38 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
     return DefaultObservationProvider(camera_manager)
 
 
-def build_mapping(config: BenchmarkConfig) -> JoystickMapping:
-    if config.mapping.type == "fixed":
-        return FixedJoystickMapping.from_config(config.mapping)
-    raise ValueError(f"Unsupported mapping type: {config.mapping.type}")
+def build_mapping(config: BenchmarkConfig, seed: int | None = None) -> JoystickMapping:
+    mapping_config = config.control_interface.to_mapping_config(seed) if config.control_interface is not None else config.mapping
+    if mapping_config.type == "fixed":
+        return FixedJoystickMapping.from_config(mapping_config)
+    raise ValueError(f"Unsupported mapping type: {mapping_config.type}")
 
 
-def build_controller(config: BenchmarkConfig, mapping: JoystickMapping) -> Controller:
+def build_action_space(config: BenchmarkConfig) -> ActionSpace:
+    return ActionSpace.from_config(config.action_space)
+
+
+def control_interface_metadata(config: BenchmarkConfig, seed: int | None = None) -> dict[str, object]:
+    if config.control_interface is None:
+        return {"source": "legacy_action_space_mapping"}
+    metadata = config.control_interface.metadata()
+    metadata["source"] = "control_interface"
+    frame_metadata = build_frame_transform(config, seed).metadata()
+    metadata["frame_transform"] = frame_metadata.get("type", config.frame_transform.type)
+    metadata["frame_transform_metadata"] = frame_metadata
+    if config.control_interface.mapping_visible_to_agent and config.control_interface.visible_metadata:
+        mapping_config = config.control_interface.to_mapping_config(seed)
+        metadata["mapping"] = mapping_config.channels
+        metadata["mapping_signs"] = mapping_config.signs
+    return metadata
+
+
+def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: int | None = None) -> Controller:
+    frame_transform = build_frame_transform(config, seed)
     if config.controller.type == "ee_delta_pose":
-        frame_transform = IdentityControlFrameTransform.from_config(config.frame_transform)
         return EEDeltaPoseController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "gymnasium_box":
-        return GymnasiumBoxActionController.from_config(config.controller, mapping)
+        return GymnasiumBoxActionController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "reacher_delta_eef":
-        return ReacherDeltaEEFJoystickController.from_config(config.controller, mapping)
+        return ReacherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

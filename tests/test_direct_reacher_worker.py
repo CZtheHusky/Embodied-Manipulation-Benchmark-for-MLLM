@@ -2,7 +2,9 @@ import multiprocessing as mp
 
 import pytest
 
+from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.config.loader import load_config
+from mllm_teleop_benchmark.core.registry import build_controller, build_mapping
 from mllm_teleop_benchmark.ui.direct_reacher_player import WorkerCommand, WorkerResult, env_worker
 
 
@@ -23,11 +25,22 @@ def test_direct_reacher_worker_reset_step_shutdown():
         assert np.asarray(initial.frame).ndim == 3
         assert "goal_distance" in initial.info
 
-        action_queue.put(WorkerCommand("step", np.array([-1.0, 0.0], dtype=np.float32)))
+        controller = build_controller(config, build_mapping(config), config.benchmark.seed)
+        sim_action = controller.translate(
+            JoystickAction(
+                {
+                    "joystick_0": -1.0,
+                    "joystick_1": 0.0,
+                }
+            )
+        )
+        action_queue.put(WorkerCommand("step", sim_action))
         stepped = result_queue.get(timeout=10)
         assert isinstance(stepped, WorkerResult)
         assert np.asarray(stepped.frame).shape[-1] == 3
         assert "goal_distance" in stepped.info
+        assert stepped.step_result is not None
+        assert stepped.step_result.info["step_id"] == 1
 
         action_queue.put(WorkerCommand("reset"))
         reset = result_queue.get(timeout=10)

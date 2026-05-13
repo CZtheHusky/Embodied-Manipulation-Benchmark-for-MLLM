@@ -11,9 +11,10 @@ from mllm_teleop_benchmark.utils.serialization import to_jsonable
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run an MLLM teleoperation benchmark config.")
     parser.add_argument("--config", required=True, help="Path to a benchmark YAML config.")
+    parser.add_argument("--set", dest="overrides", action="append", default=[], help="Override config values, e.g. --set control_interface.mapping_strategy=permuted")
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_config(args.config, tuple(args.overrides))
     result = BenchmarkRunner(config).run()
     print(json.dumps(to_jsonable(result.aggregate_metrics), indent=2, sort_keys=True))
 

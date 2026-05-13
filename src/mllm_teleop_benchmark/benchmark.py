@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from mllm_teleop_benchmark.action.parser import ActionParser
-from mllm_teleop_benchmark.action.space import ActionSpace
 from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.core.episode import EpisodeManager
 from mllm_teleop_benchmark.core.registry import (
     build_agent,
+    build_action_space,
     build_camera_manager,
     build_controller,
     build_mapping,
@@ -36,9 +36,9 @@ class BenchmarkRunner:
         task = build_task(self.config)
         camera_manager = build_camera_manager(self.config.camera, seed)
         observation_provider = build_observation_provider(self.config, camera_manager)
-        action_space = ActionSpace.from_config(self.config.action_space)
-        mapping = build_mapping(self.config)
-        controller = build_controller(self.config, mapping)
+        action_space = build_action_space(self.config)
+        mapping = build_mapping(self.config, seed)
+        controller = build_controller(self.config, mapping, seed)
         agent = build_agent(self.config, seed)
         parser = ActionParser()
         validator = ActionValidator(action_space)
