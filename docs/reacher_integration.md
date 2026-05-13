@@ -21,10 +21,9 @@ The Reacher environment is implemented locally in this repository and registered
 - action[1] controls world-frame end-effector delta y
 - `eef_step_scale` converts normalized commands to meter-scale deltas
 
-The benchmark-facing `control_interface` exposes exactly two virtual joysticks:
+The benchmark-facing `control_interface` exposes exactly two virtual joysticks for planar motion.
 
-- `joystick_0 -> dx`
-- `joystick_1 -> dy`
+The human panel and MLLM prompt describe the same public interface: control mode, joystick count, scale summary, active dimensions when configured as visible, and whether mapping/frame complexity is present. They do not reveal the exact joystick-to-axis assignment, sign assignment, or frame rotation when those control-complexity mechanisms are enabled.
 
 No gripper channel is exposed for Reacher because the environment has no gripper. This keeps human play and MLLM play aligned with the actual controllable dimensions.
 

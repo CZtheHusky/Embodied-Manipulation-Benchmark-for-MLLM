@@ -49,7 +49,7 @@ class ControlInstructionBuilder:
             panel_lines.append("active dims: hidden")
 
         if gripper != "none":
-            text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick and is not permuted or sign-flipped.")
+            text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick.")
             panel_lines.append(f"gripper: {gripper}, final joystick")
         else:
             panel_lines.append("gripper: none")

@@ -6,6 +6,7 @@ from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionB
 from mllm_teleop_benchmark.agents.prompt import PromptBuilder
 from mllm_teleop_benchmark.config.schema import ControlInterfaceConfig
 from mllm_teleop_benchmark.config.loader import load_config
+from mllm_teleop_benchmark.core.episode import EpisodeManager
 from mllm_teleop_benchmark.core.registry import build_action_space, build_mapping, control_interface_metadata
 from mllm_teleop_benchmark.core.types import Observation
 
@@ -117,3 +118,38 @@ def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
     assert "mapping_strategy" not in metadata
     assert "frame_transform" not in metadata
     assert "rotation_matrix" not in str(metadata)
+
+
+def test_gripper_instruction_does_not_name_motion_complexity_mechanisms():
+    interface = ControlInterfaceConfig(
+        mode="eef_delta_pose",
+        active_dimensions=("dx", "dy", "dz"),
+        gripper="direct",
+        mapping_strategy="permuted_sign_flipped",
+    )
+    action_space = ActionSpace.from_config(interface.to_action_space_config())
+    instruction = ControlInstructionBuilder().build(
+        {**interface.metadata(), "source": "control_interface"},
+        action_space.schema(),
+    )
+    assert "final virtual joystick" in instruction.text
+    assert "permuted" not in instruction.text
+    assert "sign" not in instruction.text
+
+
+def test_episode_agent_context_controller_metadata_is_public_only():
+    config = load_config(
+        "configs/pusher_delta_eef.yaml",
+        ("control_interface.mapping_strategy=permuted_sign_flipped", "control_interface.frame_transform=random_rotation_3d"),
+    )
+    manager = object.__new__(EpisodeManager)
+    manager.config = config
+    metadata = manager._public_controller_metadata()
+    text = str(metadata)
+    assert metadata["control_mode"] == "eef_delta_pose"
+    assert "active_dimensions" in metadata
+    assert "mapping" not in metadata
+    assert "mapping_signs" not in text
+    assert "mapping_strategy" not in text
+    assert "frame_transform" not in text
+    assert "rotation_matrix" not in text
