@@ -75,6 +75,8 @@ class GymnasiumSimAdapter(SimAdapter):
         state.update({key: self._jsonable_array(value) for key, value in info.items()})
         if "goal_distance" in state:
             state["distance_to_target"] = float(state["goal_distance"])
+        if "object_goal_distance" in state:
+            state["distance_to_target"] = float(state["object_goal_distance"])
         return state
 
     def set_camera_configuration(self, camera_config: dict[str, object] | None) -> None:

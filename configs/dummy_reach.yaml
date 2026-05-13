@@ -27,43 +27,17 @@ camera:
       height: 256
       pose: [1.0, 0.0, 0.8, 0.0, 0.6, 3.14]
 
-action_space:
-  type: joystick
-  channels:
-    joystick_0:
-      kind: discrete
-      values: [-1, 0, 1]
-    joystick_1:
-      kind: discrete
-      values: [-1, 0, 1]
-    joystick_2:
-      kind: discrete
-      values: [-1, 0, 1]
-    joystick_3:
-      kind: discrete
-      values: [-1, 0, 1]
-    joystick_4:
-      kind: discrete
-      values: [-1, 0, 1]
-    joystick_5:
-      kind: discrete
-      values: [-1, 0, 1]
-    joystick_6:
-      kind: continuous
-      min: 0.0
-      max: 1.0
-
-mapping:
-  type: fixed
-  visible_to_agent: true
-  channels:
-    joystick_0: dx
-    joystick_1: dy
-    joystick_2: dz
-    joystick_3: droll
-    joystick_4: dpitch
-    joystick_5: dyaw
-    joystick_6: gripper
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
 
 controller:
   type: ee_delta_pose
@@ -75,10 +49,6 @@ controller:
     droll: 0.05
     dpitch: 0.05
     dyaw: 0.05
-
-frame_transform:
-  type: identity
-  visible_to_agent: true
 
 agent:
   type: scripted

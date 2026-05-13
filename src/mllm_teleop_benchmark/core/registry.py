@@ -9,7 +9,7 @@ from mllm_teleop_benchmark.config.schema import CameraConfig
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
-from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionController, ReacherDeltaEEFJoystickController
+from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionController, PusherDeltaEEFJoystickController, ReacherDeltaEEFJoystickController
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
 from mllm_teleop_benchmark.observation.camera import CameraManager, FixedCameraManager, RandomizedMujocoCameraManager
@@ -17,6 +17,7 @@ from mllm_teleop_benchmark.observation.provider import DefaultObservationProvide
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.sim.dummy import DummySimAdapter
 from mllm_teleop_benchmark.tasks.base import Task
+from mllm_teleop_benchmark.tasks.gymnasium_pusher import GymnasiumPusherTask
 from mllm_teleop_benchmark.tasks.gymnasium_reacher import GymnasiumReacherTask
 from mllm_teleop_benchmark.tasks.reach_target import ReachTargetTask
 
@@ -44,6 +45,8 @@ def build_task(config: BenchmarkConfig) -> Task:
         return ReachTargetTask(config.task)
     if config.task.type == "gymnasium_reacher":
         return GymnasiumReacherTask(config.task)
+    if config.task.type == "gymnasium_pusher":
+        return GymnasiumPusherTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -77,7 +80,7 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
 
 
 def build_mapping(config: BenchmarkConfig, seed: int | None = None) -> JoystickMapping:
-    mapping_config = config.control_interface.to_mapping_config(seed) if config.control_interface is not None else config.mapping
+    mapping_config = config.control_interface.to_mapping_config(seed)
     if mapping_config.type == "fixed":
         return FixedJoystickMapping.from_config(mapping_config)
     raise ValueError(f"Unsupported mapping type: {mapping_config.type}")
@@ -88,17 +91,10 @@ def build_action_space(config: BenchmarkConfig) -> ActionSpace:
 
 
 def control_interface_metadata(config: BenchmarkConfig, seed: int | None = None) -> dict[str, object]:
-    if config.control_interface is None:
-        return {"source": "legacy_action_space_mapping"}
     metadata = config.control_interface.metadata()
     metadata["source"] = "control_interface"
-    frame_metadata = build_frame_transform(config, seed).metadata()
-    metadata["frame_transform"] = frame_metadata.get("type", config.frame_transform.type)
-    metadata["frame_transform_metadata"] = frame_metadata
-    if config.control_interface.mapping_visible_to_agent and config.control_interface.visible_metadata:
-        mapping_config = config.control_interface.to_mapping_config(seed)
-        metadata["mapping"] = mapping_config.channels
-        metadata["mapping_signs"] = mapping_config.signs
+    metadata["mapping_complexity_present"] = config.control_interface.mapping_strategy != "fixed"
+    metadata["frame_complexity_present"] = config.control_interface.frame_transform != "identity"
     return metadata
 
 
@@ -110,4 +106,6 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         return GymnasiumBoxActionController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "reacher_delta_eef":
         return ReacherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "pusher_delta_eef":
+        return PusherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

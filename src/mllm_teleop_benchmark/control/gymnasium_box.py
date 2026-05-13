@@ -82,3 +82,31 @@ class ReacherDeltaEEFJoystickController(GymnasiumBoxActionController):
             "mapping": self.mapping.metadata(),
             "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
         }
+
+
+class PusherDeltaEEFJoystickController(GymnasiumBoxActionController):
+    @classmethod
+    def from_config(cls, config: ControllerConfig, mapping: JoystickMapping, frame_transform: ControlFrameTransform | None = None) -> "PusherDeltaEEFJoystickController":
+        dimensions = tuple(str(v) for v in config.params.get("dimensions", ("dx", "dy", "dz")))
+        return cls(mapping=mapping, dimensions=dimensions, scales=config.scales, frame_transform=frame_transform)
+
+    def translate(self, action: JoystickAction) -> GymBoxAction:
+        sim_action = super().translate(action)
+        return GymBoxAction(
+            values=sim_action.values,
+            metadata={
+                "controller": "pusher_delta_eef",
+                "dimensions": self.dimensions,
+                "unused_dimensions": ("droll", "dpitch", "dyaw", "gripper"),
+                "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
+            },
+        )
+
+    def metadata(self) -> dict[str, object]:
+        return {
+            "type": "pusher_delta_eef",
+            "dimensions": self.dimensions,
+            "scales": self.scales,
+            "mapping": self.mapping.metadata(),
+            "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
+        }

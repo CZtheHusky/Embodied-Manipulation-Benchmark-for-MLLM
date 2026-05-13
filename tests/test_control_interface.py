@@ -34,8 +34,9 @@ def test_control_interface_prompt_mentions_visible_two_axis_mapping():
     )
     payload = PromptBuilder().build(context)
     assert "2 virtual joystick" in payload.control_instruction
-    assert "joystick_0 -> dx" in payload.control_instruction
-    assert "joystick_1 -> dy" in payload.control_instruction
+    assert "active controllable dimensions are: dx, dy" in payload.control_instruction
+    assert "joystick_0 -> dx" not in payload.control_instruction
+    assert "joystick_1 -> dy" not in payload.control_instruction
 
 
 def test_hidden_control_interface_prompt_does_not_expose_mapping():
@@ -80,8 +81,8 @@ def test_control_instruction_panel_lines_include_mode_mapping_frame_and_scale():
     instruction = ControlInstructionBuilder().build(control_interface_metadata(config), action_space.schema())
     text = "\n".join(instruction.panel_lines)
     assert "control mode: eef_delta_pose" in text
-    assert "mapping: fixed" in text
-    assert "frame: identity" in text
+    assert "mapping complexity: none" in text
+    assert "frame complexity: none" in text
     assert "scales:" in text
 
 
@@ -91,5 +92,28 @@ def test_control_interface_frame_transform_override_drives_metadata():
         ("control_interface.frame_transform=rotation_2d", "control_interface.params.frame_transform.angle_degrees=90"),
     )
     metadata = control_interface_metadata(config)
-    assert metadata["frame_transform"] == "rotation_2d"
-    assert metadata["frame_transform_metadata"]["type"] == "rotation_2d"
+    assert metadata["frame_complexity_present"] is True
+    assert "frame_transform" not in metadata
+    assert "frame_transform_metadata" not in metadata
+
+
+def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
+    config = load_config(
+        "configs/pusher_delta_eef.yaml",
+        ("control_interface.mapping_strategy=permuted_sign_flipped", "control_interface.frame_transform=random_rotation_3d"),
+    )
+    action_space = build_action_space(config)
+    metadata = control_interface_metadata(config, seed=3)
+    instruction = ControlInstructionBuilder().build(metadata, action_space.schema())
+    text = instruction.text + "\n" + "\n".join(instruction.panel_lines)
+    assert "mapping complexity: present" in text
+    assert "frame complexity: present" in text
+    assert "permuted_sign_flipped" not in text
+    assert "random_rotation_3d" not in text
+    assert "joystick_0 ->" not in text
+    assert "joystick_1 ->" not in text
+    assert "mapping_signs" not in metadata
+    assert "mapping" not in metadata
+    assert "mapping_strategy" not in metadata
+    assert "frame_transform" not in metadata
+    assert "rotation_matrix" not in str(metadata)

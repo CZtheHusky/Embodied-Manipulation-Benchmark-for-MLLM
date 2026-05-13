@@ -26,7 +26,7 @@ class PygameBenchmarkApp:
         self.fps = int(ui_config.get("fps", 20))
         self.max_steps = int(ui_config.get("max_steps", config.task.max_steps))
         self.simple_blit = bool(ui_config.get("simple_blit", True))
-        self.debug_screenshots = bool(ui_config.get("debug_screenshots", True))
+        self.debug_frames = bool(ui_config.get("debug_frames", False))
         self.mujoco_gl = str(ui_config.get("mujoco_gl", "egl"))
         self._last_valid_frame: Any = None
         self._panel_lines: tuple[str, ...] = ()
@@ -239,13 +239,13 @@ class PygameBenchmarkApp:
         pygame.event.pump()
 
     def _save_debug_screen(self, screen: Any, name: str) -> None:
-        if not self.debug_screenshots:
+        if not self.debug_frames:
             return
         try:
             import imageio.v2 as imageio
             import numpy as np
 
-            out_dir = Path(self.config.logging.output_dir) / "ui_debug"
+            out_dir = Path(self.config.logging.output_dir) / "debug"
             out_dir.mkdir(parents=True, exist_ok=True)
             array = np.asarray(screen.get_view("3"), dtype="uint8").reshape((screen.get_width(), screen.get_height(), 3)).transpose(1, 0, 2)
             imageio.imwrite(out_dir / f"{name}.png", array)

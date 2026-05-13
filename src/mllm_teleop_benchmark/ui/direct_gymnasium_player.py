@@ -17,7 +17,10 @@ from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.core.registry import build_action_space, build_controller, build_mapping, build_task, control_interface_metadata
 from mllm_teleop_benchmark.core.types import EpisodeResult, GymBoxAction, Observation, StepResult, StepTransition, ValidationResult
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
+from mllm_teleop_benchmark.logging.control_debug import ControlDebugRecorder
+from mllm_teleop_benchmark.logging.debug_session import DebugSession
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
+from mllm_teleop_benchmark.logging.frame_debug import FrameDebugRecorder
 from mllm_teleop_benchmark.ui.keyboard import KeyboardJoystickMapper
 
 
@@ -45,10 +48,7 @@ def env_worker(config: BenchmarkConfig, action_queue: mp.Queue, res_queue: mp.Qu
     
     import gymnasium as gym
     from mllm_teleop_benchmark.sim.gymnasium_envs.actions import action_to_native
-    from mllm_teleop_benchmark.sim.gymnasium_envs.registry import (
-        REGISTERED_REACHER_DELTA_EEF_ID,
-        register_gymnasium_envs,
-    )
+    from mllm_teleop_benchmark.sim.gymnasium_envs.registry import REGISTERED_REACHER_DELTA_EEF_ID, register_gymnasium_envs
 
     def jsonable_array(value: Any) -> Any:
         try:
@@ -72,6 +72,8 @@ def env_worker(config: BenchmarkConfig, action_queue: mp.Queue, res_queue: mp.Qu
         state.update({key: jsonable_array(value) for key, value in info.items()})
         if "goal_distance" in state:
             state["distance_to_target"] = float(state["goal_distance"])
+        if "object_goal_distance" in state:
+            state["distance_to_target"] = float(state["object_goal_distance"])
         return state
 
     def render_result(step_id: int, native_obs: Any, reward: float | None, info: dict[str, Any], done: bool, terminated: bool = False, truncated: bool = False) -> WorkerResult:
@@ -130,7 +132,7 @@ def env_worker(config: BenchmarkConfig, action_queue: mp.Queue, res_queue: mp.Qu
     finally:
         env.close()
 
-class DirectReacherPlayer:
+class DirectGymnasiumPlayer:
     def __init__(self, config: BenchmarkConfig) -> None:
         self.config = config
         ui_config = config.raw.get("ui", {}) if isinstance(config.raw.get("ui", {}), dict) else {}
@@ -139,6 +141,8 @@ class DirectReacherPlayer:
         self.panel_height = int(ui_config.get("info_panel_height", 170))
         self.height = self.image_height + self.panel_height
         self.max_steps = int(ui_config.get("max_steps", config.task.max_steps))
+        self.debug_frames_enabled = bool(ui_config.get("debug_frames", True))
+        self.debug_control_history_enabled = bool(ui_config.get("debug_control_history", True))
 
     def run(self) -> EpisodeResult:
         # Use simple software-backed Pygame in the main process
@@ -151,11 +155,21 @@ class DirectReacherPlayer:
         task = build_task(self.config)
         key_mapper = KeyboardJoystickMapper(tuple(action_space.channels))
         logger = EpisodeLogger(self.config, 0, seed)
+        debug_session = DebugSession.from_config(
+            self.config,
+            actor="human_keyboard",
+            episode_id=0,
+            seed=seed,
+            extra_metadata={"runtime": "direct_gymnasium_player"},
+        )
+        frame_debug = FrameDebugRecorder(self.config, enabled=self.debug_frames_enabled, session=debug_session)
+        control_debug = ControlDebugRecorder(self.config, enabled=self.debug_control_history_enabled, session=debug_session)
         logger_metadata = {
             "mode": "human_direct_worker",
             "action_schema": action_space.schema(),
             "controller": controller.metadata(),
             "control_interface": control_interface_metadata(self.config, seed),
+            "debug_session": debug_session.metadata,
         }
         panel_lines = ControlInstructionBuilder().build(logger_metadata["control_interface"], logger_metadata["action_schema"]).panel_lines
         metrics = MetricsRecorder()
@@ -168,7 +182,6 @@ class DirectReacherPlayer:
         worker.start()
         
         pygame.init()
-        screen = pygame.display.set_mode((self.width, self.height))
         font = pygame.font.Font(None, 24)
         
         steps = 0
@@ -176,6 +189,9 @@ class DirectReacherPlayer:
         last_info: dict[str, Any] = {}
         last_action = key_mapper.action_from_pressed(set())
         logger.start(logger_metadata)
+        control_debug.reset()
+        if self.debug_frames_enabled and not self.debug_control_history_enabled:
+            debug_session.write_manifest()
         
         try:
             # Get initial frame
@@ -184,6 +200,9 @@ class DirectReacherPlayer:
                 raise RuntimeError(initial.error)
             frame, last_info, _ = initial.frame, initial.info, initial.done
             observation = self._observation_from_result(initial)
+            self._configure_canvas_from_frame(frame)
+            screen = pygame.display.set_mode((self.width, self.height))
+            frame_debug.record_frame(frame, step_id=observation.step_id, prefix="initial")
             self._draw(screen, font, frame, 0, None, last_action, panel_lines, success)
             pygame.display.flip()
             
@@ -193,7 +212,17 @@ class DirectReacherPlayer:
                     if event.type == pygame.QUIT:
                         running = False
                     elif event.type == pygame.KEYDOWN:
+                        key_name = pygame.key.name(event.key)
                         if event.key == pygame.K_ESCAPE or event.key == pygame.K_p:
+                            control_debug.record(
+                                control_debug.build_event_record(
+                                    event="quit",
+                                    source="human_keyboard",
+                                    control_id=key_name,
+                                    step_before=steps,
+                                    state_before=observation.state,
+                                )
+                            )
                             running = False
                         elif event.key == pygame.K_r:
                             action_queue.put(WorkerCommand("reset"))
@@ -201,7 +230,19 @@ class DirectReacherPlayer:
                             if result.error:
                                 raise RuntimeError(result.error)
                             frame, last_info, _ = result.frame, result.info, result.done
+                            before_state = observation.state
                             observation = self._observation_from_result(result)
+                            frame_debug.record_frame(frame, step_id=observation.step_id, prefix="reset")
+                            control_debug.record(
+                                control_debug.build_event_record(
+                                    event="reset",
+                                    source="human_keyboard",
+                                    control_id=key_name,
+                                    step_before=steps,
+                                    state_before=before_state,
+                                    state_after=observation.state,
+                                )
+                            )
                             history.clear()
                             logger = EpisodeLogger(self.config, 0, seed)
                             logger.start(logger_metadata)
@@ -211,9 +252,10 @@ class DirectReacherPlayer:
                             self._draw(screen, font, frame, steps, None, last_action, panel_lines, success)
                             pygame.display.flip()
                         else:
-                            raw_action = key_mapper.action_from_key(pygame.key.name(event.key))
+                            raw_action = key_mapper.action_from_key(key_name)
                             if raw_action is None:
                                 continue
+                            before_observation = observation
                             last_action = raw_action
                             parsed_action, validation = self._parse_and_validate(parser, validator, action_space, raw_action)
                             sim_action = controller.translate(parsed_action)
@@ -224,6 +266,18 @@ class DirectReacherPlayer:
                             frame, last_info, done = result.frame, result.info, result.done
                             steps += 1
                             next_observation = self._observation_from_result(result)
+                            frame_debug.record_frame(frame, step_id=next_observation.step_id, prefix="step")
+                            control_record = control_debug.build_step_record(
+                                source="human_keyboard",
+                                control_id=key_name,
+                                step_before=steps - 1,
+                                raw_action=raw_action,
+                                validation=validation,
+                                sim_action=sim_action,
+                                state_before=before_observation.state,
+                                state_after=next_observation.state,
+                            )
+                            control_debug.record(control_record)
                             success = task.is_success(next_observation, next_observation.state)
                             dist = next_observation.state.get("distance_to_target", next_observation.state.get("goal_distance"))
                             truncated = steps >= self.max_steps and not success
@@ -238,7 +292,7 @@ class DirectReacherPlayer:
                                 next_observation=next_observation,
                                 terminated=success or step_result.terminated,
                                 truncated=truncated or step_result.truncated,
-                                info=step_result.info,
+                                info={**step_result.info, "control_debug": control_record},
                             )
                             logger.record_step(transition)
                             metrics.update(transition)
@@ -313,7 +367,7 @@ class DirectReacherPlayer:
         if distance is not None:
             lines.append(f"distance {float(distance):.4f}")
         lines.extend(panel_lines)
-        lines.append("keys: W/S j0  A/D j1  Q/E j2  J/L j3  K/I j4  U/O j5  R reset  Esc quit")
+        lines.append(f"keys: {self._key_help(action)}  R reset  Esc quit")
         if action is not None:
             action_text = " ".join(f"{name}={value:g}" for name, value in action.items())
             lines.append(f"action: {action_text}")
@@ -324,3 +378,33 @@ class DirectReacherPlayer:
             y += 18
             if y > self.panel_height - 18:
                 break
+
+    def _key_help(self, action) -> str:
+        if action is None:
+            channel_count = len(self.config.action_space.channels)
+        else:
+            channel_count = len(action)
+        labels = ("W/S j0", "A/D j1", "Q/E j2", "J/L j3", "K/I j4", "U/O j5")
+        return "  ".join(labels[:channel_count])
+
+    def _configure_canvas_from_frame(self, frame: Any) -> None:
+        size = self._frame_size(frame)
+        if size is None:
+            self.height = self.image_height + self.panel_height
+            return
+        frame_width, frame_height = size
+        self.width = frame_width
+        self.image_height = frame_height
+        self.height = self.image_height + self.panel_height
+
+    def _frame_size(self, frame: Any) -> tuple[int, int] | None:
+        try:
+            array = np.asarray(frame)
+            if array.ndim != 3 or array.shape[2] < 3:
+                return None
+            height, width = array.shape[:2]
+            if int(width) <= 0 or int(height) <= 0:
+                return None
+            return int(width), int(height)
+        except Exception:
+            return None

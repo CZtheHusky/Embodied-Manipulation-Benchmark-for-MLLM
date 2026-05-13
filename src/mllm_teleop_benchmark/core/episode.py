@@ -78,7 +78,10 @@ class EpisodeManager:
                 task_instruction=self.task.instruction(),
                 action_space=self.action_space,
                 action_schema=self.action_space.schema(),
-                metadata={"controller": self.controller.metadata(), "control_interface": control_interface_metadata(self.config, seed)},
+                metadata={
+                    "controller": self._public_controller_metadata(),
+                    "control_interface": control_interface_metadata(self.config, seed),
+                },
                 history=tuple(history[-self.config.agent.history_window :]),
             )
             raw_action = self.agent.act(context)
@@ -134,3 +137,11 @@ class EpisodeManager:
 
     def _noop_action(self) -> SimAction:
         return SimAction(delta_position=(0.0, 0.0, 0.0), delta_rotation_rpy=(0.0, 0.0, 0.0), gripper=0.0)
+
+    def _public_controller_metadata(self) -> dict[str, object]:
+        return {
+            "type": self.config.controller.type,
+            "control_mode": self.config.control_interface.mode,
+            "active_dimensions": list(self.config.control_interface.active_dimensions),
+            "gripper": self.config.control_interface.gripper,
+        }

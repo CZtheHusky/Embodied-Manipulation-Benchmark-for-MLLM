@@ -57,10 +57,6 @@ controller:
   params:
     dimensions: [dx, dy]
 
-frame_transform:
-  type: identity
-  visible_to_agent: true
-
 agent:
   type: random
   invalid_action_recovery: noop
@@ -74,12 +70,13 @@ logging:
   save_config_snapshot: true
 
 ui:
-  backend: direct_reacher
+  backend: direct_gymnasium
   window_width: 640
   window_height: 480
   fps: 20
   max_steps: 500
   step_when_idle: false
   simple_blit: true
-  debug_screenshots: true
+  debug_frames: true
+  debug_control_history: true
   mujoco_gl: egl

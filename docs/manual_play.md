@@ -17,7 +17,7 @@ The default config uses:
 
 ```yaml
 ui:
-  backend: direct_reacher
+  backend: direct_gymnasium
 ```
 
 This backend starts two processes:
@@ -29,6 +29,14 @@ This split avoids OpenGL context conflicts between MuJoCo and Pygame. The main p
 
 The information panel shows task progress, control mode, joystick count, scale summary, mapping status, frame transform status, gripper availability, and the current joystick action.
 
+For the direct Gymnasium backend, Pygame canvas size is derived from the first valid raw frame returned by `env.render()`:
+
+- window width = raw frame width
+- environment image display height = raw frame height
+- total window height = raw frame height + `ui.info_panel_height`
+
+`ui.window_width` and `ui.window_height` are fallback values used only when no valid initial frame is available. The raw frame returned by `env.render()` is not resized before debugging output; it is only scaled for display if a later frame has a different size from the initial frame.
+
 ## Keys
 
 - `W/S`: end-effector x negative/positive
@@ -38,6 +46,23 @@ The information panel shows task progress, control mode, joystick count, scale s
 
 For Reacher, the configured control interface exposes only `joystick_0` and `joystick_1`; no gripper channel is shown or logged.
 There are no diagonal macro keys by default. Human play sends the same single-step joystick schema that an MLLM policy must output.
+
+## Pusher
+
+Run:
+
+```bash
+conda activate mllm-teleop-benchmark
+python scripts/play_benchmark.py --config configs/pusher_delta_eef.yaml
+```
+
+Pusher exposes three virtual joysticks:
+
+- `W/S`: `joystick_0`
+- `A/D`: `joystick_1`
+- `Q/E`: `joystick_2`
+
+If mapping confusion or frame rotation is enabled by YAML or CLI override, the panel only indicates that such complexity is present. It does not reveal the exact joystick-to-motion mapping, sign flips, or frame rotation parameters; this matches the metadata sent to the MLLM.
 
 ## CLI Overrides
 
@@ -66,7 +91,7 @@ Single-process Pygame + MuJoCo rendering can fail on X11 with:
 - `EGL_BAD_ACCESS`
 - `X_GLXMakeCurrent BadAccess`
 
-Do not switch the default manual Reacher player back to a single-process renderer unless the target machine has been tested.
+Do not switch the default direct Gymnasium player back to a single-process renderer unless the target machine has been tested.
 
 ## Benchmark Backend
 
@@ -81,3 +106,29 @@ This path tries to run simulator rendering and Pygame in one process. It is usef
 ## Logging
 
 The default direct backend writes the normal episode files under `logging.output_dir`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
+
+When `ui.debug_frames: true`, the direct backend also saves raw environment render frames under:
+
+```text
+<logging.output_dir>/debug/<env_slug>/<control_slug>/human_keyboard/<run_id>/episode_0000/frames/env_render/front/
+```
+
+When `ui.debug_control_history: true`, every human control event is recorded under:
+
+```text
+<logging.output_dir>/debug/<env_slug>/<control_slug>/human_keyboard/<run_id>/episode_0000/control_events.jsonl
+```
+
+Each debug run also writes:
+
+```text
+<logging.output_dir>/debug/<env_slug>/<control_slug>/human_keyboard/<run_id>/manifest.json
+```
+
+For Pusher, a typical run path is:
+
+```text
+outputs/pusher_delta_eef/debug/mllmteleop_pusherdeltaeef_v0/eef_delta_pose_dx_dy_dz/human_keyboard/20260513-153012-a3f91c2b/
+```
+
+For step keys, each JSONL row includes the debug run id, actor, environment tag, control tag, source, control id, raw joystick action, controller output, expected EEF delta, EEF position before and after the step, actual EEF delta, EEF target delta, and whether the target was clamped by the environment. This recorder is environment-agnostic as long as the environment state exposes an EEF position field such as `fingertip_position`, `ee_position`, or `end_effector_position`.

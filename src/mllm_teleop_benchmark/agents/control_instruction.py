@@ -18,15 +18,12 @@ class ControlInstructionBuilder:
 
         channels = list(interface.get("joystick_channels", ()))
         dimensions = list(interface.get("active_dimensions", ()))
-        mapping = interface.get("mapping")
-        signs = interface.get("mapping_signs", {})
         gripper = str(interface.get("gripper", "none"))
         mode = str(interface.get("mode", "unknown"))
-        strategy = str(interface.get("mapping_strategy", "fixed"))
-        frame = str(interface.get("frame_transform", "identity"))
-        frame_metadata = interface.get("frame_transform_metadata", {})
         scale_mode = str(interface.get("scale_mode", "configured_by_controller"))
         visible = bool(interface.get("visible_metadata", True))
+        mapping_complexity = bool(interface.get("mapping_complexity_present", False))
+        frame_complexity = bool(interface.get("frame_complexity_present", False))
 
         text_lines = [
             f"You control the robot with {len(channels)} virtual joystick channel(s).",
@@ -37,25 +34,19 @@ class ControlInstructionBuilder:
             f"control mode: {mode}",
             f"joysticks: {len(channels)}",
             f"scales: {scale_mode}",
-            f"mapping: {strategy} ({'visible' if visible and mapping else 'hidden'})",
-            f"frame: {frame}{' (visible)' if isinstance(frame_metadata, dict) and frame_metadata.get('visible_to_agent') else ' (hidden)' if isinstance(frame_metadata, dict) and frame_metadata.get('visible_to_agent') is False else ''}",
+            f"mapping complexity: {'present' if mapping_complexity else 'none'}",
+            f"frame complexity: {'present' if frame_complexity else 'none'}",
         ]
 
-        if mapping:
-            pairs = []
-            for channel, dim in dict(mapping).items():
-                sign = float(dict(signs).get(channel, 1.0))
-                prefix = "-" if sign < 0 else ""
-                pairs.append(f"{channel} -> {prefix}{dim}")
-            mapping_text = ", ".join(pairs)
-            text_lines.append(f"Visible joystick mapping: {mapping_text}.")
-            panel_lines.append(f"axes: {mapping_text}")
-        elif dimensions:
+        if dimensions and visible:
             text_lines.append(f"The active controllable dimensions are: {', '.join(str(v) for v in dimensions)}.")
-            panel_lines.append(f"axes: {', '.join(str(v) for v in dimensions)}")
+            text_lines.append(
+                "If mapping or frame complexity is present, the exact joystick-to-physical-motion relationship is not disclosed."
+            )
+            panel_lines.append(f"active dims: {', '.join(str(v) for v in dimensions)}")
         else:
             text_lines.append("The joystick-to-dimension mapping is not visible.")
-            panel_lines.append("axes: hidden")
+            panel_lines.append("active dims: hidden")
 
         if gripper != "none":
             text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick and is not permuted or sign-flipped.")

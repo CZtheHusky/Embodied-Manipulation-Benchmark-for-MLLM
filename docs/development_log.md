@@ -26,7 +26,7 @@ This file records implementation decisions that matter for future maintenance.
 - The stable solution is a two-process player:
   - Main process: Pygame window and keyboard events.
   - Worker process: Gymnasium/MuJoCo environment and `rgb_array` rendering with EGL.
-- Implemented this in `DirectReacherPlayer` with `env_worker`, `WorkerCommand`, and `WorkerResult`.
+- Implemented this in the direct Gymnasium player with `env_worker`, `WorkerCommand`, and `WorkerResult`.
 - Initial manual player was for human debugging/evaluation and did not yet fully reuse the benchmark parser/controller/logger path.
 
 ## 2026-05-12: Manual player rejoined benchmark action path
@@ -43,7 +43,7 @@ This file records implementation decisions that matter for future maintenance.
 ## 2026-05-12: Agent-visible control interface
 
 - Added `control_interface` as the preferred config section for the virtual joystick interface shown to humans and MLLMs.
-- Kept legacy `action_space` and `mapping` config support as a compatibility path.
+- Added `control_interface` as the preferred config section while temporarily keeping legacy `action_space` and `mapping` support.
 - Reacher now exposes only two virtual joysticks, `dx` and `dy`, and no gripper channel.
 - Prompt payloads now include a control instruction derived from the control interface.
 - Mapping remains separate from frame transforms: joystick-to-dimension mapping is applied first, then coordinate-frame transforms. This preserves room for future joystick permutation/sign confusion and rotated control frames, independently or together.
@@ -64,6 +64,37 @@ This file records implementation decisions that matter for future maintenance.
 - `rotation_3d` rotates `dx/dy/dz` with fixed roll/pitch/yaw; `random_rotation_3d` samples uniformly on SO(3) by default.
 - Euler-range random 3D rotation is still available through explicit `sampling=euler_ranges`.
 - Gymnasium box controllers, including Reacher, now apply the same frame transform path as EE delta-pose controllers.
+
+## 2026-05-13: Pusher delta-EEF integration
+
+- Confirmed that Gymnasium `Reacher-v5` is a 2D two-joint torque environment, while Gymnasium `Pusher-v5` is the 7-DoF MuJoCo arm matching the requested 3D use case.
+- Added local `MLLMTeleop/PusherDeltaEEF-v0` instead of forking Gymnasium.
+- Added repo-owned `pusher_pos.xml`, derived from Gymnasium's Pusher XML, with joint position actuators replacing native torque motors.
+- Added `PusherDeltaEEFEnv`, which accepts `dx/dy/dz` delta end-effector commands and translates them to 7 arm joint position targets using damped least-squares MuJoCo Jacobian IK.
+- Added `PusherDeltaEEFJoystickController`, `GymnasiumPusherTask`, and `configs/pusher_delta_eef.yaml`.
+- Generalized the two-process manual player as `DirectGymnasiumPlayer`.
+- Added reusable `ControlDebugRecorder` for optional control-history logging. Human play now records source/control id, raw joystick action, expected EEF delta, actual EEF delta, target delta, clamp status, and before/after state snapshots.
+- Added reusable `FrameDebugRecorder` for optional raw RGB frame logging. Human play uses it through `ui.debug_frames`.
+
+## 2026-05-13: Config cleanup and debug defaults
+
+- Removed legacy benchmark YAML support for top-level `action_space`, `mapping`, and standalone `frame_transform`; configs must now declare `control_interface`.
+- Human play defaults `debug_frames` and `debug_control_history` to enabled.
+- Benchmark/MLLM evaluation still does not create debug frame or control-history outputs by default.
+- Removed old UI names and compatibility config keys: `direct_reacher`, `debug_screenshots`, and `debug_key_events`.
+
+## 2026-05-13: Debug session directory layout
+
+- Added `DebugSession` as the shared source of debug run ids, directory paths, event tags, and manifest metadata.
+- Debug output is grouped as `debug/<env_slug>/<control_slug>/<actor_slug>/<run_id>/episode_XXXX`.
+- Human play now writes frame and control-history debug artifacts into the same per-run session directory, avoiding overwrites across repeated runs.
+- Each debug run writes `manifest.json` with environment, benchmark, task, control interface, controller, actor, seed, episode, and run timestamp metadata.
+
+## 2026-05-13: Hidden control-complexity details
+
+- Human panel metadata and MLLM prompt metadata now expose only whether mapping/frame complexity is present.
+- Exact joystick permutation, sign flips, and frame rotation values are not shown to humans or MLLM-facing prompt metadata.
+- Full internal mapping/frame details remain available in logs/debug artifacts for offline analysis.
 
 ## Documentation rule
 

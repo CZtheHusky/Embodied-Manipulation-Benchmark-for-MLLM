@@ -5,7 +5,7 @@ import pytest
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.core.registry import build_controller, build_mapping
-from mllm_teleop_benchmark.ui.direct_reacher_player import WorkerCommand, WorkerResult, env_worker
+from mllm_teleop_benchmark.ui.direct_gymnasium_player import WorkerCommand, WorkerResult, env_worker
 
 
 pytest.importorskip("gymnasium")
@@ -13,7 +13,7 @@ pytest.importorskip("mujoco")
 np = pytest.importorskip("numpy")
 
 
-def test_direct_reacher_worker_reset_step_shutdown():
+def test_direct_gymnasium_worker_reset_step_shutdown():
     config = load_config("configs/reacher_delta_eef.yaml")
     action_queue: mp.Queue = mp.Queue()
     result_queue: mp.Queue = mp.Queue()

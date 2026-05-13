@@ -253,14 +253,11 @@ class ControlInterfaceConfig:
             "active_dimensions": list(self.active_dimensions),
             "gripper": self.gripper,
             "joystick_channels": list(self.channel_names()),
-            "mapping_strategy": self.mapping_strategy,
-            "frame_transform": self.frame_transform,
             "visible_metadata": self.visible_metadata,
             "scale_mode": self.params.get("scale_mode", "configured_by_controller"),
+            "mapping_complexity_present": self.mapping_strategy != "fixed",
+            "frame_complexity_present": self.frame_transform != "identity",
         }
-        if self.mapping_visible_to_agent:
-            visible["mapping"] = self.to_mapping_config().channels
-            visible["mapping_signs"] = self.to_mapping_config().signs
         return visible
 
 
@@ -366,22 +363,17 @@ class BenchmarkConfig:
     frame_transform: FrameTransformConfig
     agent: AgentConfig
     logging: LoggingConfig
-    control_interface: ControlInterfaceConfig | None = None
+    control_interface: ControlInterfaceConfig
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BenchmarkConfig":
-        control_interface = ControlInterfaceConfig.from_dict(data["control_interface"]) if "control_interface" in data else None
-        action_space = (
-            control_interface.to_action_space_config()
-            if control_interface is not None
-            else ActionSpaceConfig.from_dict(_require(data, "action_space"))
-        )
-        mapping = (
-            control_interface.to_mapping_config()
-            if control_interface is not None
-            else MappingConfig.from_dict(_require(data, "mapping"))
-        )
+        control_interface_data = _require(data, "control_interface")
+        if not isinstance(control_interface_data, dict):
+            raise ValueError("control_interface must be a YAML mapping")
+        control_interface = ControlInterfaceConfig.from_dict(control_interface_data)
+        action_space = control_interface.to_action_space_config()
+        mapping = control_interface.to_mapping_config()
         return cls(
             benchmark=BenchmarkSection.from_dict(_require(data, "benchmark")),
             simulator=SimulatorConfig.from_dict(_require(data, "simulator")),
@@ -396,8 +388,6 @@ class BenchmarkConfig:
                     "visible_to_agent": control_interface.frame_visible_to_agent,
                     "params": control_interface.params.get("frame_transform", {}),
                 }
-                if control_interface is not None
-                else _require(data, "frame_transform")
             ),
             agent=AgentConfig.from_dict(_require(data, "agent")),
             logging=LoggingConfig.from_dict(_require(data, "logging")),
