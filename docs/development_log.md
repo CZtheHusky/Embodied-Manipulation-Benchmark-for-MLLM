@@ -96,9 +96,20 @@ This file records implementation decisions that matter for future maintenance.
 - Exact joystick permutation, sign flips, and frame rotation values are not shown to humans or MLLM-facing prompt metadata.
 - Full internal mapping/frame details remain available in logs/debug artifacts for offline analysis.
 
-## Documentation rule
+## 2026-05-13: Robosuite integration
 
-Every development pass should update one or more docs when it changes:
+- Selected `robosuite` as the next simulation environment due to its standardized 3D tasks and MuJoCo backend.
+- Updated `docs/architecture.md` to formally define integration constraints:
+    - Prefer native APIs but allow forking if necessary.
+    - Strict version pinning for all simulation dependencies.
+    - Decoupled control pipeline (confusions/transforms calculated before simulator step).
+    - API-driven visual randomization (e.g., `CameraModder`).
+- Pinned `robosuite==1.4.1` in `environment.yml` and `pyproject.toml`.
+- Implemented `RobosuiteSimAdapter` wrapping `suite.make()` with support for off-screen rendering and runtime camera randomization.
+- Implemented `RobosuiteOSCController` mapping benchmark actions to robosuite's 7-DoF `OSC_POSE` controller.
+- Implemented `RobosuiteLiftTask` as the first standardized 3D manipulation task.
+- Added `configs/robosuite_lift.yaml` for evaluated random policy on the Lift task.
+- Verified with `tests/test_robosuite_integration.py` and successfully ran a sample benchmark episode.
 
 - public commands or setup: update `README.md`
 - architecture or component boundaries: update `docs/architecture.md`

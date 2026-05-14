@@ -37,6 +37,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.gymnasium_envs.adapter import GymnasiumSimAdapter
 
         return GymnasiumSimAdapter(config.simulator)
+    if config.simulator.type == "robosuite":
+        from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
+
+        return RobosuiteSimAdapter()
     raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
 
 
@@ -47,6 +51,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         return GymnasiumReacherTask(config.task)
     if config.task.type == "gymnasium_pusher":
         return GymnasiumPusherTask(config.task)
+    if config.task.type == "robosuite_lift":
+        from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
+
+        return RobosuiteLiftTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -108,4 +116,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         return ReacherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "pusher_delta_eef":
         return PusherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "robosuite_osc":
+        from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
+
+        return RobosuiteOSCController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

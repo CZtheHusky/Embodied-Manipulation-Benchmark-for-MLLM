@@ -13,4 +13,5 @@ dependencies:
       - imageio>=2.0
       - mujoco>=3.0
       - pygame>=2.5
+      - robosuite==1.4.1
       - -e .

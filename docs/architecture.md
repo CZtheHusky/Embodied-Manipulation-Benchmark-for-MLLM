@@ -33,6 +33,15 @@ Episode logging writes:
 
 The dummy simulator stores a small kinematic state and renders metadata dictionaries instead of image arrays. Real image and video persistence can be added later through `ObservationProvider` and `EpisodeLogger`.
 
+## Environment Integration Constraints
+
+To ensure the benchmark remains stable and reproducible while allowing for necessary adaptations, environment integrations should follow these principles:
+
+1. **Prefer Native APIs but Allow Forks**: Prioritize interacting with environments through their public APIs (e.g., `make`, `reset`, `step`, `render`). While zero-intrusion is the ideal for maintainability, controlled forks or internal modifications are permitted when required to expose necessary state, metrics, or randomization hooks that are not accessible via standard APIs.
+2. **Version Pinning**: All simulation dependencies MUST be strictly pinned to a specific PyPI version or a specific git commit hash in `environment.yml` and `pyproject.toml`. This prevents upstream updates from introducing breaking changes or altering benchmark results.
+3. **Decoupled Control Pipeline**: All control complexities—including virtual joystick mapping, sign flips, and coordinate-frame transforms—MUST be computed within the benchmark's controller layer BEFORE calling the simulator's step function. The simulator receives only the final, normalized action arrays.
+4. **API-Driven Visual Randomization**: Modifications to visual parameters such as camera FOV, position, and rotation must be performed programmatically via the environment's runtime API (e.g., `CameraModder` in robosuite or direct MuJoCo model access) during the `reset` phase. Static asset files (like XML or URDF) should not be mutated to achieve randomization.
+
 ## Gymnasium/MuJoCo Environments
 
 Gymnasium is used as a dependency, not as a vendored or forked repository. Benchmark-specific environments live inside this package under `sim/gymnasium_envs`.

@@ -1,0 +1,58 @@
+benchmark:
+  name: robosuite_lift_v0
+  num_episodes: 1
+  seed: 42
+
+simulator:
+  type: robosuite
+
+task:
+  type: robosuite_lift
+  max_steps: 100
+  success_threshold: 0.02
+  params:
+    env_name: Lift
+    robots: ["Panda"]
+    camera_names: ["agentview", "robot0_eye_in_hand"]
+    camera_width: 320
+    camera_height: 240
+    camera_randomization:
+      agentview:
+        pos: [1.0, 0.0, 1.5]
+        fovy: 45
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: agentview
+      width: 320
+      height: 240
+    - name: robot0_eye_in_hand
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: ["dx", "dy", "dz"]
+  gripper: direct
+  mapping_strategy: fixed
+  frame_transform: identity
+
+controller:
+  type: robosuite_osc
+  scales:
+    dx: 0.05
+    dy: 0.05
+    dz: 0.05
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+    gripper: 1.0
+
+agent:
+  type: random
+
+logging:
+  output_dir: outputs/robosuite_lift
+  save_trajectory: true
