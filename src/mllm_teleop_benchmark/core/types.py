@@ -39,6 +39,12 @@ class GymBoxAction(SimulatorAction):
 
 
 @dataclass(frozen=True)
+class ManiSkillAction(SimulatorAction):
+    values: tuple[float, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class StepResult:
     observation: Observation
     terminated: bool

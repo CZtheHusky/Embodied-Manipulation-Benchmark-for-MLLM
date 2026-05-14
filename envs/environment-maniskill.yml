@@ -1,0 +1,14 @@
+name: mllm-teleop-maniskill
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - pyyaml>=6.0
+  - imageio>=2.0
+  - pytest>=8.0
+  - pip
+  - pip:
+      - mani-skill>=3.0
+      - -e .

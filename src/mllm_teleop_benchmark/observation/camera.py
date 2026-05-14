@@ -86,3 +86,69 @@ class RandomizedMujocoCameraManager(CameraManager):
         if not isinstance(value, list | tuple) or len(value) != 2:
             raise ValueError(f"Camera range must be [low, high], got {value!r}")
         return self._rng.uniform(float(value[0]), float(value[1]))
+
+
+class RandomizedManiSkillCameraManager(CameraManager):
+    """Episode-level ManiSkill camera sampler.
+
+    Camera positions are sampled once per episode from each camera's
+    params.position_ranges. Orientation stays fixed from pose/q params.
+    """
+
+    def __init__(self, config: CameraConfig) -> None:
+        if config.manager != "maniskill_randomized":
+            raise ValueError(f"Unsupported camera manager: {config.manager}")
+        self.config = config
+        self._rng = random.Random()
+        self._active = config.cameras
+
+    def reset(self, seed: int) -> None:
+        self._rng.seed(seed)
+        active: list[CameraSpec] = []
+        for camera in self.config.cameras:
+            params = dict(camera.params)
+            ranges = params.pop("position_ranges", None)
+            pose = camera.pose
+            if ranges is not None:
+                position = tuple(self._uniform_range(value) for value in ranges)
+                quat = self._camera_quat(camera)
+                pose = (*position, *quat)
+            active.append(
+                CameraSpec(
+                    name=camera.name,
+                    type=camera.type,
+                    width=camera.width,
+                    height=camera.height,
+                    pose=pose,
+                    params=params,
+                )
+            )
+        self._active = tuple(active)
+
+    def get_active_cameras(self) -> tuple[CameraSpec, ...]:
+        return self._active
+
+    def metadata(self) -> dict[str, object]:
+        if not self.config.visible_metadata:
+            return {"manager": self.config.manager, "visible_metadata": False}
+        return {
+            "manager": self.config.manager,
+            "visible_metadata": True,
+            "cameras": [
+                {"name": camera.name, "type": camera.type, "width": camera.width, "height": camera.height, "pose": camera.pose}
+                for camera in self._active
+            ],
+        }
+
+    def _camera_quat(self, camera: CameraSpec) -> tuple[float, float, float, float]:
+        if len(camera.pose) == 7:
+            return tuple(float(v) for v in camera.pose[3:7])
+        quat = camera.params.get("q", camera.params.get("quat", (1.0, 0.0, 0.0, 0.0)))
+        if not isinstance(quat, list | tuple) or len(quat) != 4:
+            raise ValueError(f"ManiSkill camera {camera.name} quaternion must contain 4 values")
+        return tuple(float(v) for v in quat)
+
+    def _uniform_range(self, value: object) -> float:
+        if not isinstance(value, list | tuple) or len(value) != 2:
+            raise ValueError(f"Camera position range must be [low, high], got {value!r}")
+        return self._rng.uniform(float(value[0]), float(value[1]))

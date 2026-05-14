@@ -6,6 +6,8 @@ The code is organized around replaceable interfaces rather than a single simulat
 
 The simulator boundary is `SimAdapter`. Real environments should implement `reset`, `step`, `render`, and `get_state` without changing agents, controllers, or logging.
 
+`ObservationProvider.configure_sim` is an optional pre-reset hook for simulators that need episode-level camera configuration before environment creation or reset. The project does not change camera views inside an episode.
+
 The action boundary is split into three layers:
 
 - `ControlInterfaceConfig` describes the agent-visible virtual joystick interface.
@@ -42,3 +44,9 @@ The Reacher delta-EEF environment owns its XML asset, kinematics helper, goal te
 The manual Reacher interface currently uses a separate two-process path: Pygame runs in the main process, while Gymnasium/MuJoCo runs in a worker process. This is an intentional stability choice after single-process Pygame/MuJoCo rendering caused GL context conflicts on X11.
 
 The stable worker path still uses benchmark-level joystick parsing, validation, mapping, controller translation, metrics, and trajectory logging in the main process. The worker is a rendering and environment-isolation layer, not a separate simulator abstraction.
+
+## ManiSkill Environments
+
+ManiSkill is an optional dependency, not a vendored or forked repository. The backend lives under `sim/maniskill` and is selected with `simulator.type: maniskill`.
+
+The ManiSkill path uses `ManiSkillSimAdapter`, `ManiSkillObservationProvider`, `ManiSkillDeltaEEFController`, and `ManiSkillTask`. Control complexity remains in the benchmark layer before native ManiSkill Box actions are emitted. Camera randomization is episode-level through the camera manager and is applied before ManiSkill env creation/reset.

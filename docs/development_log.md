@@ -96,6 +96,22 @@ This file records implementation decisions that matter for future maintenance.
 - Exact joystick permutation, sign flips, and frame rotation values are not shown to humans or MLLM-facing prompt metadata.
 - Full internal mapping/frame details remain available in logs/debug artifacts for offline analysis.
 
+## 2026-05-13: ManiSkill optional backend
+
+- Added ManiSkill as an optional simulator backend without forking or modifying ManiSkill source code.
+- Added `ManiSkillSimAdapter`, `ManiSkillObservationProvider`, `ManiSkillDeltaEEFController`, and `ManiSkillTask`.
+- Added `maniskill_randomized` camera management for episode-level camera sampling only; camera views are fixed within each episode.
+- Added `configs/maniskill_pickcube_delta_eef.yaml` as the first ManiSkill config.
+- ManiSkill remains an optional dependency through the `maniskill` extra; core tests must pass when it is not installed.
+
+## 2026-05-14: Conda-only backend environments
+
+- Standardized on conda as the only supported environment manager.
+- Changed root `environment.yml` to the lightweight `mllm-teleop-core` environment.
+- Added backend-specific env files under `envs/` for core, Gymnasium/MuJoCo, ManiSkill, and robosuite.
+- Moved simulator/UI packages out of core `pyproject.toml` dependencies and into optional metadata groups plus conda env files.
+- Documented the policy in `docs/environment_management.md`.
+
 ## Documentation rule
 
 Every development pass should update one or more docs when it changes:

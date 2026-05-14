@@ -9,7 +9,7 @@ The window is split into an information panel and an environment RGB view. The p
 Run:
 
 ```bash
-conda activate mllm-teleop-benchmark
+conda activate mllm-teleop-gymnasium
 python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml
 ```
 
@@ -52,7 +52,7 @@ There are no diagonal macro keys by default. Human play sends the same single-st
 Run:
 
 ```bash
-conda activate mllm-teleop-benchmark
+conda activate mllm-teleop-gymnasium
 python scripts/play_benchmark.py --config configs/pusher_delta_eef.yaml
 ```
 

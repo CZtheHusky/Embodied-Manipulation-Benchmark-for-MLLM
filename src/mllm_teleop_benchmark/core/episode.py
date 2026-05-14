@@ -59,6 +59,7 @@ class EpisodeManager:
         metrics: MetricsRecorder,
         history: list[StepTransition],
     ) -> EpisodeResult:
+        self.observation_provider.configure_sim(self.sim)
         self.task.reset(self.sim, seed)
         observation = self.observation_provider.get_observation(self.sim)
         logger.start(

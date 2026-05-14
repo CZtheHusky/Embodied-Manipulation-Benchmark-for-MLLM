@@ -10,9 +10,10 @@ from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
 from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionController, PusherDeltaEEFJoystickController, ReacherDeltaEEFJoystickController
+from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
-from mllm_teleop_benchmark.observation.camera import CameraManager, FixedCameraManager, RandomizedMujocoCameraManager
+from mllm_teleop_benchmark.observation.camera import CameraManager, FixedCameraManager, RandomizedManiSkillCameraManager, RandomizedMujocoCameraManager
 from mllm_teleop_benchmark.observation.provider import DefaultObservationProvider, ObservationProvider
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.sim.dummy import DummySimAdapter
@@ -37,6 +38,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.gymnasium_envs.adapter import GymnasiumSimAdapter
 
         return GymnasiumSimAdapter(config.simulator)
+    if config.simulator.type == "maniskill":
+        from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
+
+        return ManiSkillSimAdapter(config.simulator)
     raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
 
 
@@ -47,6 +52,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         return GymnasiumReacherTask(config.task)
     if config.task.type == "gymnasium_pusher":
         return GymnasiumPusherTask(config.task)
+    if config.task.type == "maniskill_generic":
+        from mllm_teleop_benchmark.tasks.maniskill import ManiSkillTask
+
+        return ManiSkillTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -65,6 +74,8 @@ def build_camera_manager(config: CameraConfig, seed: int) -> CameraManager:
         manager: CameraManager = FixedCameraManager(config)
     elif config.manager == "mujoco_randomized":
         manager = RandomizedMujocoCameraManager(config)
+    elif config.manager == "maniskill_randomized":
+        manager = RandomizedManiSkillCameraManager(config)
     else:
         raise ValueError(f"Unsupported camera manager: {config.manager}")
     manager.reset(seed)
@@ -76,6 +87,10 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.gymnasium_envs.observation import GymnasiumObservationProvider
 
         return GymnasiumObservationProvider(camera_manager)
+    if config.simulator.type == "maniskill":
+        from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
+
+        return ManiSkillObservationProvider(camera_manager)
     return DefaultObservationProvider(camera_manager)
 
 
@@ -108,4 +123,6 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         return ReacherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "pusher_delta_eef":
         return PusherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "maniskill_delta_eef":
+        return ManiSkillDeltaEEFController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

@@ -51,6 +51,7 @@ class PygameBenchmarkApp:
         metrics = MetricsRecorder()
         history: list[StepTransition] = []
 
+        observation_provider.configure_sim(sim)
         task.reset(sim, seed)
         observation = observation_provider.get_observation(sim)
         control_metadata = control_interface_metadata(self.config, seed)

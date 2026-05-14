@@ -8,6 +8,9 @@ from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 
 class ObservationProvider(ABC):
+    def configure_sim(self, sim: SimAdapter) -> None:
+        return None
+
     @abstractmethod
     def get_observation(self, sim: SimAdapter) -> Observation:
         raise NotImplementedError

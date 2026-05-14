@@ -11,17 +11,27 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Cao Zhe" }]
 dependencies = [
-  "gymnasium>=1.0",
   "imageio>=2.0",
-  "mujoco>=3.0",
   "numpy>=1.24",
-  "pygame>=2.5",
   "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+]
+gymnasium = [
+  "gymnasium>=1.0",
+  "mujoco>=3.0",
+]
+ui = [
+  "pygame>=2.5",
+]
+maniskill = [
+  "mani-skill>=3.0",
+]
+robosuite = [
+  "robosuite",
 ]
 
 [tool.setuptools.packages.find]

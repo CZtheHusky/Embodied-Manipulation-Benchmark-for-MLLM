@@ -4,11 +4,11 @@ A Python skeleton for evaluating MLLMs as closed-loop embodied manipulation agen
 
 ## Environment
 
-This project is intended to be managed with conda:
+This project is managed with conda. The root `environment.yml` is the lightweight core development environment:
 
 ```bash
 conda env create -f environment.yml
-conda activate mllm-teleop-benchmark
+conda activate mllm-teleop-core
 ```
 
 In the local Codex environment, use the available shell helper if configured:
@@ -17,6 +17,15 @@ In the local Codex environment, use the available shell helper if configured:
 source ~/.bashrc
 conda_activate
 ```
+
+Simulator backends use separate conda environments to avoid dependency conflicts:
+
+```bash
+conda env create -f envs/environment-gymnasium.yml
+conda env create -f envs/environment-maniskill.yml
+```
+
+More details are in `docs/environment_management.md`.
 
 ## Run the Dummy Benchmark
 
@@ -43,12 +52,14 @@ pytest
 The first real MuJoCo-backed environment is a local Gymnasium environment:
 
 ```bash
+conda activate mllm-teleop-gymnasium
 python scripts/run_benchmark.py --config configs/reacher_delta_eef.yaml
 ```
 
 For stable human evaluation of the local Reacher environment:
 
 ```bash
+conda activate mllm-teleop-gymnasium
 python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml
 ```
 
@@ -61,7 +72,7 @@ Keyboard controls:
 - `R`: reset
 - `Esc` or `P`: quit
 
-Reacher exposes two virtual joystick channels to both humans and MLLM policies: `joystick_0 -> dx` and `joystick_1 -> dy`.
+Reacher exposes two virtual joystick channels to both humans and MLLM policies. The public control panel and MLLM prompt describe the active controllable dimensions and whether mapping/frame complexity is present, but do not reveal exact hidden control-complexity details.
 
 Config values can be overridden from the CLI for both benchmark and human play:
 
@@ -83,6 +94,18 @@ python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --set c
 
 More details are in `docs/manual_play.md` and `docs/reacher_integration.md`.
 
+## Run ManiSkill
+
+ManiSkill uses its own conda environment:
+
+```bash
+conda env create -f envs/environment-maniskill.yml
+conda activate mllm-teleop-maniskill
+python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+```
+
+The initial ManiSkill config targets `PickCube-v1` with `pd_ee_delta_pose` control. Camera randomization is episode-level only; the camera view is fixed inside an episode. More details are in `docs/maniskill_integration.md`.
+
 ## Package Layout
 
 ```text
@@ -99,6 +122,8 @@ src/mllm_teleop_benchmark/
   sim/          simulator adapter interface and dummy simulator
   sim/gymnasium_envs/
                local Gymnasium/MuJoCo envs and adapters
+  sim/maniskill/
+               optional ManiSkill adapter and RGB observation provider
   tasks/        task interface and reach-target task
   ui/           human keyboard/Pygame evaluation interface
 ```

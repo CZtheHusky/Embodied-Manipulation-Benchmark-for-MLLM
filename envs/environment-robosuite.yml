@@ -1,0 +1,15 @@
+name: mllm-teleop-robosuite
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.10
+  - numpy
+  - pyyaml>=6.0
+  - imageio>=2.0
+  - pytest>=8.0
+  - pip
+  - pip:
+      - robosuite
+      - pygame>=2.5
+      - -e .
