@@ -82,6 +82,38 @@ python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --set c
 
 `random_rotation_2d` samples an angle uniformly on SO(2), optionally constrained by `angle_range_degrees`. `random_rotation_3d` samples uniformly on SO(3) by default. Euler-angle ranges are available only by explicitly setting `sampling=euler_ranges`.
 
+## ManiSkill PickCube
+
+Run:
+
+```bash
+conda activate mllm-teleop-maniskill
+python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+```
+
+The default config uses:
+
+```yaml
+ui:
+  backend: direct_maniskill
+```
+
+This backend follows the same direct-player architecture as Gymnasium: the main process owns Pygame, keyboard input, benchmark action parsing, controller translation, episode logging, and debug files; the worker process owns ManiSkill environment creation, stepping, RGB extraction, and rendering fallback.
+
+PickCube exposes six motion joysticks plus a final gripper joystick:
+
+- `W/S`: `joystick_0`
+- `A/D`: `joystick_1`
+- `Q/E`: `joystick_2`
+- `J/L`: `joystick_3`
+- `K/I`: `joystick_4`
+- `U/O`: `joystick_5`
+- `G` or `Space`: toggle the final gripper joystick
+
+The keyboard path still emits the same full joystick schema as an MLLM policy. If mapping confusion, sign flips, or frame rotation are enabled, the panel only says that complexity is present; it does not reveal the exact mapping, signs, or rotation.
+
+ManiSkill camera randomization remains episode-level only. The direct player displays the first active RGB camera returned by the configured observation provider and falls back to `env.render()` only if the RGB observation does not contain an image.
+
 ## Known GL Failure Modes
 
 Single-process Pygame + MuJoCo rendering can fail on X11 with:
@@ -105,7 +137,7 @@ This path tries to run simulator rendering and Pygame in one process. It is usef
 
 ## Logging
 
-The default direct backend writes the normal episode files under `logging.output_dir`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
+The default direct backends write the normal episode files under `logging.output_dir`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
 
 When `ui.debug_frames: true`, the direct backend also saves raw environment render frames under:
 

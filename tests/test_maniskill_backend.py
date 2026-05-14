@@ -1,4 +1,6 @@
 import numpy as np
+import multiprocessing as mp
+import pytest
 
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.config.loader import load_config
@@ -11,6 +13,9 @@ from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 from mllm_teleop_benchmark.observation.camera import RandomizedManiSkillCameraManager
 from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
 from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
+from mllm_teleop_benchmark.ui.direct_maniskill_player import DirectManiSkillPlayer
+from mllm_teleop_benchmark.ui.direct_maniskill_player import env_worker as maniskill_env_worker
+from mllm_teleop_benchmark.ui.direct_player import WorkerCommand, WorkerResult
 
 
 def test_maniskill_pickcube_config_builds_without_maniskill_install():
@@ -19,8 +24,17 @@ def test_maniskill_pickcube_config_builds_without_maniskill_install():
     controller = build_controller(config, build_mapping(config, seed=7), seed=7)
 
     assert config.simulator.type == "maniskill"
+    assert config.raw["ui"]["backend"] == "direct_maniskill"
     assert tuple(action_space.channels) == tuple(f"joystick_{idx}" for idx in range(7))
     assert controller.metadata()["type"] == "maniskill_delta_eef"
+
+
+def test_direct_maniskill_player_builds_without_starting_env():
+    config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
+    player = DirectManiSkillPlayer(config)
+
+    assert player.runtime_tag == "direct_maniskill_player"
+    assert player.max_steps == 100
 
 
 def test_maniskill_delta_eef_controller_maps_pose_and_gripper():
@@ -119,3 +133,46 @@ def test_maniskill_adapter_clips_native_action_against_box_space():
 
     assert native.tolist() == [1.0, -0.5, 0.25]
     assert metadata["clipped"] is True
+
+
+def test_direct_maniskill_worker_reset_step_shutdown_when_installed():
+    pytest.importorskip("mani_skill")
+    config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
+    action_queue: mp.Queue = mp.Queue()
+    result_queue: mp.Queue = mp.Queue()
+    worker = mp.Process(target=maniskill_env_worker, args=(config, action_queue, result_queue))
+    worker.start()
+    try:
+        initial = result_queue.get(timeout=30)
+        assert isinstance(initial, WorkerResult)
+        if initial.error:
+            pytest.skip(f"ManiSkill runtime unavailable: {initial.error}")
+        assert np.asarray(initial.frame).ndim == 3
+
+        controller = build_controller(config, build_mapping(config), config.benchmark.seed)
+        sim_action = controller.translate(
+            JoystickAction(
+                {
+                    "joystick_0": 0.0,
+                    "joystick_1": 0.0,
+                    "joystick_2": 0.0,
+                    "joystick_3": 0.0,
+                    "joystick_4": 0.0,
+                    "joystick_5": 0.0,
+                    "joystick_6": 0.0,
+                }
+            )
+        )
+        action_queue.put(WorkerCommand("step", sim_action))
+        stepped = result_queue.get(timeout=30)
+        assert isinstance(stepped, WorkerResult)
+        if stepped.error:
+            pytest.skip(f"ManiSkill runtime step unavailable: {stepped.error}")
+        assert np.asarray(stepped.frame).shape[-1] == 3
+        assert stepped.step_result is not None
+        assert stepped.step_result.info["step_id"] == 1
+    finally:
+        action_queue.put(WorkerCommand("close"))
+        worker.join(timeout=10)
+        if worker.is_alive():
+            worker.terminate()

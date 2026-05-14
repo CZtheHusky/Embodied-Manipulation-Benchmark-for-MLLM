@@ -74,6 +74,10 @@ class ManiSkillSimAdapter(SimAdapter):
         state.update(self.last_info)
         if "success" in state:
             state["success"] = self._bool_value(state["success"])
+        tcp_position = self._tcp_position()
+        if tcp_position is not None:
+            state["ee_position"] = tcp_position
+            state["tcp_position"] = tcp_position
         return state
 
     def close(self) -> None:
@@ -215,3 +219,19 @@ class ManiSkillSimAdapter(SimAdapter):
         if array is not None:
             return bool(array.reshape(-1)[0])
         return bool(value)
+
+    def _tcp_position(self) -> list[float] | None:
+        if self.env is None:
+            return None
+        try:
+            unwrapped = getattr(self.env, "unwrapped", self.env)
+            agent = getattr(unwrapped, "agent", None)
+            tcp = getattr(agent, "tcp", None)
+            pose = getattr(tcp, "pose", None)
+            position = getattr(pose, "p", None)
+            array = self._to_numpy(position)
+            if array is None:
+                return None
+            return [float(v) for v in array.reshape(-1)[:3]]
+        except Exception:
+            return None

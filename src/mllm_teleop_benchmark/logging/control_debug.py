@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
-from mllm_teleop_benchmark.core.types import GymBoxAction, ValidationResult
+from mllm_teleop_benchmark.core.types import GymBoxAction, ManiSkillAction, ValidationResult
 from mllm_teleop_benchmark.logging.debug_session import DebugSession
 
 
@@ -96,12 +96,14 @@ class ControlDebugRecorder:
         return {**self.session.event_tags(), **record}
 
     def expected_eef_behavior(self, sim_action: Any) -> dict[str, Any]:
-        if not isinstance(sim_action, GymBoxAction):
+        if not isinstance(sim_action, GymBoxAction | ManiSkillAction):
             return {"sim_action": to_jsonable(sim_action)}
         dimensions = tuple(str(v) for v in sim_action.metadata.get("dimensions", ()))
         values = tuple(float(v) for v in sim_action.values)
-        eef_step_scale = float(self.config.simulator.env_kwargs.get("eef_step_scale", 1.0))
         dimension_values = {dim: values[idx] for idx, dim in enumerate(dimensions)}
+        eef_step_scale = 1.0
+        if isinstance(sim_action, GymBoxAction):
+            eef_step_scale = float(self.config.simulator.env_kwargs.get("eef_step_scale", 1.0))
         expected_delta = {
             dim: dimension_values[dim] * eef_step_scale
             for dim in ("dx", "dy", "dz")

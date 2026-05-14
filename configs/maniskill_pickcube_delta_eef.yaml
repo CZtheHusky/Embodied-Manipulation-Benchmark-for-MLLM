@@ -79,3 +79,10 @@ logging:
   save_video: false
   save_trajectory: true
   save_config_snapshot: true
+
+ui:
+  backend: direct_maniskill
+  info_panel_height: 190
+  max_steps: 100
+  debug_frames: true
+  debug_control_history: true

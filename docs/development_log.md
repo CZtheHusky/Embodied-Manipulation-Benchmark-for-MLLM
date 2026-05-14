@@ -112,6 +112,13 @@ This file records implementation decisions that matter for future maintenance.
 - Moved simulator/UI packages out of core `pyproject.toml` dependencies and into optional metadata groups plus conda env files.
 - Documented the policy in `docs/environment_management.md`.
 
+## 2026-05-14: ManiSkill direct human play
+
+- Added a shared direct-player base for human keyboard play so Gymnasium and ManiSkill reuse the same Pygame loop, action parsing, controller translation, logging, and debug recorders.
+- Added `direct_maniskill` as a two-process human-play backend for ManiSkill PickCube.
+- Added gripper keyboard toggling for the final virtual joystick through `G` or `Space`.
+- Updated ManiSkill play docs and the ManiSkill conda env to include Pygame.
+
 ## 2026-05-13: Robosuite integration
 
 - Selected `robosuite` as the next simulation environment due to its standardized 3D tasks and MuJoCo backend.

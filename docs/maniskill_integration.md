@@ -8,6 +8,7 @@ ManiSkill is integrated as an optional backend. The benchmark does not fork or m
 - Observation provider: `sim/maniskill/observation.py`
 - Controller: `control/maniskill.py`
 - Task wrapper: `tasks/maniskill.py`
+- Human play UI: `ui/direct_maniskill_player.py`
 - Example config: `configs/maniskill_pickcube_delta_eef.yaml`
 
 ## Dependency
@@ -34,6 +35,19 @@ JoystickAction -> JoystickMapping -> ControlFrameTransform -> ManiSkillDeltaEEFC
 Joystick permutation, sign changes, and coordinate-frame rotation are handled by this repository before native ManiSkill actions are produced. ManiSkill receives a clipped native Box action.
 
 The gripper, when present, remains the final virtual joystick. The default mapping is `0.0 -> -1.0` and `1.0 -> 1.0`, configurable through controller params.
+
+## Human Play
+
+The ManiSkill play UI uses a direct two-process backend:
+
+```bash
+conda activate mllm-teleop-maniskill
+python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+```
+
+The config selects `ui.backend: direct_maniskill`. The main process owns Pygame, keyboard input, action parsing, validation, mapping, frame transform, controller translation, logging, and debug files. The worker process owns ManiSkill environment creation, reset, step, and RGB extraction.
+
+Keyboard controls are virtual joystick controls, not privileged task shortcuts. `W/S`, `A/D`, `Q/E`, `J/L`, `K/I`, and `U/O` drive motion joysticks in order. `G` or `Space` toggles the final gripper joystick when the configured control interface has a gripper.
 
 ## Observation And Cameras
 
