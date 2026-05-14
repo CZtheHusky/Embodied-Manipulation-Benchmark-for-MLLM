@@ -112,9 +112,22 @@ This file records implementation decisions that matter for future maintenance.
 - Moved simulator/UI packages out of core `pyproject.toml` dependencies and into optional metadata groups plus conda env files.
 - Documented the policy in `docs/environment_management.md`.
 
-## Documentation rule
+## 2026-05-13: Robosuite integration
 
-Every development pass should update one or more docs when it changes:
+- Selected `robosuite` as the next simulation environment due to its standardized 3D tasks and MuJoCo backend.
+- Updated `docs/architecture.md` to formally define integration constraints:
+    - Prefer native APIs but allow forking if necessary.
+    - Strict version pinning for all simulation dependencies.
+    - Decoupled control pipeline (confusions/transforms calculated before simulator step).
+    - API-driven visual randomization (e.g., `CameraModder`).
+- Pinned `robosuite==1.4.1` in the robosuite backend conda env and optional dependency metadata, while keeping the root core environment simulator-free.
+- Implemented `RobosuiteSimAdapter` wrapping `suite.make()` with support for off-screen rendering and runtime camera randomization.
+- Implemented `RobosuiteOSCController` mapping benchmark actions to robosuite's 7-DoF `OSC_POSE` controller.
+- Implemented `RobosuiteLiftTask` as the first standardized 3D manipulation task.
+- Added `configs/robosuite_lift.yaml` for evaluated random policy on the Lift task.
+- Verified with `tests/test_robosuite_integration.py` and successfully ran a sample benchmark episode.
+
+## Documentation rule
 
 - public commands or setup: update `README.md`
 - architecture or component boundaries: update `docs/architecture.md`

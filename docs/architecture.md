@@ -35,6 +35,15 @@ Episode logging writes:
 
 The dummy simulator stores a small kinematic state and renders metadata dictionaries instead of image arrays. Real image and video persistence can be added later through `ObservationProvider` and `EpisodeLogger`.
 
+## Environment Integration Constraints
+
+To ensure the benchmark remains stable and reproducible while allowing for necessary adaptations, environment integrations should follow these principles:
+
+1. **Prefer Native APIs but Allow Forks**: Prioritize interacting with environments through their public APIs (e.g., `make`, `reset`, `step`, `render`). While zero-intrusion is the ideal for maintainability, controlled forks or internal modifications are permitted when required to expose necessary state, metrics, or randomization hooks that are not accessible via standard APIs.
+2. **Version Pinning**: Simulation dependencies should be pinned in their backend-specific conda env files and matching optional dependency metadata. They must not be added to the root core environment unless they are genuinely simulator-independent.
+3. **Decoupled Control Pipeline**: All control complexities—including virtual joystick mapping, sign flips, and coordinate-frame transforms—MUST be computed within the benchmark's controller layer BEFORE calling the simulator's step function. The simulator receives only the final, normalized action arrays.
+4. **API-Driven Visual Randomization**: Modifications to visual parameters such as camera FOV, position, and rotation must be performed programmatically via the environment's runtime API (e.g., `CameraModder` in robosuite or direct MuJoCo model access) during the `reset` phase. Static asset files (like XML or URDF) should not be mutated to achieve randomization.
+
 ## Gymnasium/MuJoCo Environments
 
 Gymnasium is used as a dependency, not as a vendored or forked repository. Benchmark-specific environments live inside this package under `sim/gymnasium_envs`.
@@ -50,3 +59,9 @@ The stable worker path still uses benchmark-level joystick parsing, validation, 
 ManiSkill is an optional dependency, not a vendored or forked repository. The backend lives under `sim/maniskill` and is selected with `simulator.type: maniskill`.
 
 The ManiSkill path uses `ManiSkillSimAdapter`, `ManiSkillObservationProvider`, `ManiSkillDeltaEEFController`, and `ManiSkillTask`. Control complexity remains in the benchmark layer before native ManiSkill Box actions are emitted. Camera randomization is episode-level through the camera manager and is applied before ManiSkill env creation/reset.
+
+## robosuite Environments
+
+robosuite is an optional backend selected with `simulator.type: robosuite` and installed through the `mllm-teleop-robosuite` conda environment.
+
+The robosuite path uses `RobosuiteSimAdapter`, `RobosuiteOSCController`, and `RobosuiteLiftTask`. Control complexity remains in the benchmark layer before a native robosuite OSC action is emitted. Camera changes are applied during reset through robosuite's runtime camera utilities.

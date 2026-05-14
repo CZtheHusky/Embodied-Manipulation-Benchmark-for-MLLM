@@ -23,6 +23,7 @@ Simulator backends use separate conda environments to avoid dependency conflicts
 ```bash
 conda env create -f envs/environment-gymnasium.yml
 conda env create -f envs/environment-maniskill.yml
+conda env create -f envs/environment-robosuite.yml
 ```
 
 More details are in `docs/environment_management.md`.
@@ -106,6 +107,16 @@ python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.ya
 
 The initial ManiSkill config targets `PickCube-v1` with `pd_ee_delta_pose` control. Camera randomization is episode-level only; the camera view is fixed inside an episode. More details are in `docs/maniskill_integration.md`.
 
+## Run robosuite
+
+robosuite uses its own conda environment:
+
+```bash
+conda env create -f envs/environment-robosuite.yml
+conda activate mllm-teleop-robosuite
+python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
+```
+
 ## Package Layout
 
 ```text
@@ -124,6 +135,8 @@ src/mllm_teleop_benchmark/
                local Gymnasium/MuJoCo envs and adapters
   sim/maniskill/
                optional ManiSkill adapter and RGB observation provider
+  sim/robosuite_adapter.py
+               optional robosuite adapter
   tasks/        task interface and reach-target task
   ui/           human keyboard/Pygame evaluation interface
 ```

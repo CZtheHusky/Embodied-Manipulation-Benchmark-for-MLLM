@@ -10,6 +10,6 @@ dependencies:
   - pytest>=8.0
   - pip
   - pip:
-      - robosuite
+      - robosuite==1.4.1
       - pygame>=2.5
       - -e .

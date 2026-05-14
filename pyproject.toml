@@ -31,7 +31,7 @@ maniskill = [
   "mani-skill>=3.0",
 ]
 robosuite = [
-  "robosuite",
+  "robosuite==1.4.1",
 ]
 
 [tool.setuptools.packages.find]
