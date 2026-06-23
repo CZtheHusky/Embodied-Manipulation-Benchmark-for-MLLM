@@ -1,0 +1,93 @@
+benchmark:
+  name: calvin_delta_eef_v0
+  num_episodes: 1
+  seed: 42
+
+simulator:
+  type: calvin
+  env_id: null
+  render_mode: rgb_array
+  params:
+    max_episode_steps: 100
+    camera_config: static_and_gripper
+    hydra_config_name: config_data_collection
+    use_egl: true
+    show_gui: false
+  env_kwargs:
+    use_vr: false
+    use_scene_info: true
+
+task:
+  type: calvin_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: Pick up the object and place it in the drawer.
+
+camera:
+  manager: calvin_randomized
+  visible_metadata: true
+  cameras:
+    - name: static
+      type: calvin_rgb
+      width: 200
+      height: 200
+      params:
+        position_ranges:
+          - [0.5, 1.0]
+          - [-0.2, 0.2]
+          - [0.4, 0.8]
+        look_at_ranges:
+          - [-0.1, 0.1]
+          - [-0.1, 0.1]
+          - [0.0, 0.2]
+    - name: gripper
+      type: calvin_rgb
+      width: 84
+      height: 84
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+
+controller:
+  type: calvin_delta_eef
+  frame: controller
+  scales:
+    dx: 0.1
+    dy: 0.1
+    dz: 0.1
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+  params:
+    dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
+    gripper_open_value: 1.0
+    gripper_closed_value: -1.0
+
+agent:
+  type: random
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/calvin_delta_eef
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: direct_calvin
+  info_panel_height: 200
+  max_steps: 100
+  debug_frames: true
+  debug_control_history: true

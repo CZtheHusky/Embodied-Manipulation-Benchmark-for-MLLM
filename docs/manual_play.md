@@ -62,7 +62,7 @@ Pusher exposes three virtual joysticks:
 - `A/D`: `joystick_1`
 - `Q/E`: `joystick_2`
 
-If mapping confusion or frame rotation is enabled by YAML or CLI override, the panel only indicates that such complexity is present. It does not reveal the exact joystick-to-motion mapping, sign flips, or frame rotation parameters; this matches the metadata sent to the MLLM.
+Fixed visible mappings show the exact joystick-to-dimension mapping in the panel and MLLM prompt. If mapping confusion or frame rotation is enabled by YAML or CLI override, the panel only indicates that such complexity is present and does not reveal exact permutations, sign flips, or frame rotation parameters.
 
 ## CLI Overrides
 
@@ -110,9 +110,45 @@ PickCube exposes six motion joysticks plus a final gripper joystick:
 - `U/O`: `joystick_5`
 - `G` or `Space`: toggle the final gripper joystick
 
-The keyboard path still emits the same full joystick schema as an MLLM policy. If mapping confusion, sign flips, or frame rotation are enabled, the panel only says that complexity is present; it does not reveal the exact mapping, signs, or rotation.
+The keyboard path still emits the same full joystick schema as an MLLM policy. Fixed visible mappings show exact joystick assignments. If mapping confusion, sign flips, or frame rotation are enabled, the panel only says that complexity is present and does not reveal the exact mapping, signs, or rotation.
 
 ManiSkill camera randomization remains episode-level only. The direct player displays the first active RGB camera returned by the configured observation provider and falls back to `env.render()` only if the RGB observation does not contain an image.
+
+## DMControl
+
+Run:
+
+```bash
+conda activate mllm-teleop-dmcontrol
+python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
+```
+
+The default config uses:
+
+```yaml
+ui:
+  backend: direct_dmcontrol
+```
+
+The direct DMControl player keeps `dm_control` rendering in a worker process for GL isolation. The worker shares the same native action validation/clipping helper as `DMControlSimAdapter`, but it does not fully instantiate the adapter path.
+
+## CALVIN
+
+Run:
+
+```bash
+conda activate mllm-teleop-calvin
+python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml --backend direct_calvin
+```
+
+The default config uses:
+
+```yaml
+ui:
+  backend: direct_calvin
+```
+
+The direct CALVIN player reuses the benchmark parser, validator, mapping, controller, logging, and debug recorders in the main process. The worker owns CALVIN environment creation, reset, stepping, and RGB frame extraction through `CalvinObservationProvider`.
 
 ## Known GL Failure Modes
 
@@ -137,7 +173,7 @@ This path tries to run simulator rendering and Pygame in one process. It is usef
 
 ## Logging
 
-The default direct backends write the normal episode files under `logging.output_dir`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
+The default direct backends write the normal episode files under `logging.output_dir/<run_id>/episode_0000`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
 
 When `ui.debug_frames: true`, the direct backend also saves raw environment render frames under:
 

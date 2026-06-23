@@ -28,6 +28,7 @@ class EpisodeManager:
         validator: ActionValidator,
         controller: Controller,
         agent: Agent,
+        run_id: str | None = None,
     ) -> None:
         self.config = config
         self.sim = sim
@@ -38,9 +39,10 @@ class EpisodeManager:
         self.validator = validator
         self.controller = controller
         self.agent = agent
+        self.run_id = run_id
 
     def run_episode(self, episode_id: int, seed: int) -> EpisodeResult:
-        logger = EpisodeLogger(self.config, episode_id, seed)
+        logger = EpisodeLogger(self.config, episode_id, seed, run_id=self.run_id)
         metrics = MetricsRecorder()
         history: list[StepTransition] = []
 

@@ -13,4 +13,4 @@ dependencies:
       - gymnasium>=1.0
       - mujoco>=3.0
       - pygame>=2.5
-      - -e .
+      - -e ..

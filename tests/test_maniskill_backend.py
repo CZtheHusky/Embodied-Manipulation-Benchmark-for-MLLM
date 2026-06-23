@@ -9,7 +9,6 @@ from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.core.registry import build_action_space, build_controller, build_mapping
 from mllm_teleop_benchmark.core.types import ManiSkillAction
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
-from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 from mllm_teleop_benchmark.observation.camera import RandomizedManiSkillCameraManager
 from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
 from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
@@ -39,7 +38,7 @@ def test_direct_maniskill_player_builds_without_starting_env():
 
 def test_maniskill_delta_eef_controller_maps_pose_and_gripper():
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
-    controller = ManiSkillDeltaEEFController.from_config(config.controller, FixedJoystickMapping.from_config(config.mapping))
+    controller = ManiSkillDeltaEEFController.from_config(config.controller, build_mapping(config, config.benchmark.seed))
     action = JoystickAction(
         {
             "joystick_0": 1,
@@ -63,7 +62,7 @@ def test_maniskill_delta_eef_controller_applies_frame_rotation():
     transform = RotationControlFrameTransform.from_config(
         FrameTransformConfig(type="rotation_3d", visible_to_agent=True, params={"rpy_degrees": [0, 0, 90]})
     )
-    controller = ManiSkillDeltaEEFController.from_config(config.controller, FixedJoystickMapping.from_config(config.mapping), transform)
+    controller = ManiSkillDeltaEEFController.from_config(config.controller, build_mapping(config, config.benchmark.seed), transform)
 
     sim_action = controller.translate(
         JoystickAction(

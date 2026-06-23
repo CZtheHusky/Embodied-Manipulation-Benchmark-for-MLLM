@@ -19,7 +19,13 @@ conda env create -f envs/environment-robosuite.yml
 conda activate mllm-teleop-robosuite
 ```
 
-The backend pins `robosuite==1.4.1`. Core tests and non-robosuite environments must continue to work without robosuite installed.
+The backend pins `robosuite==1.4.1`. Core tests and non-robosuite environments must continue to work without robosuite installed. The adapter sets `NUMBA_DISABLE_JIT=1` by default before importing robosuite because this pinned install can otherwise fail during numba cache setup.
+
+To require the optional backend smoke test instead of skipping it:
+
+```bash
+MLLM_TELEOP_REQUIRE_ROBOSUITE=1 pytest tests/test_robosuite_integration.py -rs
+```
 
 ## Control
 
@@ -35,7 +41,7 @@ The robosuite controller emits a `RobosuiteAction` wrapper. The adapter converts
 
 ## Cameras
 
-Camera settings are applied during reset through robosuite runtime APIs. The project does not mutate static assets to randomize camera views.
+Camera settings are sampled from the episode seed and applied during reset through robosuite runtime APIs. The project does not mutate static assets to randomize camera views. `camera_randomization` supports fixed `pos`, `quat`, and `fovy` values, plus `pos_range` and `fovy_range` for seeded episode-level sampling.
 
 ## Current Limitations
 

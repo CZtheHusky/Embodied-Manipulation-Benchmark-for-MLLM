@@ -1,0 +1,16 @@
+name: mllm-teleop-dmcontrol
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - pyyaml>=6.0
+  - imageio>=2.0
+  - pytest>=8.0
+  - pip
+  - pip:
+      - dm_control>=1.0
+      - mujoco>=3.0
+      - pygame>=2.5
+      - -e ..

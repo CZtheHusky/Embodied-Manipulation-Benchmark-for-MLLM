@@ -36,8 +36,8 @@ def test_control_interface_prompt_mentions_visible_two_axis_mapping():
     payload = PromptBuilder().build(context)
     assert "2 virtual joystick" in payload.control_instruction
     assert "active controllable dimensions are: dx, dy" in payload.control_instruction
-    assert "joystick_0 -> dx" not in payload.control_instruction
-    assert "joystick_1 -> dy" not in payload.control_instruction
+    assert "joystick_0 -> dx" in payload.control_instruction
+    assert "joystick_1 -> dy" in payload.control_instruction
 
 
 def test_hidden_control_interface_prompt_does_not_expose_mapping():

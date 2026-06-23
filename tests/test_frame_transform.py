@@ -30,6 +30,16 @@ def test_rotation_3d_rotates_xyz():
     assert abs(z) < 1e-9
 
 
+def test_rotation_3d_rotates_small_delta_rotation_vector():
+    transform = RotationControlFrameTransform.from_config(
+        FrameTransformConfig(type="rotation_3d", visible_to_agent=True, params={"rpy_degrees": [0.0, 0.0, 90.0]})
+    )
+    roll, pitch, yaw = transform.transform_delta_rotation((0.1, 0.0, 0.0))
+    assert abs(roll) < 1e-9
+    assert abs(pitch - 0.1) < 1e-9
+    assert abs(yaw) < 1e-9
+
+
 def test_random_rotation_2d_is_seed_deterministic():
     config = FrameTransformConfig(type="random_rotation_2d", visible_to_agent=True, params={"angle_range_degrees": [10.0, 20.0]})
     first = RotationControlFrameTransform.from_config(config, seed=5).metadata()

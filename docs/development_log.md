@@ -134,6 +134,23 @@ This file records implementation decisions that matter for future maintenance.
 - Added `configs/robosuite_lift.yaml` for evaluated random policy on the Lift task.
 - Verified with `tests/test_robosuite_integration.py` and successfully ran a sample benchmark episode.
 
+## 2026-06-23: Benchmark-risk hardening
+
+- Fixed visible mappings are now disclosed to both human panels and MLLM-facing prompts; hidden/complex mappings still hide exact permutations and signs.
+- Benchmark episode logs are grouped under per-run directories so repeated runs do not overwrite prior artifacts.
+- `agent.type: mllm` now fails during runner construction until an API-backed policy exists.
+- Robosuite import defaults `NUMBA_DISABLE_JIT=1`, camera randomization is seed-sampled, and optional-backend tests can be forced with `MLLM_TELEOP_REQUIRE_ROBOSUITE=1`.
+- Control-frame rotation now also transforms small delta-rotation vectors for 6D EEF controllers.
+
+## 2026-06-23: DMControl and CALVIN backend port
+
+- Recovered the active goals from the sibling Gemini worktrees and delegated separate real-runtime validation for DMControl and CALVIN before merging.
+- Added DMControl support through `DMControlSimAdapter`, `DMControlObservationProvider`, `DMControlController`, `DMControlTask`, `direct_dmcontrol`, `configs/dmcontrol_example.yaml`, and `envs/environment-dmcontrol.yml`.
+- Added CALVIN support through `CalvinSimAdapter`, `CalvinObservationProvider`, `CalvinDeltaEEFController`, `CalvinTask`, `calvin_randomized` camera sampling, `direct_calvin`, `configs/calvin_delta_eef.yaml`, and `envs/environment-calvin.yml`.
+- Preserved the benchmark-layer control pipeline: joystick mapping and frame transforms happen before simulator-native action arrays for both new backends.
+- Verified DMControl in `mllm-teleop-dmcontrol` with unit tests, a direct-worker step smoke, and a full random-policy benchmark smoke. Verified CALVIN in `mllm-teleop-calvin` with real reset/image/step tests and a 100-step random-policy benchmark smoke.
+- Remaining known gaps: DMControl free-camera orbit randomization is unsupported and fails loudly; CALVIN camera randomization is best-effort without a visual oracle; CALVIN task success still needs a stricter language-task oracle.
+
 ## Documentation rule
 
 - public commands or setup: update `README.md`

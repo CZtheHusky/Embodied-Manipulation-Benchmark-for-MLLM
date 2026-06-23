@@ -94,7 +94,7 @@ class RotationControlFrameTransform(ControlFrameTransform):
         return _matvec(self.rotation_matrix, delta_position)
 
     def transform_delta_rotation(self, delta_rotation_rpy: tuple[float, float, float]) -> tuple[float, float, float]:
-        return tuple(float(v) for v in delta_rotation_rpy)  # type: ignore[return-value]
+        return _matvec(self.rotation_matrix, delta_rotation_rpy)
 
     def metadata(self) -> dict[str, object]:
         if not self.visible_to_agent:

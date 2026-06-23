@@ -1,15 +1,15 @@
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
+from mllm_teleop_benchmark.core.registry import build_mapping
 from mllm_teleop_benchmark.mapping.frame_transform import IdentityControlFrameTransform
-from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 
 
 def test_scale_application_and_direct_gripper():
     config = load_config("configs/dummy_reach.yaml")
     controller = EEDeltaPoseController.from_config(
         config.controller,
-        FixedJoystickMapping.from_config(config.mapping),
+        build_mapping(config, config.benchmark.seed),
         IdentityControlFrameTransform.from_config(config.frame_transform),
     )
     sim_action = controller.translate(

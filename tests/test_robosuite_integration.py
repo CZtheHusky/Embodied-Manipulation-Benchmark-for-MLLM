@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytest
 from mllm_teleop_benchmark.action.joystick import JoystickAction
@@ -6,29 +8,58 @@ from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCContr
 from mllm_teleop_benchmark.core.types import RobosuiteAction
 from mllm_teleop_benchmark.mapping.frame_transform import IdentityControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
-from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
+from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter, sample_camera_randomization
 
 
 def _require_robosuite() -> None:
+    os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
     try:
         __import__("robosuite")
-    except Exception as exc:
+    except ImportError as exc:
         pytest.skip(f"robosuite is not available in this environment: {exc}")
+    except Exception as exc:
+        if os.environ.get("MLLM_TELEOP_REQUIRE_ROBOSUITE") == "1" or "robosuite" in os.environ.get("CONDA_DEFAULT_ENV", ""):
+            raise
+        pytest.skip(f"robosuite failed to import in this optional-backend environment: {exc}")
 
 
 def test_robosuite_adapter_init():
     _require_robosuite()
     config = load_config("configs/robosuite_lift.yaml")
     adapter = RobosuiteSimAdapter(config.simulator)
-    obs = adapter.reset(config.task, seed=42)
-    
-    assert "agentview" in obs.images
-    assert "robot0_eye_in_hand" in obs.images
-    assert obs.images["agentview"].shape == (240, 320, 3)
-    
-    state = adapter.get_state()
-    assert "eef_pos" in state
-    assert "is_success" in state
+    try:
+        obs = adapter.reset(config.task, seed=42)
+
+        assert "agentview" in obs.images
+        assert "robot0_eye_in_hand" in obs.images
+        assert obs.images["agentview"].shape == (240, 320, 3)
+
+        state = adapter.get_state()
+        assert "eef_pos" in state
+        assert "is_success" in state
+
+        step = adapter.step(RobosuiteAction((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0)))
+        assert step.observation.step_id == 1
+    finally:
+        adapter.close()
+
+
+def test_robosuite_camera_randomization_sampling_is_seeded():
+    cfg = {
+        "agentview": {
+            "pos_range": [[0.9, 1.1], [-0.1, 0.1], [1.4, 1.6]],
+            "fovy_range": [40.0, 50.0],
+        }
+    }
+
+    first = sample_camera_randomization(cfg, seed=5)
+    second = sample_camera_randomization(cfg, seed=5)
+    third = sample_camera_randomization(cfg, seed=6)
+
+    assert first == second
+    assert first != third
+    assert len(first["agentview"]["pos"]) == 3
+    assert 40.0 <= first["agentview"]["fovy"] <= 50.0
 
 
 def test_robosuite_controller_translation():

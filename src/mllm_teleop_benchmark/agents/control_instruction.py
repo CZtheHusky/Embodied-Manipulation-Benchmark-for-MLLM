@@ -24,6 +24,7 @@ class ControlInstructionBuilder:
         visible = bool(interface.get("visible_metadata", True))
         mapping_complexity = bool(interface.get("mapping_complexity_present", False))
         frame_complexity = bool(interface.get("frame_complexity_present", False))
+        mapping_summary = _mapping_summary(interface.get("mapping"))
 
         text_lines = [
             f"You control the robot with {len(channels)} virtual joystick channel(s).",
@@ -40,13 +41,19 @@ class ControlInstructionBuilder:
 
         if dimensions and visible:
             text_lines.append(f"The active controllable dimensions are: {', '.join(str(v) for v in dimensions)}.")
-            text_lines.append(
-                "If mapping or frame complexity is present, the exact joystick-to-physical-motion relationship is not disclosed."
-            )
             panel_lines.append(f"active dims: {', '.join(str(v) for v in dimensions)}")
+            if mapping_summary:
+                text_lines.append(f"The visible joystick mapping is: {mapping_summary}.")
+                panel_lines.append(f"mapping: {mapping_summary}")
+            else:
+                text_lines.append("The exact joystick-to-dimension mapping is not disclosed.")
+                panel_lines.append("mapping: hidden")
+            if frame_complexity:
+                text_lines.append("Frame complexity is present, so the exact physical-frame transform is not disclosed.")
         else:
             text_lines.append("The joystick-to-dimension mapping is not visible.")
             panel_lines.append("active dims: hidden")
+            panel_lines.append("mapping: hidden")
 
         if gripper != "none":
             text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick.")
@@ -55,3 +62,21 @@ class ControlInstructionBuilder:
             panel_lines.append("gripper: none")
 
         return ControlInstruction(text=" ".join(text_lines), panel_lines=tuple(panel_lines))
+
+
+def _mapping_summary(mapping: object) -> str:
+    if not isinstance(mapping, dict):
+        return ""
+    channels = mapping.get("channels")
+    signs = mapping.get("signs", {})
+    if not isinstance(channels, dict):
+        return ""
+    if not isinstance(signs, dict):
+        signs = {}
+    parts: list[str] = []
+    for channel in sorted(channels):
+        dim = str(channels[channel])
+        sign = float(signs.get(channel, 1.0))
+        target = f"-{dim}" if sign < 0.0 and dim != "gripper" else dim
+        parts.append(f"{channel} -> {target}")
+    return "; ".join(parts)

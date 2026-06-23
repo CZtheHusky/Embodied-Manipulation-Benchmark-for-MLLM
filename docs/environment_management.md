@@ -2,7 +2,7 @@
 
 This project uses conda as the only supported environment manager.
 
-The repository is shared by multiple backend-specific conda environments. Each environment installs the same source tree in editable mode with `-e .`, so code changes are immediately visible after switching environments.
+The repository is shared by multiple backend-specific conda environments. The root env installs this source tree with `-e .`; backend env files under `envs/` install it with `-e ..`, so code changes are immediately visible after switching environments.
 
 ## Policy
 
@@ -49,6 +49,24 @@ python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
 ```
 
 The robosuite environment pins `robosuite==1.4.1`. LIBERO should either reuse this environment only after compatibility is confirmed or receive its own backend environment file.
+
+DMControl:
+
+```bash
+conda env create -f envs/environment-dmcontrol.yml
+conda activate mllm-teleop-dmcontrol
+python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
+```
+
+CALVIN:
+
+```bash
+conda env create -f envs/environment-calvin.yml
+conda activate mllm-teleop-calvin
+python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
+```
+
+CALVIN is installed from the pinned upstream GitHub commit in editable mode because `calvin_env` is not published on PyPI and its runtime Hydra configs live outside the Python package wheel.
 
 ## Editable Install Check
 

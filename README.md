@@ -24,6 +24,8 @@ Simulator backends use separate conda environments to avoid dependency conflicts
 conda env create -f envs/environment-gymnasium.yml
 conda env create -f envs/environment-maniskill.yml
 conda env create -f envs/environment-robosuite.yml
+conda env create -f envs/environment-dmcontrol.yml
+conda env create -f envs/environment-calvin.yml
 ```
 
 More details are in `docs/environment_management.md`.
@@ -73,7 +75,7 @@ Keyboard controls:
 - `R`: reset
 - `Esc` or `P`: quit
 
-Reacher exposes two virtual joystick channels to both humans and MLLM policies. The public control panel and MLLM prompt describe the active controllable dimensions and whether mapping/frame complexity is present, but do not reveal exact hidden control-complexity details.
+Reacher exposes two virtual joystick channels to both humans and MLLM policies. The public control panel and MLLM prompt disclose fixed visible mappings, and only hide exact details when mapping/frame complexity is enabled.
 
 Config values can be overridden from the CLI for both benchmark and human play:
 
@@ -117,6 +119,32 @@ conda activate mllm-teleop-robosuite
 python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
 ```
 
+The adapter sets `NUMBA_DISABLE_JIT=1` by default before importing robosuite to avoid the known numba cache failure in the pinned conda env.
+
+## Run DMControl
+
+DeepMind Control Suite uses its own conda environment:
+
+```bash
+conda env create -f envs/environment-dmcontrol.yml
+conda activate mllm-teleop-dmcontrol
+python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
+```
+
+The initial config uses `manipulator/bring_ball` through `dm_control.suite.load`. More details are in `docs/dmcontrol_integration.md`.
+
+## Run CALVIN
+
+CALVIN uses a pinned editable GitHub checkout because its Hydra configs are required at runtime:
+
+```bash
+conda env create -f envs/environment-calvin.yml
+conda activate mllm-teleop-calvin
+python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
+```
+
+The initial config wraps `PlayTableSimEnv`, extracts `static` and `gripper` RGB observations, and runs a random-policy smoke episode. More details are in `docs/calvin_integration.md`.
+
 ## Package Layout
 
 ```text
@@ -137,6 +165,10 @@ src/mllm_teleop_benchmark/
                optional ManiSkill adapter and RGB observation provider
   sim/robosuite_adapter.py
                optional robosuite adapter
+  sim/dmcontrol/
+               optional DeepMind Control Suite adapter
+  sim/calvin/
+               optional CALVIN adapter
   tasks/        task interface and reach-target task
   ui/           human keyboard/Pygame evaluation interface
 ```

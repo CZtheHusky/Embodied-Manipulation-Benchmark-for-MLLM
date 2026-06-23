@@ -4,7 +4,6 @@ import multiprocessing as mp
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
@@ -235,7 +234,7 @@ class DirectBenchmarkPlayer:
             success=success,
             steps=len(history),
             metrics=final_metrics,
-            log_dir=str(Path(self.config.logging.output_dir) / "episode_0000"),
+            log_dir=str(logger.episode_dir),
         )
         logger.finish(result)
         return result

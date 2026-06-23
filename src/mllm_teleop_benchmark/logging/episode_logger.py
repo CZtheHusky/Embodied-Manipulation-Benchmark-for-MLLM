@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +15,13 @@ from mllm_teleop_benchmark.utils.serialization import to_jsonable
 
 
 class EpisodeLogger:
-    def __init__(self, config: BenchmarkConfig, episode_id: int, seed: int) -> None:
+    def __init__(self, config: BenchmarkConfig, episode_id: int, seed: int, run_id: str | None = None) -> None:
         self.config = config
         self.episode_id = episode_id
         self.seed = seed
-        self.episode_dir = Path(config.logging.output_dir) / f"episode_{episode_id:04d}"
+        self.run_id = run_id or make_run_id()
+        self.run_dir = Path(config.logging.output_dir) / self.run_id
+        self.episode_dir = self.run_dir / f"episode_{episode_id:04d}"
         self.trajectory = TrajectoryLogger(self.episode_dir / "trajectory.jsonl")
         self.metadata: dict[str, Any] = {}
 
@@ -36,6 +40,7 @@ class EpisodeLogger:
         if self.config.logging.save_trajectory:
             self.trajectory.save()
         summary = {
+            "run_id": self.run_id,
             "episode_id": self.episode_id,
             "seed": self.seed,
             "success": result.success,
@@ -45,3 +50,8 @@ class EpisodeLogger:
         }
         with (self.episode_dir / "summary.json").open("w", encoding="utf-8") as handle:
             json.dump(to_jsonable(summary), handle, indent=2, sort_keys=True)
+
+
+def make_run_id(created_at: datetime | None = None) -> str:
+    timestamp = created_at or datetime.now().astimezone()
+    return f"{timestamp.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"

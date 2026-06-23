@@ -4,12 +4,13 @@ import os
 from pathlib import Path
 from typing import Any
 
+from mllm_teleop_benchmark.action.parser import ActionParseError, ActionParser
+from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
-from mllm_teleop_benchmark.action.parser import ActionParser
 from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.core.registry import build_action_space, build_camera_manager, build_controller, build_mapping, build_observation_provider, build_sim, build_task, control_interface_metadata
-from mllm_teleop_benchmark.core.types import EpisodeResult, StepTransition
+from mllm_teleop_benchmark.core.types import EpisodeResult, StepTransition, ValidationResult
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
 from mllm_teleop_benchmark.ui.keyboard import KeyboardJoystickMapper
@@ -46,7 +47,7 @@ class PygameBenchmarkApp:
         parser = ActionParser()
         validator = ActionValidator(action_space)
         controller = build_controller(self.config, build_mapping(self.config, seed), seed)
-        key_mapper = KeyboardJoystickMapper(tuple(action_space.channels))
+        key_mapper = KeyboardJoystickMapper(tuple(action_space.channels), gripper_channel=self._gripper_channel())
         logger = EpisodeLogger(self.config, 0, seed)
         metrics = MetricsRecorder()
         history: list[StepTransition] = []
@@ -81,8 +82,6 @@ class PygameBenchmarkApp:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
-                    elif event.key == pygame.K_SPACE:
-                        key_mapper.toggle_gripper()
                     elif event.key == pygame.K_r:
                         task.reset(sim, seed)
                         observation = observation_provider.get_observation(sim)
@@ -102,6 +101,7 @@ class PygameBenchmarkApp:
                             observation_provider=observation_provider,
                             parser=parser,
                             validator=validator,
+                            action_space=action_space,
                             controller=controller,
                             logger=logger,
                             metrics=metrics,
@@ -122,7 +122,7 @@ class PygameBenchmarkApp:
             success=success,
             steps=len(history),
             metrics=metrics.finalize(success, task.metrics(sim.get_state())),
-            log_dir=str(Path(self.config.logging.output_dir) / "episode_0000"),
+            log_dir=str(logger.episode_dir),
         )
         logger.finish(result)
         if hasattr(sim, "close"):
@@ -261,6 +261,7 @@ class PygameBenchmarkApp:
         observation_provider: Any,
         parser: Any,
         validator: Any,
+        action_space: Any,
         controller: Any,
         logger: Any,
         metrics: Any,
@@ -270,8 +271,7 @@ class PygameBenchmarkApp:
         success: bool,
         running: bool,
     ) -> tuple[Any, bool, bool]:
-        parsed_action = parser.parse(raw_action)
-        validation = validator.validate(parsed_action)
+        parsed_action, validation = self._parse_and_validate(parser, validator, action_space, raw_action)
         sim_action = controller.translate(parsed_action)
         step_result = sim.step(sim_action)
         next_observation = observation_provider.get_observation(sim)
@@ -295,3 +295,22 @@ class PygameBenchmarkApp:
         if transition.terminated or transition.truncated:
             running = False
         return next_observation, success, running
+
+    def _parse_and_validate(self, parser: ActionParser, validator: ActionValidator, action_space: Any, raw_action: dict[str, float]) -> tuple[JoystickAction, ValidationResult]:
+        try:
+            parsed_action = parser.parse(raw_action)
+        except ActionParseError as exc:
+            return self._noop_joystick_action(action_space), ValidationResult(False, (str(exc),))
+        validation = validator.validate(parsed_action)
+        if validation.is_valid:
+            return parsed_action, validation
+        return self._noop_joystick_action(action_space), validation
+
+    def _noop_joystick_action(self, action_space: Any) -> JoystickAction:
+        return JoystickAction({name: 0.0 for name in action_space.channels})
+
+    def _gripper_channel(self) -> str | None:
+        if self.config.control_interface.gripper == "none":
+            return None
+        channels = self.config.control_interface.channel_names()
+        return channels[-1] if channels else None

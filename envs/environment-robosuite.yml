@@ -12,4 +12,4 @@ dependencies:
   - pip:
       - robosuite==1.4.1
       - pygame>=2.5
-      - -e .
+      - -e ..

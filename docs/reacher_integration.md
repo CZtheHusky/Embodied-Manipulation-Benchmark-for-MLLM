@@ -23,7 +23,7 @@ The Reacher environment is implemented locally in this repository and registered
 
 The benchmark-facing `control_interface` exposes exactly two virtual joysticks for planar motion.
 
-The human panel and MLLM prompt describe the same public interface: control mode, joystick count, scale summary, active dimensions when configured as visible, and whether mapping/frame complexity is present. They do not reveal the exact joystick-to-axis assignment, sign assignment, or frame rotation when those control-complexity mechanisms are enabled.
+The human panel and MLLM prompt describe the same public interface: control mode, joystick count, scale summary, active dimensions when configured as visible, exact fixed visible mapping, and whether mapping/frame complexity is present. They do not reveal exact permutations, sign assignments, or frame rotation parameters when those control-complexity mechanisms are enabled.
 
 No gripper channel is exposed for Reacher because the environment has no gripper. This keeps human play and MLLM play aligned with the actual controllable dimensions.
 

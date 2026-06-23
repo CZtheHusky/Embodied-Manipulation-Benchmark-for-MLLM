@@ -33,6 +33,10 @@ maniskill = [
 robosuite = [
   "robosuite==1.4.1",
 ]
+dmcontrol = [
+  "dm_control>=1.0",
+  "mujoco>=3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

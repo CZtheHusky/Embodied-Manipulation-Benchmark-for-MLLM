@@ -18,8 +18,8 @@ Future benchmark variants should extend the same interfaces to support randomize
 
 Mapping confusion only applies to motion dimensions. If a gripper channel is present, it is always the final virtual joystick and is not permuted or sign-flipped.
 
-Human play panels and MLLM prompts must expose the same public control-interface metadata. For mapping permutations, sign flips, frame rotations, or similar control-complexity mechanisms, the visible interface only states whether such complexity is present. It must not reveal the exact permutation, sign assignment, rotation type, rotation matrix, or sampled parameters. Full internal values may still be written to debug/log artifacts for offline diagnosis.
+Human play panels and MLLM prompts must expose the same public control-interface metadata. Fixed mappings marked visible disclose the exact joystick-to-dimension mapping as the low-complexity baseline. For mapping permutations, sign flips, frame rotations, or similar control-complexity mechanisms, the visible interface only states whether such complexity is present. It must not reveal the exact permutation, sign assignment, rotation type, rotation matrix, or sampled parameters. Full internal values may still be written to debug/log artifacts for offline diagnosis.
 
-Control-frame rotation is defined at the benchmark control layer rather than inside a specific simulator. Planar tasks use 2D rotation over `dx/dy`, sampled uniformly on SO(2) for random rotation. Spatial tasks use 3D rotation over `dx/dy/dz`, sampled uniformly on SO(3) for random rotation.
+Control-frame rotation is defined at the benchmark control layer rather than inside a specific simulator. Planar tasks use 2D rotation over `dx/dy`, sampled uniformly on SO(2) for random rotation. Spatial tasks use 3D rotation over `dx/dy/dz` and small delta-rotation vectors, sampled uniformly on SO(3) for random rotation.
 
 This benchmark does not try to solve high-frequency low-level servo control training. It evaluates visual spatial understanding, action grounding, control-interface understanding, and closed-loop decision making at the virtual teleoperation layer.

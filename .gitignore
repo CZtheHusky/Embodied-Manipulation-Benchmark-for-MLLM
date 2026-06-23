@@ -156,6 +156,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+envs/condaenv.*.requirements.txt
 
 # Spyder project settings
 .spyderproject

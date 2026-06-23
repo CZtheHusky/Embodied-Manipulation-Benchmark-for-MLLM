@@ -19,11 +19,11 @@ The action boundary is split into three layers:
 
 `JoystickMapping` and `ControlFrameTransform` are separate dependencies of the controller. Mapping is applied first, from virtual joystick channels to control-frame dimensions. Frame transform is applied second, from control-frame deltas to simulator/controller-frame deltas. This supports future joystick permutation/sign confusion, coordinate-frame rotation, and combinations of both without changing task logic.
 
-Frame transforms are cross-environment control-layer components. `rotation_2d` rotates `dx/dy` around z; `rotation_3d` rotates `dx/dy/dz` with roll/pitch/yaw. `random_rotation_2d` samples uniformly on SO(2), and `random_rotation_3d` samples uniformly on SO(3) by default. Random variants use the episode seed so benchmark and human-play behavior is reproducible.
+Frame transforms are cross-environment control-layer components. `rotation_2d` rotates `dx/dy` around z; `rotation_3d` rotates `dx/dy/dz` and small delta-rotation vectors with roll/pitch/yaw. `random_rotation_2d` samples uniformly on SO(2), and `random_rotation_3d` samples uniformly on SO(3) by default. Random variants use the episode seed so benchmark and human-play behavior is reproducible.
 
 Agents consume `AgentContext`, which contains observation, task instruction, action schema, visible metadata, and recent history. `MLLMPolicy` is currently a placeholder; future API-backed policies should use `PromptBuilder` and keep prompt/action schema versions in logs.
 
-`ControlInstructionBuilder` is the shared source for MLLM control instructions and human-play UI panel lines. Human evaluators should see the same control mode, joystick count, scale summary, and complexity-presence flags that an MLLM would receive at episode start. Exact permutation, sign flips, and frame rotation parameters are not disclosed through this visible metadata.
+`ControlInstructionBuilder` is the shared source for MLLM control instructions and human-play UI panel lines. Human evaluators should see the same control mode, joystick count, scale summary, visible fixed mapping, and complexity-presence flags that an MLLM would receive at episode start. Exact permutation, sign flips, and frame rotation parameters are not disclosed for hidden or complex control settings.
 
 Control-interface mapping strategies only confuse motion dimensions (`dx`, `dy`, `dz`, `droll`, `dpitch`, `dyaw`). If a gripper exists, it is always the final virtual joystick and is never permuted or sign-flipped.
 
@@ -33,6 +33,8 @@ Episode logging writes:
 - `summary.json`
 - `trajectory.jsonl`
 
+Benchmark runs are grouped under `logging.output_dir/<run_id>/episode_XXXX/` so repeated runs do not overwrite earlier artifacts.
+
 The dummy simulator stores a small kinematic state and renders metadata dictionaries instead of image arrays. Real image and video persistence can be added later through `ObservationProvider` and `EpisodeLogger`.
 
 ## Environment Integration Constraints
@@ -40,7 +42,7 @@ The dummy simulator stores a small kinematic state and renders metadata dictiona
 To ensure the benchmark remains stable and reproducible while allowing for necessary adaptations, environment integrations should follow these principles:
 
 1. **Prefer Native APIs but Allow Forks**: Prioritize interacting with environments through their public APIs (e.g., `make`, `reset`, `step`, `render`). While zero-intrusion is the ideal for maintainability, controlled forks or internal modifications are permitted when required to expose necessary state, metrics, or randomization hooks that are not accessible via standard APIs.
-2. **Version Pinning**: Simulation dependencies should be pinned in their backend-specific conda env files and matching optional dependency metadata. They must not be added to the root core environment unless they are genuinely simulator-independent.
+2. **Version Pinning**: Simulation dependencies should be pinned in their backend-specific conda env files and matching optional dependency metadata when the backend can be installed as a normal Python dependency. They must not be added to the root core environment unless they are genuinely simulator-independent. CALVIN is an exception: it uses the backend env file because upstream `calvin_env` must be installed as an editable Git checkout for runtime Hydra configs.
 3. **Decoupled Control Pipeline**: All control complexities—including virtual joystick mapping, sign flips, and coordinate-frame transforms—MUST be computed within the benchmark's controller layer BEFORE calling the simulator's step function. The simulator receives only the final, normalized action arrays.
 4. **API-Driven Visual Randomization**: Modifications to visual parameters such as camera FOV, position, and rotation must be performed programmatically via the environment's runtime API (e.g., `CameraModder` in robosuite or direct MuJoCo model access) during the `reset` phase. Static asset files (like XML or URDF) should not be mutated to achieve randomization.
 
@@ -64,4 +66,16 @@ The ManiSkill path uses `ManiSkillSimAdapter`, `ManiSkillObservationProvider`, `
 
 robosuite is an optional backend selected with `simulator.type: robosuite` and installed through the `mllm-teleop-robosuite` conda environment.
 
-The robosuite path uses `RobosuiteSimAdapter`, `RobosuiteOSCController`, and `RobosuiteLiftTask`. Control complexity remains in the benchmark layer before a native robosuite OSC action is emitted. Camera changes are applied during reset through robosuite's runtime camera utilities.
+The robosuite path uses `RobosuiteSimAdapter`, `RobosuiteOSCController`, and `RobosuiteLiftTask`. Control complexity remains in the benchmark layer before a native robosuite OSC action is emitted. Camera changes are sampled from the episode seed and applied during reset through robosuite's runtime camera utilities.
+
+## DMControl Environments
+
+DeepMind Control Suite is an optional backend selected with `simulator.type: dmcontrol` and installed through the `mllm-teleop-dmcontrol` conda environment.
+
+The DMControl path uses `DMControlSimAdapter`, `DMControlObservationProvider`, `DMControlController`, and `DMControlTask`. Actions are validated and clipped against `env.action_spec()` before stepping. Explicit named fixed-camera pose/FOV edits are applied through MuJoCo model fields; the shared free-camera orbit randomization is not claimed as supported for DMControl.
+
+## CALVIN Environments
+
+CALVIN is an optional backend selected with `simulator.type: calvin` and installed through the `mllm-teleop-calvin` conda environment.
+
+The CALVIN path uses `CalvinSimAdapter`, `CalvinObservationProvider`, `CalvinDeltaEEFController`, and `CalvinTask`. The controller maps benchmark joystick commands into CALVIN's 7-value delta end-effector action. `calvin_randomized` camera sampling is episode-level and patches CALVIN's PyBullet camera internals on a best-effort basis.
