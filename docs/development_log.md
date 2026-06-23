@@ -119,22 +119,37 @@ This file records implementation decisions that matter for future maintenance.
 - Added gripper keyboard toggling for the final virtual joystick through `G` or `Space`.
 - Updated ManiSkill play docs and the ManiSkill conda env to include Pygame.
 
-## 2026-05-13: Robosuite integration
+## 2026-05-14: CALVIN benchmark integration
 
-- Selected `robosuite` as the next simulation environment due to its standardized 3D tasks and MuJoCo backend.
-- Updated `docs/architecture.md` to formally define integration constraints:
-    - Prefer native APIs but allow forking if necessary.
-    - Strict version pinning for all simulation dependencies.
-    - Decoupled control pipeline (confusions/transforms calculated before simulator step).
-    - API-driven visual randomization (e.g., `CameraModder`).
-- Pinned `robosuite==1.4.1` in the robosuite backend conda env and optional dependency metadata, while keeping the root core environment simulator-free.
-- Implemented `RobosuiteSimAdapter` wrapping `suite.make()` with support for off-screen rendering and runtime camera randomization.
-- Implemented `RobosuiteOSCController` mapping benchmark actions to robosuite's 7-DoF `OSC_POSE` controller.
-- Implemented `RobosuiteLiftTask` as the first standardized 3D manipulation task.
-- Added `configs/robosuite_lift.yaml` for evaluated random policy on the Lift task.
-- Verified with `tests/test_robosuite_integration.py` and successfully ran a sample benchmark episode.
+- Added CALVIN as an optional simulator backend using `calvin-env`.
+- Implemented `CalvinSimAdapter` wrapping `PlayTableSimEnv`.
+- Implemented `CalvinDeltaEEFController` mapping virtual joysticks to CALVIN's 7-DoF delta EEF action space.
+- Implemented `CalvinObservationProvider` for `static` and `gripper` camera extraction.
+- Implemented `CalvinTask` for language-conditioned task success tracking.
+- Added `configs/calvin_delta_eef.yaml`.
+- Added `direct_calvin` multi-process human play UI worker.
+- Added `envs/environment-calvin.yml` for dependency management.
+- Verified with `tests/test_calvin_integration.py` (mocked sim).
 
-## Documentation rule
+## 2026-05-14: CALVIN camera randomization support
+
+- Added `RandomizedCalvinCameraManager` in `camera.py` for episode-level `position` and `look_at` sampling.
+- Updated `CalvinSimAdapter` to apply sampled PyBullet view matrices during `reset()`.
+- Updated `CalvinObservationProvider` to pass sampled camera parameters from the manager to the adapter.
+- Updated `configs/calvin_delta_eef.yaml` to enable `calvin_randomized` by default for the `static` camera.
+- Verified deterministic sampling with new unit tests in `test_calvin_integration.py`.
+
+## 2026-06-23: CALVIN real-environment smoke validation
+
+- Confirmed `calvin-env` is not a PyPI package. The installable source is `mees/calvin_env`, verified at commit `797142c588c21e76717268b7b430958dbd13bf48`, package version `0.0.1`.
+- Updated `envs/environment-calvin.yml` to install `calvin_env` as editable VCS source and this repository as `-e ..`.
+- Created/updated the local `mllm-teleop-calvin` conda environment and verified `calvin_env` imports from `envs/src/calvin-env`.
+- Replaced the unconditional CALVIN pytest skip with dependency detection. When `calvin_env` is installed, the test now constructs real `PlayTableSimEnv`, runs reset, extracts `static` and `gripper` RGB images, and steps a 7-value action.
+- Added old Gym API compatibility for CALVIN reset/step/render and normalized the `env_id: null` config-loader string case inside the CALVIN adapter.
+- Changed CALVIN gripper mapping from continuous interpolation to discrete open/close, because the real robot implementation asserts gripper action is exactly `-1` or `1`.
+- Verification: `compileall` passed; `PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-calvin/bin/python -m pytest -q tests/test_calvin_integration.py -rs` passed with 4 tests; `PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-calvin/bin/python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml` completed one 100-step episode with `success_rate: 0.0`.
+- Remaining risks: CALVIN emits Hydra/gym deprecation warnings, camera randomization is still a best-effort internal patch, and success metrics need a task oracle for real language-task evaluation beyond the smoke run.
+
 
 - public commands or setup: update `README.md`
 - architecture or component boundaries: update `docs/architecture.md`

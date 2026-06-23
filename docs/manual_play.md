@@ -135,6 +135,22 @@ python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --backe
 
 This path tries to run simulator rendering and Pygame in one process. It is useful for debugging architecture but is less robust for desktop play on machines with GL context conflicts.
 
+## CALVIN
+
+Run:
+
+```bash
+conda activate mllm-teleop-calvin
+python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml
+```
+
+CALVIN uses the `direct_calvin` backend. It exposes 6 motion joysticks and a gripper joystick:
+- `W/S`, `A/D`, `Q/E`: Translation (`dx, dy, dz`)
+- `J/L`, `K/I`, `U/O`: Rotation (`droll, dpitch, dyaw`)
+- `G` or `Space`: Gripper toggle
+
+The CALVIN backend has been verified with real `PlayTableSimEnv` reset and step in the `mllm-teleop-calvin` env. Manual play still depends on local display/input availability and was not exercised in the automated smoke run.
+
 ## Logging
 
 The default direct backends write the normal episode files under `logging.output_dir`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.

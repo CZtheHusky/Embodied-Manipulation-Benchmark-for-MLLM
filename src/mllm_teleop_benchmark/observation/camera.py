@@ -152,3 +152,66 @@ class RandomizedManiSkillCameraManager(CameraManager):
         if not isinstance(value, list | tuple) or len(value) != 2:
             raise ValueError(f"Camera position range must be [low, high], got {value!r}")
         return self._rng.uniform(float(value[0]), float(value[1]))
+
+
+class RandomizedCalvinCameraManager(CameraManager):
+    """Episode-level CALVIN camera sampler.
+
+    Camera positions and look-at targets are sampled once per episode.
+    """
+
+    def __init__(self, config: CameraConfig) -> None:
+        if config.manager != "calvin_randomized":
+            raise ValueError(f"Unsupported camera manager: {config.manager}")
+        self.config = config
+        self._rng = random.Random()
+        self._active = config.cameras
+
+    def reset(self, seed: int) -> None:
+        self._rng.seed(seed)
+        active: list[CameraSpec] = []
+        for camera in self.config.cameras:
+            params = dict(camera.params)
+            ranges = params.pop("position_ranges", None)
+            look_at_ranges = params.pop("look_at_ranges", None)
+            pose_list = list(camera.pose) if camera.pose else []
+
+            if ranges is not None:
+                position = tuple(self._uniform_range(value) for value in ranges)
+                params["position"] = position
+
+            if look_at_ranges is not None:
+                look_at = tuple(self._uniform_range(value) for value in look_at_ranges)
+                params["look_at"] = look_at
+
+            active.append(
+                CameraSpec(
+                    name=camera.name,
+                    type=camera.type,
+                    width=camera.width,
+                    height=camera.height,
+                    pose=tuple(pose_list),
+                    params=params,
+                )
+            )
+        self._active = tuple(active)
+
+    def get_active_cameras(self) -> tuple[CameraSpec, ...]:
+        return self._active
+
+    def metadata(self) -> dict[str, object]:
+        if not self.config.visible_metadata:
+            return {"manager": self.config.manager, "visible_metadata": False}
+        return {
+            "manager": self.config.manager,
+            "visible_metadata": True,
+            "cameras": [
+                {"name": camera.name, "type": camera.type, "width": camera.width, "height": camera.height, "pose": camera.pose, "params": camera.params}
+                for camera in self._active
+            ],
+        }
+
+    def _uniform_range(self, value: object) -> float:
+        if not isinstance(value, list | tuple) or len(value) != 2:
+            raise ValueError(f"Camera range must be [low, high], got {value!r}")
+        return self._rng.uniform(float(value[0]), float(value[1]))

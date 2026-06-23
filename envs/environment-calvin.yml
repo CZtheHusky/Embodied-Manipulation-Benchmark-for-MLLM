@@ -1,0 +1,15 @@
+name: mllm-teleop-calvin
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.10
+  - numpy>=1.24
+  - pyyaml>=6.0
+  - imageio>=2.0
+  - pytest>=8.0
+  - pygame>=2.5
+  - pip
+  - pip:
+      - "-e git+https://github.com/mees/calvin_env.git@797142c588c21e76717268b7b430958dbd13bf48#egg=calvin_env"
+      - -e ..

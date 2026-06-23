@@ -13,7 +13,7 @@ from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionContro
 from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
-from mllm_teleop_benchmark.observation.camera import CameraManager, FixedCameraManager, RandomizedManiSkillCameraManager, RandomizedMujocoCameraManager
+from mllm_teleop_benchmark.observation.camera import CameraManager, FixedCameraManager, RandomizedCalvinCameraManager, RandomizedManiSkillCameraManager, RandomizedMujocoCameraManager
 from mllm_teleop_benchmark.observation.provider import DefaultObservationProvider, ObservationProvider
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.sim.dummy import DummySimAdapter
@@ -46,6 +46,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
 
         return RobosuiteSimAdapter(config.simulator)
+    if config.simulator.type == "calvin":
+        from mllm_teleop_benchmark.sim.calvin.adapter import CalvinSimAdapter
+
+        return CalvinSimAdapter(config.simulator)
     raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
 
 
@@ -64,6 +68,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
 
         return RobosuiteLiftTask(config.task)
+    if config.task.type == "calvin_generic":
+        from mllm_teleop_benchmark.tasks.calvin_task import CalvinTask
+
+        return CalvinTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -84,6 +92,8 @@ def build_camera_manager(config: CameraConfig, seed: int) -> CameraManager:
         manager = RandomizedMujocoCameraManager(config)
     elif config.manager == "maniskill_randomized":
         manager = RandomizedManiSkillCameraManager(config)
+    elif config.manager == "calvin_randomized":
+        manager = RandomizedCalvinCameraManager(config)
     else:
         raise ValueError(f"Unsupported camera manager: {config.manager}")
     manager.reset(seed)
@@ -99,6 +109,10 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
 
         return ManiSkillObservationProvider(camera_manager)
+    if config.simulator.type == "calvin":
+        from mllm_teleop_benchmark.sim.calvin.observation import CalvinObservationProvider
+
+        return CalvinObservationProvider(camera_manager)
     return DefaultObservationProvider(camera_manager)
 
 
@@ -137,4 +151,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
 
         return RobosuiteOSCController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "calvin_delta_eef":
+        from mllm_teleop_benchmark.control.calvin_controller import CalvinDeltaEEFController
+
+        return CalvinDeltaEEFController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

@@ -48,6 +48,23 @@ conda activate mllm-teleop-robosuite
 python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
 ```
 
+CALVIN:
+
+```bash
+conda env create -f envs/environment-calvin.yml
+conda activate mllm-teleop-calvin
+python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
+python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml
+```
+
+`calvin_env` is not available as `calvin-env` on PyPI. The CALVIN env file installs the real source from:
+
+```text
+git+https://github.com/mees/calvin_env.git@797142c588c21e76717268b7b430958dbd13bf48
+```
+
+It is installed editable so CALVIN's repository-level `conf/` Hydra configs are present at runtime. Conda/pip may create an editable source checkout under `envs/src/calvin-env` when the env file is run from this repository.
+
 The robosuite environment pins `robosuite==1.4.1`. LIBERO should either reuse this environment only after compatibility is confirmed or receive its own backend environment file.
 
 ## Editable Install Check
