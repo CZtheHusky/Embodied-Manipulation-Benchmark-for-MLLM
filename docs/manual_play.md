@@ -114,6 +114,24 @@ The keyboard path still emits the same full joystick schema as an MLLM policy. I
 
 ManiSkill camera randomization remains episode-level only. The direct player displays the first active RGB camera returned by the configured observation provider and falls back to `env.render()` only if the RGB observation does not contain an image.
 
+## DMControl
+
+Run:
+
+```bash
+conda activate mllm-teleop-dmcontrol
+python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
+```
+
+The default config uses:
+
+```yaml
+ui:
+  backend: direct_dmcontrol
+```
+
+This follows the same two-process architecture as the Gymnasium and ManiSkill backends to avoid OpenGL context conflicts. DMControl environments are loaded via `suite.load` and actions are mapped to the native physics control array.
+
 ## Known GL Failure Modes
 
 Single-process Pygame + MuJoCo rendering can fail on X11 with:

@@ -46,6 +46,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
 
         return RobosuiteSimAdapter(config.simulator)
+    if config.simulator.type == "dmcontrol":
+        from mllm_teleop_benchmark.sim.dmcontrol.adapter import DMControlSimAdapter
+
+        return DMControlSimAdapter(config.simulator)
     raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
 
 
@@ -64,6 +68,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
 
         return RobosuiteLiftTask(config.task)
+    if config.task.type == "dmcontrol_generic":
+        from mllm_teleop_benchmark.tasks.dmcontrol_task import DMControlTask
+
+        return DMControlTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -99,6 +107,10 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
 
         return ManiSkillObservationProvider(camera_manager)
+    if config.simulator.type == "dmcontrol":
+        from mllm_teleop_benchmark.sim.dmcontrol.observation import DMControlObservationProvider
+
+        return DMControlObservationProvider(camera_manager)
     return DefaultObservationProvider(camera_manager)
 
 
@@ -137,4 +149,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
 
         return RobosuiteOSCController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "dmcontrol":
+        from mllm_teleop_benchmark.control.dmcontrol_controller import DMControlController
+
+        return DMControlController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

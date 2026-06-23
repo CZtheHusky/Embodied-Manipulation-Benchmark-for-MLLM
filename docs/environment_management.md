@@ -48,6 +48,14 @@ conda activate mllm-teleop-robosuite
 python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
 ```
 
+DMControl:
+
+```bash
+conda env create -f envs/environment-dmcontrol.yml
+conda activate mllm-teleop-dmcontrol
+python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
+```
+
 The robosuite environment pins `robosuite==1.4.1`. LIBERO should either reuse this environment only after compatibility is confirmed or receive its own backend environment file.
 
 ## Editable Install Check

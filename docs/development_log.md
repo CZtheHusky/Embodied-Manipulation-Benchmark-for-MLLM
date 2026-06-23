@@ -134,6 +134,27 @@ This file records implementation decisions that matter for future maintenance.
 - Added `configs/robosuite_lift.yaml` for evaluated random policy on the Lift task.
 - Verified with `tests/test_robosuite_integration.py` and successfully ran a sample benchmark episode.
 
+## 2026-05-14: DMControl integration
+
+- Integrated DeepMind Control Suite (DMControl) as a new optional backend.
+- Added `DMControlSimAdapter` wrapping `suite.load` for environment lifecycle management.
+- Implemented `DMControlController` for translating benchmark joystick actions into native DMControl control arrays, supporting scales and frame transforms.
+- Added `DMControlObservationProvider` with support for runtime camera randomization via direct `mjModel` modification (`cam_pos`, `cam_quat`), fulfilling the requirement of randomization without modifying XML source.
+- Implemented `DMControlTask` with generic support for reward-based success criteria and metrics.
+- Added `direct_dmcontrol` as a two-process human-play backend to maintain stability and OpenGL compatibility.
+- Added `envs/environment-dmcontrol.yml` for isolated dependency management.
+- Added `configs/dmcontrol_example.yaml` featuring the `manipulator/bring_ball` task.
+- Verified integration with `tests/test_dmcontrol_integration.py` and manual play scripts.
+
+## 2026-06-23: DMControl prototype repair
+
+- Fixed `DMControlTask.is_success` so `success_key: reward` uses `success_threshold` and `reward: None` is not treated as success.
+- Added shared native DMControl action conversion that validates `env.action_spec()` shape, rejects non-finite values, and clips bounded actions. Both `DMControlSimAdapter` and the direct DMControl worker use it.
+- Replaced the DMControl camera randomization stub with explicit named fixed-camera pose/FOV application through `cam_pos`, `cam_quat`, and `cam_fovy`.
+- Documented that shared `mujoco_randomized` free-camera orbit parameters are not currently supported for DMControl and now fail loudly instead of silently passing.
+- Kept `DirectDMControlPlayer` as a GL-isolated worker path, but fixed its render size to use the configured camera spec instead of oversized UI dimensions that can exceed DMControl's offscreen framebuffer.
+- Validation: `PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-dmcontrol/bin/python -m pytest -q tests/test_dmcontrol_integration.py` passed with `6 passed`; `PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-dmcontrol/bin/python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml` completed with success rate `0.0`; a direct worker smoke produced a `(240, 320, 3)` frame and stepped once with an intentionally out-of-bounds action clipped by the worker.
+
 ## Documentation rule
 
 - public commands or setup: update `README.md`

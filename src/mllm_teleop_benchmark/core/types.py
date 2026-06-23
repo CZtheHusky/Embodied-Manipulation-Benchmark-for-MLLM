@@ -51,6 +51,12 @@ class RobosuiteAction(SimulatorAction):
 
 
 @dataclass(frozen=True)
+class DMControlAction(SimulatorAction):
+    values: tuple[float, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class StepResult:
     observation: Observation
     terminated: bool
