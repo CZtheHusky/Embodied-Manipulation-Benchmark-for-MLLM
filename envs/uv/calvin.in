@@ -1,0 +1,6 @@
+imageio>=2.0
+numpy>=1.24
+PyYAML>=6.0
+pytest>=8.0
+pygame>=2.5
+calvin_env @ git+https://github.com/mees/calvin_env.git@797142c588c21e76717268b7b430958dbd13bf48

@@ -4,7 +4,7 @@ This backend integrates the [DeepMind Control Suite (DMControl)](https://github.
 
 ## Verification Status
 
-Verified on 2026-06-23 with `mllm-teleop-dmcontrol`:
+Verified on 2026-06-23 with the `dmcontrol` uv environment:
 
 - `pytest` runs a short real `manipulator/bring_ball` episode and validates action shape/bounds handling.
 - A direct-worker smoke produced an RGB frame and stepped once with clipped out-of-bounds action input.
@@ -62,11 +62,10 @@ controller:
 
 ## Environment Management
 
-Use the dedicated conda environment for DMControl:
+Use the dedicated uv environment for DMControl:
 
 ```bash
-conda env create -f envs/environment-dmcontrol.yml
-conda activate mllm-teleop-dmcontrol
+python3 scripts/manage_uv_env.py create dmcontrol
 ```
 
 ## Running
@@ -74,13 +73,13 @@ conda activate mllm-teleop-dmcontrol
 ### Benchmark
 
 ```bash
-python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
 ```
 
 ### Manual Play
 
 ```bash
-python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
 ```
 
 ## Limitations

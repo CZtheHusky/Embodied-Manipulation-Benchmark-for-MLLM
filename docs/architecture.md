@@ -42,7 +42,7 @@ The dummy simulator stores a small kinematic state and renders metadata dictiona
 To ensure the benchmark remains stable and reproducible while allowing for necessary adaptations, environment integrations should follow these principles:
 
 1. **Prefer Native APIs but Allow Forks**: Prioritize interacting with environments through their public APIs (e.g., `make`, `reset`, `step`, `render`). While zero-intrusion is the ideal for maintainability, controlled forks or internal modifications are permitted when required to expose necessary state, metrics, or randomization hooks that are not accessible via standard APIs.
-2. **Version Pinning**: Simulation dependencies should be pinned in their backend-specific conda env files and matching optional dependency metadata when the backend can be installed as a normal Python dependency. They must not be added to the root core environment unless they are genuinely simulator-independent. CALVIN is an exception: it uses the backend env file because upstream `calvin_env` must be installed as an editable Git checkout for runtime Hydra configs.
+2. **Version Pinning**: Simulation dependencies should be pinned in backend-specific uv lock files and matching optional dependency metadata when the backend can be installed as a normal Python dependency. They must not be added to the root core environment unless they are genuinely simulator-independent. CALVIN is an exception: it uses a pinned local editable checkout because upstream `calvin_env` needs runtime Hydra configs from its source tree.
 3. **Decoupled Control Pipeline**: All control complexities—including virtual joystick mapping, sign flips, and coordinate-frame transforms—MUST be computed within the benchmark's controller layer BEFORE calling the simulator's step function. The simulator receives only the final, normalized action arrays.
 4. **API-Driven Visual Randomization**: Modifications to visual parameters such as camera FOV, position, and rotation must be performed programmatically via the environment's runtime API (e.g., `CameraModder` in robosuite or direct MuJoCo model access) during the `reset` phase. Static asset files (like XML or URDF) should not be mutated to achieve randomization.
 
@@ -64,18 +64,18 @@ The ManiSkill path uses `ManiSkillSimAdapter`, `ManiSkillObservationProvider`, `
 
 ## robosuite Environments
 
-robosuite is an optional backend selected with `simulator.type: robosuite` and installed through the `mllm-teleop-robosuite` conda environment.
+robosuite is an optional backend selected with `simulator.type: robosuite` and installed through the `robosuite` uv environment.
 
 The robosuite path uses `RobosuiteSimAdapter`, `RobosuiteOSCController`, and `RobosuiteLiftTask`. Control complexity remains in the benchmark layer before a native robosuite OSC action is emitted. Camera changes are sampled from the episode seed and applied during reset through robosuite's runtime camera utilities.
 
 ## DMControl Environments
 
-DeepMind Control Suite is an optional backend selected with `simulator.type: dmcontrol` and installed through the `mllm-teleop-dmcontrol` conda environment.
+DeepMind Control Suite is an optional backend selected with `simulator.type: dmcontrol` and installed through the `dmcontrol` uv environment.
 
 The DMControl path uses `DMControlSimAdapter`, `DMControlObservationProvider`, `DMControlController`, and `DMControlTask`. Actions are validated and clipped against `env.action_spec()` before stepping. Explicit named fixed-camera pose/FOV edits are applied through MuJoCo model fields; the shared free-camera orbit randomization is not claimed as supported for DMControl.
 
 ## CALVIN Environments
 
-CALVIN is an optional backend selected with `simulator.type: calvin` and installed through the `mllm-teleop-calvin` conda environment.
+CALVIN is an optional backend selected with `simulator.type: calvin` and installed through the `calvin` uv environment.
 
 The CALVIN path uses `CalvinSimAdapter`, `CalvinObservationProvider`, `CalvinDeltaEEFController`, and `CalvinTask`. The controller maps benchmark joystick commands into CALVIN's 7-value delta end-effector action. `calvin_randomized` camera sampling is episode-level and patches CALVIN's PyBullet camera internals on a best-effort basis.

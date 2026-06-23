@@ -11,5 +11,6 @@ dependencies:
   - pip
   - pip:
       - robosuite==1.4.1
+      - mujoco>=2.3,<3.0
       - pygame>=2.5
       - -e ..

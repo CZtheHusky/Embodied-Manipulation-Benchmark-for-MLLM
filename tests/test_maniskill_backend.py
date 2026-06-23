@@ -12,9 +12,6 @@ from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTr
 from mllm_teleop_benchmark.observation.camera import RandomizedManiSkillCameraManager
 from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
 from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
-from mllm_teleop_benchmark.ui.direct_maniskill_player import DirectManiSkillPlayer
-from mllm_teleop_benchmark.ui.direct_maniskill_player import env_worker as maniskill_env_worker
-from mllm_teleop_benchmark.ui.direct_player import WorkerCommand, WorkerResult
 
 
 def test_maniskill_pickcube_config_builds_without_maniskill_install():
@@ -29,6 +26,9 @@ def test_maniskill_pickcube_config_builds_without_maniskill_install():
 
 
 def test_direct_maniskill_player_builds_without_starting_env():
+    pytest.importorskip("pygame")
+    from mllm_teleop_benchmark.ui.direct_maniskill_player import DirectManiSkillPlayer
+
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
     player = DirectManiSkillPlayer(config)
 
@@ -135,7 +135,11 @@ def test_maniskill_adapter_clips_native_action_against_box_space():
 
 
 def test_direct_maniskill_worker_reset_step_shutdown_when_installed():
+    pytest.importorskip("pygame")
     pytest.importorskip("mani_skill")
+    from mllm_teleop_benchmark.ui.direct_maniskill_player import env_worker as maniskill_env_worker
+    from mllm_teleop_benchmark.ui.direct_player import WorkerCommand, WorkerResult
+
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
     action_queue: mp.Queue = mp.Queue()
     result_queue: mp.Queue = mp.Queue()

@@ -5,12 +5,14 @@ import pytest
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.core.registry import build_controller, build_mapping
-from mllm_teleop_benchmark.ui.direct_gymnasium_player import WorkerCommand, WorkerResult, env_worker
 
 
+pytest.importorskip("pygame")
 pytest.importorskip("gymnasium")
 pytest.importorskip("mujoco")
 np = pytest.importorskip("numpy")
+
+from mllm_teleop_benchmark.ui.direct_gymnasium_player import WorkerCommand, WorkerResult, env_worker
 
 
 def test_direct_gymnasium_worker_reset_step_shutdown():

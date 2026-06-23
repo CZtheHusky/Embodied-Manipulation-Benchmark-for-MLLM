@@ -6,7 +6,7 @@ CALVIN (Composing Actions from Language and Vision) is an open-world benchmark f
 
 The backend is no longer only a mock/unit prototype in this directory.
 
-Verified on 2026-06-23 with `mllm-teleop-calvin`:
+Verified on 2026-06-23 with the `calvin` uv environment:
 
 - `calvin_env` installs from `https://github.com/mees/calvin_env.git` at commit `797142c588c21e76717268b7b430958dbd13bf48`.
 - The package reports version `0.0.1`.
@@ -35,8 +35,8 @@ The default configuration (`configs/calvin_delta_eef.yaml`) exposes:
 To interact with the CALVIN environment:
 
 ```bash
-conda activate mllm-teleop-calvin
-python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml
+python3 scripts/manage_uv_env.py create calvin
+python3 scripts/manage_uv_env.py run calvin -- python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml
 ```
 
 The human play UI uses the `direct_calvin` backend, which runs the CALVIN simulator in a separate worker process to avoid OpenGL context conflicts with Pygame.

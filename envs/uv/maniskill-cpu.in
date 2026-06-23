@@ -1,0 +1,6 @@
+imageio>=2.0
+numpy>=1.24
+PyYAML>=6.0
+pytest>=8.0
+mani-skill>=3.0
+pygame>=2.5

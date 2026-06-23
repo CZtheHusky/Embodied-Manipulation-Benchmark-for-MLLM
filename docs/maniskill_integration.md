@@ -16,8 +16,7 @@ ManiSkill is integrated as an optional backend. The benchmark does not fork or m
 ManiSkill is optional because it is a heavier simulator dependency:
 
 ```bash
-conda env create -f envs/environment-maniskill.yml
-conda activate mllm-teleop-maniskill
+python3 scripts/manage_uv_env.py create maniskill-cpu
 ```
 
 Core tests and non-ManiSkill environments continue to work when `mani_skill` is not installed.
@@ -41,8 +40,7 @@ The gripper, when present, remains the final virtual joystick. The default mappi
 The ManiSkill play UI uses a direct two-process backend:
 
 ```bash
-conda activate mllm-teleop-maniskill
-python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
 ```
 
 The config selects `ui.backend: direct_maniskill`. The main process owns Pygame, keyboard input, action parsing, validation, mapping, frame transform, controller translation, logging, and debug files. The worker process owns ManiSkill environment creation, reset, step, and RGB extraction.
@@ -58,6 +56,6 @@ Camera randomization is episode-level only. `maniskill_randomized` samples camer
 ## Current Limitations
 
 - Initial support is single-env (`num_envs: 1`) and Box-action focused.
-- ManiSkill is not installed in the core conda environment.
+- ManiSkill is not installed in the core uv environment.
 - Runtime camera mutation is intentionally out of scope.
 - Task success defaults to the `success` key in ManiSkill info and can be changed with `task.params.success_key`.

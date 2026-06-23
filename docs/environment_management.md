@@ -1,89 +1,125 @@
 # Environment Management
 
-This project uses conda as the only supported environment manager.
+This project uses uv as the primary environment manager. Simulator backends still use separate environments so incompatible or heavy dependencies are not installed together.
 
-The repository is shared by multiple backend-specific conda environments. The root env installs this source tree with `-e .`; backend env files under `envs/` install it with `-e ..`, so code changes are immediately visible after switching environments.
+Conda env files under `envs/environment-*.yml` remain as a fallback during the uv migration, but new setup and smoke-test commands should use `scripts/manage_uv_env.py`.
 
 ## Policy
 
-- Use one conda environment per simulator backend.
-- Keep the root `environment.yml` lightweight and core-only.
+- Use one uv virtual environment per simulator backend.
+- Keep backend requirements in `envs/uv/*.in` and checked-in locks in `envs/uv/locks/*.lock.txt`.
 - Do not install every simulator dependency into one environment.
-- Do not require `uv` for setup, tests, or runtime.
-- Use conda/micromamba to create and activate environments; the `pip:` section is only used inside conda env files to install Python packages and this repo in editable mode.
+- Do not commit `.venvs/` or CALVIN's upstream source checkout.
+- Use CPU PyTorch for `maniskill-cpu` by default; CUDA locks should be added separately if needed.
+- Keep backend imports lazy so the core environment works without optional simulators installed.
+
+## uv Commands
+
+List known backends:
+
+```bash
+python3 scripts/manage_uv_env.py list
+```
+
+Regenerate a lock:
+
+```bash
+python3 scripts/manage_uv_env.py lock gymnasium
+```
+
+Create or refresh a backend environment. This clears `.venvs/<backend>` before syncing from the lock:
+
+```bash
+python3 scripts/manage_uv_env.py create gymnasium
+```
+
+Run a command inside a backend environment:
+
+```bash
+python3 scripts/manage_uv_env.py run gymnasium -- python scripts/run_benchmark.py --config configs/reacher_delta_eef.yaml
+```
+
+Run a backend smoke test:
+
+```bash
+python3 scripts/manage_uv_env.py smoke gymnasium
+```
 
 ## Environments
 
 Core development:
 
 ```bash
-conda env create -f environment.yml
-conda activate mllm-teleop-core
-pytest
-python scripts/run_benchmark.py --config configs/dummy_reach.yaml
+python3 scripts/manage_uv_env.py create core
+python3 scripts/manage_uv_env.py smoke core
 ```
 
 Gymnasium/MuJoCo Reacher and Pusher:
 
 ```bash
-conda env create -f envs/environment-gymnasium.yml
-conda activate mllm-teleop-gymnasium
-python scripts/run_benchmark.py --config configs/reacher_delta_eef.yaml
-python scripts/play_benchmark.py --config configs/pusher_delta_eef.yaml
+python3 scripts/manage_uv_env.py create gymnasium
+python3 scripts/manage_uv_env.py run gymnasium -- python scripts/run_benchmark.py --config configs/reacher_delta_eef.yaml
+python3 scripts/manage_uv_env.py run gymnasium -- python scripts/play_benchmark.py --config configs/pusher_delta_eef.yaml
 ```
 
-ManiSkill:
+ManiSkill CPU:
 
 ```bash
-conda env create -f envs/environment-maniskill.yml
-conda activate mllm-teleop-maniskill
-python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+python3 scripts/manage_uv_env.py create maniskill-cpu
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
 ```
 
 robosuite:
 
 ```bash
-conda env create -f envs/environment-robosuite.yml
-conda activate mllm-teleop-robosuite
-python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
+python3 scripts/manage_uv_env.py create robosuite
+python3 scripts/manage_uv_env.py run robosuite -- python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
 ```
-
-The robosuite environment pins `robosuite==1.4.1`. LIBERO should either reuse this environment only after compatibility is confirmed or receive its own backend environment file.
 
 DMControl:
 
 ```bash
-conda env create -f envs/environment-dmcontrol.yml
-conda activate mllm-teleop-dmcontrol
-python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
+python3 scripts/manage_uv_env.py create dmcontrol
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
 ```
 
 CALVIN:
 
 ```bash
-conda env create -f envs/environment-calvin.yml
-conda activate mllm-teleop-calvin
-python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
+python3 scripts/manage_uv_env.py create calvin
+python3 scripts/manage_uv_env.py run calvin -- python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
 ```
 
-CALVIN is installed from the pinned upstream GitHub commit in editable mode because `calvin_env` is not published on PyPI and its runtime Hydra configs live outside the Python package wheel.
+CALVIN is special: uv can resolve the pinned Git dependency, but it cannot install an editable Git URL directly. The create step clones `calvin_env` to `.venvs/_sources/calvin-env`, checks out commit `797142c588c21e76717268b7b430958dbd13bf48`, initializes submodules, and installs that local checkout editable so CALVIN's runtime Hydra `conf/` directory is available.
 
 ## Editable Install Check
 
-After activating any backend environment, verify that the package points to this repository:
+After creating any backend environment, verify that the benchmark package points to this repository:
 
 ```bash
-python -m pip show mllm-teleop-benchmark
+python3 scripts/manage_uv_env.py run gymnasium -- python -c "import mllm_teleop_benchmark; print(mllm_teleop_benchmark.__file__)"
 ```
 
-The `Editable project location` should be the repository root.
+The printed path should be under this repository's `src/` directory.
+
+## Conda Fallback
+
+Existing conda files remain available for rollback while uv environments are being validated:
+
+```bash
+conda env create -f envs/environment-gymnasium.yml
+conda activate mllm-teleop-gymnasium
+```
+
+Do not add new simulator dependencies to the root `environment.yml`. New backends should add uv input and lock files first, then add a conda fallback file only when there is a concrete reason.
 
 ## Adding A New Backend
 
 When a new simulator backend is added:
 
-1. Add `envs/environment-<backend>.yml`.
-2. Keep the backend package imports lazy so core tests pass without the backend installed.
-3. Add tests that skip or mock the heavy dependency when it is absent.
-4. Document the environment in this file and the backend-specific integration doc.
-5. Avoid adding backend dependencies to root `environment.yml` or core `pyproject.toml` dependencies.
+1. Add `envs/uv/<backend>.in`.
+2. Add a backend entry in `scripts/manage_uv_env.py`.
+3. Generate `envs/uv/locks/<backend>.lock.txt`.
+4. Keep heavy imports lazy so core tests pass without the backend installed.
+5. Add smoke tests that skip or mock the heavy dependency when it is absent.
+6. Document the backend here and in its integration doc.

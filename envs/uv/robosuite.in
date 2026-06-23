@@ -1,0 +1,7 @@
+imageio>=2.0
+numpy
+PyYAML>=6.0
+pytest>=8.0
+robosuite==1.4.1
+mujoco>=2.3,<3.0
+pygame>=2.5

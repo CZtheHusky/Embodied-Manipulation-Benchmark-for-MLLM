@@ -69,13 +69,13 @@ Relevant local histories inspected:
 - `~/.codex/history.jsonl`: shows the original design request, implementation
   path, user constraints, and later requests for Gymnasium Reacher/Pusher,
   human play, hidden control complexity, debug logging, ManiSkill, robosuite,
-  and conda-only backend environments.
+  and backend environment isolation.
 - `~/.gemini/tmp/embodied-manipulation-benchmark-for-mllm/logs.json`: shows
   debugging of the Reacher human-play black-window/OpenGL issue and environment
   setup work.
 - `~/.gemini/tmp/embodied-manipulation-benchmark-for-mllm/chats/session-2026-05-14T10-37-b3d9709f.jsonl`:
   records a Gemini pass that created/verified separate Gymnasium, ManiSkill,
-  and robosuite conda environments.
+  and robosuite environments.
 - `~/.codex/logs_2.sqlite` was checked with Python's sqlite library because the
   `sqlite3` CLI is not installed. It mostly surfaced current tool telemetry and
   was less useful than `~/.codex/history.jsonl` for older benchmark decisions.
@@ -85,17 +85,18 @@ Historical agent claims should be treated as context, not proof.
 
 ## Environment Policy
 
-This repo standardizes on conda. Keep the root `environment.yml` lightweight.
-Each backend should have its own `envs/environment-<backend>.yml`.
+This repo now uses uv-first backend environments. Keep each simulator backend in
+its own uv lock and virtual environment. The legacy conda files remain as
+fallback during migration.
 
-Existing relevant environment names on this machine include:
+Current uv backend ids are:
 
-- `mllm-teleop-benchmark`
-- `mllm-teleop-gymnasium`
-- `mllm-teleop-maniskill`
-- `mllm-teleop-robosuite`
-- `mllm-teleop-dmcontrol`
-- `mllm-teleop-calvin`
+- `core`
+- `gymnasium`
+- `maniskill-cpu`
+- `robosuite`
+- `dmcontrol`
+- `calvin`
 
 ## Sibling Worktrees
 
@@ -112,7 +113,7 @@ source of truth.
 
 ## Verification Run For This Handoff
 
-Commands run:
+Historical commands run before the uv migration:
 
 ```bash
 PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-benchmark/bin/python -m pytest -q
@@ -122,10 +123,27 @@ PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-calvin/bin/python -m pyt
 PYTHONPATH=src /home/caozhe/miniconda3/envs/mllm-teleop-calvin/bin/python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
 ```
 
+Current uv equivalents:
+
+```bash
+python3 scripts/manage_uv_env.py smoke core
+python3 scripts/manage_uv_env.py smoke gymnasium
+python3 scripts/manage_uv_env.py smoke dmcontrol
+python3 scripts/manage_uv_env.py smoke robosuite
+python3 scripts/manage_uv_env.py smoke maniskill-cpu
+python3 scripts/manage_uv_env.py smoke calvin
+```
+
 Results:
 
-- Main test suite passed: `66 passed, 4 skipped`.
+- Historical main test suite passed before uv migration: `66 passed, 4 skipped`.
+- Current uv core full pytest passed: `60 passed, 10 skipped`.
+- Current uv Gymnasium full pytest passed: `65 passed, 5 skipped`.
+- uv core smoke passed: `19 passed`.
+- uv Gymnasium smoke passed: `6 passed`; a 2-step Reacher benchmark smoke completed with `success_rate: 0.0`.
 - DMControl integration tests passed: `7 passed`; random-policy benchmark smoke completed one 250-step episode with `success_rate: 0.0`.
+- robosuite uv smoke passed: `3 passed` after pinning `mujoco>=2.3,<3.0`.
+- ManiSkill CPU uv smoke passed: `8 passed`.
 - CALVIN integration tests passed: `5 passed`; random-policy benchmark smoke completed one 100-step episode with `success_rate: 0.0`.
 - Direct-worker reset/step smoke passed for DMControl and CALVIN without opening a Pygame display.
 
@@ -154,7 +172,7 @@ prove task-solving ability.
    - no simulator-specific joystick parsing,
    - no hidden mapping/frame details in public prompt/UI metadata,
    - episode-level camera randomization only,
-   - backend dependencies isolated by conda env,
+   - backend dependencies isolated by uv environment,
    - docs updated with every significant backend change.
 2. Before real MLLM policy work, keep improving deterministic baselines,
    logging, replayability, and human-play parity.

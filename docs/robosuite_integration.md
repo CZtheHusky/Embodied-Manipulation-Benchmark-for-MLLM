@@ -8,18 +8,17 @@ robosuite is integrated as an optional backend. It is not part of the root core 
 - Controller: `control/robosuite_controller.py`
 - Task wrapper: `tasks/robosuite_task.py`
 - Example config: `configs/robosuite_lift.yaml`
-- Environment: `envs/environment-robosuite.yml`
+- Environment: `envs/uv/robosuite.in` and `envs/uv/locks/robosuite.lock.txt`
 
 ## Dependency
 
-Use the backend-specific conda environment:
+Use the backend-specific uv environment:
 
 ```bash
-conda env create -f envs/environment-robosuite.yml
-conda activate mllm-teleop-robosuite
+python3 scripts/manage_uv_env.py create robosuite
 ```
 
-The backend pins `robosuite==1.4.1`. Core tests and non-robosuite environments must continue to work without robosuite installed. The adapter sets `NUMBA_DISABLE_JIT=1` by default before importing robosuite because this pinned install can otherwise fail during numba cache setup.
+The backend pins `robosuite==1.4.1` and `mujoco>=2.3,<3.0`. robosuite 1.4.1 calls the MuJoCo 2.x Python API and fails with MuJoCo 3.x at controller reset. Core tests and non-robosuite environments must continue to work without robosuite installed. The adapter sets `NUMBA_DISABLE_JIT=1` by default before importing robosuite because this pinned install can otherwise fail during numba cache setup.
 
 To require the optional backend smoke test instead of skipping it:
 

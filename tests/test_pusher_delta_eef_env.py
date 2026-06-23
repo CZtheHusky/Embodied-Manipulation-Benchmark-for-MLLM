@@ -1,10 +1,11 @@
 import numpy as np
+import pytest
 
 from mllm_teleop_benchmark.sim.gymnasium_envs.registry import REGISTERED_PUSHER_DELTA_EEF_ID, register_gymnasium_envs
 
 
 def test_pusher_delta_eef_env_reset_and_step():
-    import gymnasium as gym
+    gym = pytest.importorskip("gymnasium")
 
     register_gymnasium_envs()
     env = gym.make(REGISTERED_PUSHER_DELTA_EEF_ID)
@@ -24,8 +25,7 @@ def test_pusher_delta_eef_env_reset_and_step():
 
 
 def test_pusher_delta_eef_env_rejects_wrong_action_shape():
-    import gymnasium as gym
-    import pytest
+    gym = pytest.importorskip("gymnasium")
 
     register_gymnasium_envs()
     env = gym.make(REGISTERED_PUSHER_DELTA_EEF_ID)

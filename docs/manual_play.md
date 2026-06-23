@@ -9,8 +9,7 @@ The window is split into an information panel and an environment RGB view. The p
 Run:
 
 ```bash
-conda activate mllm-teleop-gymnasium
-python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml
+python3 scripts/manage_uv_env.py run gymnasium -- python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml
 ```
 
 The default config uses:
@@ -52,8 +51,7 @@ There are no diagonal macro keys by default. Human play sends the same single-st
 Run:
 
 ```bash
-conda activate mllm-teleop-gymnasium
-python scripts/play_benchmark.py --config configs/pusher_delta_eef.yaml
+python3 scripts/manage_uv_env.py run gymnasium -- python scripts/play_benchmark.py --config configs/pusher_delta_eef.yaml
 ```
 
 Pusher exposes three virtual joysticks:
@@ -87,8 +85,7 @@ python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --set c
 Run:
 
 ```bash
-conda activate mllm-teleop-maniskill
-python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
 ```
 
 The default config uses:
@@ -119,8 +116,7 @@ ManiSkill camera randomization remains episode-level only. The direct player dis
 Run:
 
 ```bash
-conda activate mllm-teleop-dmcontrol
-python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
 ```
 
 The default config uses:
@@ -137,8 +133,7 @@ The direct DMControl player keeps `dm_control` rendering in a worker process for
 Run:
 
 ```bash
-conda activate mllm-teleop-calvin
-python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml --backend direct_calvin
+python3 scripts/manage_uv_env.py run calvin -- python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml --backend direct_calvin
 ```
 
 The default config uses:
