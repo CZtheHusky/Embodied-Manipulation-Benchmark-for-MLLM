@@ -10,7 +10,7 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
 - Keep backend requirements in `envs/uv/*.in` and checked-in locks in `envs/uv/locks/*.lock.txt`.
 - Do not install every simulator dependency into one environment.
 - Do not commit `.venvs/` or CALVIN's upstream source checkout.
-- Use CPU PyTorch for `maniskill-cpu` by default; CUDA locks should be added separately if needed.
+- Use CPU PyTorch for `maniskill-cpu` by default; use `maniskill-cu126` on NVIDIA CUDA 12.6 hosts.
 - Keep backend imports lazy so the core environment works without optional simulators installed.
 
 ## uv Commands
@@ -68,6 +68,16 @@ ManiSkill CPU:
 python3 scripts/manage_uv_env.py create maniskill-cpu
 python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
 ```
+
+ManiSkill CUDA 12.6:
+
+```bash
+python3 scripts/manage_uv_env.py create maniskill-cu126
+python3 scripts/manage_uv_env.py smoke maniskill-cu126
+python3 scripts/manage_uv_env.py run maniskill-cu126 -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+```
+
+The `maniskill-cu126` smoke test checks `torch.cuda.is_available()` before running ManiSkill tests. A host without an NVIDIA driver should fail this smoke test instead of pretending the GPU environment is valid.
 
 robosuite:
 

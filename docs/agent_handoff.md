@@ -94,6 +94,7 @@ Current uv backend ids are:
 - `core`
 - `gymnasium`
 - `maniskill-cpu`
+- `maniskill-cu126`
 - `robosuite`
 - `dmcontrol`
 - `calvin`
@@ -131,6 +132,7 @@ python3 scripts/manage_uv_env.py smoke gymnasium
 python3 scripts/manage_uv_env.py smoke dmcontrol
 python3 scripts/manage_uv_env.py smoke robosuite
 python3 scripts/manage_uv_env.py smoke maniskill-cpu
+python3 scripts/manage_uv_env.py smoke maniskill-cu126  # GPU host only
 python3 scripts/manage_uv_env.py smoke calvin
 ```
 
@@ -144,6 +146,7 @@ Results:
 - DMControl integration tests passed: `7 passed`; random-policy benchmark smoke completed one 250-step episode with `success_rate: 0.0`.
 - robosuite uv smoke passed: `3 passed` after pinning `mujoco>=2.3,<3.0`.
 - ManiSkill CPU uv smoke passed: `8 passed`.
+- ManiSkill CUDA 12.6 env smoke passed on station with `torch==2.12.1+cu126`, CUDA 12.6, and NVIDIA GeForce RTX 2080. GPU checks must run outside the restricted command sandbox.
 - CALVIN integration tests passed: `5 passed`; random-policy benchmark smoke completed one 100-step episode with `success_rate: 0.0`.
 - Direct-worker reset/step smoke passed for DMControl and CALVIN without opening a Pygame display.
 

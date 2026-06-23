@@ -153,14 +153,16 @@ This file records implementation decisions that matter for future maintenance.
 
 ## 2026-06-23: uv-first environment management
 
-- Added uv input and lock files for core, Gymnasium, DMControl, robosuite, ManiSkill CPU, and CALVIN.
+- Added uv input and lock files for core, Gymnasium, DMControl, robosuite, ManiSkill CPU/CUDA, and CALVIN.
 - Added `scripts/manage_uv_env.py` to lock, create, run, and smoke-test per-backend uv environments under `.venvs/`.
 - Kept conda env files as rollback/fallback while uv backend smoke coverage is validated.
-- Defaulted ManiSkill uv resolution to CPU PyTorch. CUDA variants should be added as separate locks.
+- Defaulted ManiSkill uv resolution to CPU PyTorch and added `maniskill-cu126` for NVIDIA CUDA 12.6 hosts.
 - CALVIN remains special: uv resolves the pinned Git dependency, but environment creation clones the upstream repo and installs it from a local editable checkout so Hydra runtime configs are available.
 - Pinned robosuite's MuJoCo dependency to `mujoco>=2.3,<3.0`; `robosuite==1.4.1` fails against MuJoCo 3.x controller APIs.
 - Made uv environment creation idempotent by clearing the target `.venvs/<backend>` before syncing from the lock.
 - Passed ManiSkill's `--torch-backend cpu` to both lock and sync so `torch==2.12.1+cpu` installs reproducibly.
+- Added CUDA availability as the first `maniskill-cu126` smoke step so hosts without an NVIDIA driver fail loudly.
+- Verified `maniskill-cu126` on station with `torch==2.12.1+cu126`, CUDA 12.6, and NVIDIA GeForce RTX 2080; GPU smoke passed after running outside the restricted command sandbox.
 
 ## Documentation rule
 

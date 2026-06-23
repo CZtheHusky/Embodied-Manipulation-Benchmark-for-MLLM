@@ -10,6 +10,7 @@ This project is managed with uv-first backend environments. Each simulator has a
 python3 scripts/manage_uv_env.py create core
 python3 scripts/manage_uv_env.py create gymnasium
 python3 scripts/manage_uv_env.py create maniskill-cpu
+python3 scripts/manage_uv_env.py create maniskill-cu126
 python3 scripts/manage_uv_env.py create robosuite
 python3 scripts/manage_uv_env.py create dmcontrol
 python3 scripts/manage_uv_env.py create calvin
@@ -96,6 +97,14 @@ ManiSkill uses the `maniskill-cpu` uv environment by default:
 
 ```bash
 python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
+```
+
+For NVIDIA CUDA 12.6 hosts, use the `maniskill-cu126` uv environment:
+
+```bash
+python3 scripts/manage_uv_env.py create maniskill-cu126
+python3 scripts/manage_uv_env.py smoke maniskill-cu126
+python3 scripts/manage_uv_env.py run maniskill-cu126 -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
 ```
 
 The initial ManiSkill config targets `PickCube-v1` with `pd_ee_delta_pose` control. Camera randomization is episode-level only; the camera view is fixed inside an episode. More details are in `docs/maniskill_integration.md`.

@@ -13,10 +13,17 @@ ManiSkill is integrated as an optional backend. The benchmark does not fork or m
 
 ## Dependency
 
-ManiSkill is optional because it is a heavier simulator dependency:
+ManiSkill is optional because it is a heavier simulator dependency. Use the CPU uv environment by default:
 
 ```bash
 python3 scripts/manage_uv_env.py create maniskill-cpu
+```
+
+On NVIDIA CUDA 12.6 hosts, use the GPU uv environment:
+
+```bash
+python3 scripts/manage_uv_env.py create maniskill-cu126
+python3 scripts/manage_uv_env.py smoke maniskill-cu126
 ```
 
 Core tests and non-ManiSkill environments continue to work when `mani_skill` is not installed.

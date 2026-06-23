@@ -14,6 +14,11 @@ VENV_DIR = ROOT / ".venvs"
 PYTHON_PLATFORM = "x86_64-unknown-linux-gnu"
 CALVIN_REPO = "https://github.com/mees/calvin_env.git"
 CALVIN_COMMIT = "797142c588c21e76717268b7b430958dbd13bf48"
+CUDA_SMOKE = (
+    "import torch; "
+    "assert torch.cuda.is_available(), 'CUDA is not available'; "
+    "print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"
+)
 
 
 BACKENDS: dict[str, dict[str, object]] = {
@@ -46,6 +51,15 @@ BACKENDS: dict[str, dict[str, object]] = {
         "input": "maniskill-cpu.in",
         "torch_backend": "cpu",
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_maniskill_backend.py"]],
+    },
+    "maniskill-cu126": {
+        "python": "3.11",
+        "input": "maniskill-cu126.in",
+        "torch_backend": "cu126",
+        "smoke": [
+            ["python", "-c", CUDA_SMOKE],
+            ["python", "-m", "pytest", "-q", "tests/test_maniskill_backend.py"],
+        ],
     },
     "calvin": {
         "python": "3.10",
