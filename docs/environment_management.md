@@ -102,6 +102,20 @@ python3 scripts/manage_uv_env.py run calvin -- python scripts/run_benchmark.py -
 
 CALVIN is special: uv can resolve the pinned Git dependency, but it cannot install an editable Git URL directly. The create step clones `calvin_env` to `.venvs/_sources/calvin-env`, checks out commit `797142c588c21e76717268b7b430958dbd13bf48`, initializes submodules, and installs that local checkout editable so CALVIN's runtime Hydra `conf/` directory is available.
 
+LIBERO:
+
+```bash
+python3 scripts/manage_uv_env.py create libero
+python3 scripts/manage_uv_env.py smoke libero
+python3 scripts/manage_uv_env.py run libero -- python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml
+```
+
+LIBERO is isolated because its official stack is old: Python 3.8.13, Torch 1.11.0, CUDA 11.3, robosuite 1.4.0, and gym 0.25.2. This repository requires Python >=3.10, so the uv backend resolves with Python 3.10 and `--torch-backend cu113`; treat this as a compatibility attempt, not proof that the original LIBERO paper environment has been reproduced. If the lock or create step fails on Python, Torch/CUDA, robomimic, bddl, or upstream Git dependencies, keep the failure in the integration notes and fall back to the official conda instructions from the LIBERO repository.
+
+The LIBERO create step writes `LIBERO_CONFIG_PATH=.venvs/libero_config` so upstream `libero.libero.get_libero_path()` can find packaged BDDL, init-state, asset, and dataset directories without prompting interactively on first import.
+
+As of 2026-06-24, `envs/uv/locks/libero.lock.txt` is not checked in: the initial uv lock attempt reached the pinned LIBERO Git update and then did not finish dependency resolution before being interrupted. `create libero` is blocked on producing that lock or using the official conda fallback.
+
 ## Editable Install Check
 
 After creating any backend environment, verify that the benchmark package points to this repository:

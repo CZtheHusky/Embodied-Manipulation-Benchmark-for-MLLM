@@ -69,6 +69,16 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "scripts/run_benchmark.py", "--config", "configs/calvin_delta_eef.yaml"],
         ],
     },
+    "libero": {
+        "python": "3.10",
+        "input": "libero.in",
+        "torch_backend": "cu113",
+        "env": {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "NUMBA_DISABLE_JIT": "1"},
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_libero_integration.py", "-rs"],
+            ["python", "scripts/run_benchmark.py", "--config", "configs/libero_spatial_task0.yaml"],
+        ],
+    },
 }
 
 
@@ -157,6 +167,8 @@ def create_backend(name: str) -> None:
     run(["uv", "pip", "install", "--python", str(venv_path(name)), "-e", str(ROOT)])
     if name == "calvin":
         install_calvin_editable()
+    if name == "libero":
+        write_libero_config()
 
 
 def install_calvin_editable() -> None:
@@ -169,6 +181,27 @@ def install_calvin_editable() -> None:
     run(["git", "checkout", CALVIN_COMMIT], cwd=source_dir)
     run(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
     run(["uv", "pip", "install", "--python", str(venv_path("calvin")), "-e", str(source_dir)])
+
+
+def write_libero_config() -> None:
+    config_dir = VENV_DIR / "libero_config"
+    script = (
+        "from pathlib import Path; "
+        "import importlib.util, yaml; "
+        "spec = importlib.util.find_spec('libero.libero'); "
+        "assert spec and spec.origin, 'libero.libero is not importable'; "
+        "root = Path(spec.origin).resolve().parent; "
+        f"cfg_dir = Path({str(config_dir)!r}); "
+        "cfg_dir.mkdir(parents=True, exist_ok=True); "
+        "yaml.safe_dump({"
+        "'benchmark_root': str(root), "
+        "'bddl_files': str(root / 'bddl_files'), "
+        "'init_states': str(root / 'init_files'), "
+        "'datasets': str(root.parent / 'datasets'), "
+        "'assets': str(root / 'assets')"
+        "}, (cfg_dir / 'config.yaml').open('w', encoding='utf-8'), sort_keys=True)"
+    )
+    run([str(python_bin("libero")), "-c", script], env=backend_env("libero"))
 
 
 def run_backend(name: str, command: list[str]) -> None:
@@ -192,6 +225,8 @@ def backend_env(name: str) -> dict[str, str]:
     cfg = backend_config(name)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
+    if name == "libero":
+        env.setdefault("LIBERO_CONFIG_PATH", str(VENV_DIR / "libero_config"))
     env.update(cfg.get("env", {}))  # type: ignore[arg-type]
     return env
 

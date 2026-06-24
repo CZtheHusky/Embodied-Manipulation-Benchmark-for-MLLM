@@ -59,6 +59,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.calvin.adapter import CalvinSimAdapter
 
         return CalvinSimAdapter(config.simulator)
+    if config.simulator.type == "libero":
+        from mllm_teleop_benchmark.sim.libero.adapter import LiberoSimAdapter
+
+        return LiberoSimAdapter(config.simulator)
     raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
 
 
@@ -85,6 +89,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.calvin_task import CalvinTask
 
         return CalvinTask(config.task)
+    if config.task.type == "libero_generic":
+        from mllm_teleop_benchmark.tasks.libero_task import LiberoTask
+
+        return LiberoTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -130,6 +138,10 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.calvin.observation import CalvinObservationProvider
 
         return CalvinObservationProvider(camera_manager)
+    if config.simulator.type == "libero":
+        from mllm_teleop_benchmark.sim.libero.observation import LiberoObservationProvider
+
+        return LiberoObservationProvider(camera_manager)
     return DefaultObservationProvider(camera_manager)
 
 
@@ -186,4 +198,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         from mllm_teleop_benchmark.control.calvin_controller import CalvinDeltaEEFController
 
         return CalvinDeltaEEFController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "libero_delta_eef":
+        from mllm_teleop_benchmark.control.libero_controller import LiberoDeltaEEFController
+
+        return LiberoDeltaEEFController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")
