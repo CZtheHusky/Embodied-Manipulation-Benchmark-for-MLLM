@@ -36,17 +36,27 @@ For headless rendering, RLBench/PyRep still need a working OpenGL path. On GPU h
 
 ## Environment
 
+The Python dependency input pins RLBench to upstream commit `f214b6ecc177babce12d3ad13dd92049c824c1d9` so lock generation does not depend on a moving Git `HEAD`.
+
+Current lock status on June 24, 2026: `envs/uv/locks/rlbench.lock.txt` is not generated in this worktree. Bounded attempts to run `python3 scripts/manage_uv_env.py lock rlbench` stalled while uv was updating the pinned RLBench Git source. A published `rlbench` package was not available from the configured package registry, and a direct shallow clone of upstream RLBench tag `1.1.0` also timed out on this host. Treat this as a Python-source acquisition blocker, not as a reason to add CoppeliaSim to uv.
+
+Actionable next step: rerun lock generation from a host/network path that can complete a GitHub RLBench source transfer, or pre-seed uv's cache with the pinned RLBench commit. Check in `envs/uv/locks/rlbench.lock.txt` only after `python3 scripts/manage_uv_env.py lock rlbench` completes.
+
 Create the Python backend:
 
 ```bash
 python3 scripts/manage_uv_env.py create rlbench
 ```
 
+This requires `envs/uv/locks/rlbench.lock.txt`; do not claim `create rlbench` until the lock exists and `uv pip sync` completes.
+
 Run the focused smoke:
 
 ```bash
 python3 scripts/manage_uv_env.py smoke rlbench
 ```
+
+This requires both the Python environment and the external CoppeliaSim/PyRep runtime. If CoppeliaSim is missing, the smoke may skip or fail with the prerequisite message, but it is not runtime verification.
 
 Run only the tests:
 

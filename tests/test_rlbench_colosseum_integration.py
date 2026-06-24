@@ -1,4 +1,6 @@
 import os
+import re
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,6 +14,16 @@ from mllm_teleop_benchmark.core.types import RLBenchAction
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.sim.rlbench.adapter import RLBenchSimAdapter
 from mllm_teleop_benchmark.sim.rlbench.observation import RLBenchObservationProvider
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_rlbench_uv_input_pins_python_source_and_excludes_coppeliasim():
+    requirement = ROOT.joinpath("envs/uv/rlbench.in").read_text()
+
+    assert re.search(r"^rlbench @ git\+https://github\.com/stepjam/RLBench\.git@[0-9a-f]{40}$", requirement, re.MULTILINE)
+    assert "coppeliasim" not in requirement.lower()
 
 
 def test_rlbench_reach_target_config_builds_without_rlbench_install():
