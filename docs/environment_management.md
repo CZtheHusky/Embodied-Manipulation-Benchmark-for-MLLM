@@ -106,16 +106,16 @@ CALVIN is special: uv can resolve the pinned Git dependency, but it cannot insta
 RLBench:
 
 ```bash
-python3 scripts/manage_uv_env.py lock rlbench
-python3 scripts/manage_uv_env.py create rlbench
-python3 scripts/manage_uv_env.py run rlbench -- python scripts/run_benchmark.py --config configs/rlbench_reach_target_delta_eef.yaml
+python3 scripts/manage_conda_env.py install-coppeliasim
+python3 scripts/manage_conda_env.py create rlbench
+python3 scripts/manage_conda_env.py smoke rlbench
 ```
 
-The `rlbench` uv environment installs Python packages only. The Python input pins RLBench to upstream commit `f214b6ecc177babce12d3ad13dd92049c824c1d9`, but this worktree does not yet have a generated `envs/uv/locks/rlbench.lock.txt`. On June 24, 2026, bounded lock attempts stalled while uv was updating the pinned RLBench Git source; a published `rlbench` package was not available from the configured package registry. Resolve that GitHub source-transfer blocker before running `create rlbench`.
+RLBench is runtime verified through the Miniconda fallback in this branch. `scripts/manage_conda_env.py` installs the external CoppeliaSim v4.1.0 binary under `/home/caozhe/opt/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04`, creates `mllm-teleop-rlbench`, and installs pinned source commits for PyRep and RLBench. The uv route is not the supported route for this backend because the lock path stalled on the pinned Git source and still would not manage the external CoppeliaSim binary.
 
-The `rlbench` uv environment does not install CoppeliaSim. RLBench upstream targets CoppeliaSim v4.1.0 with PyRep, so hosts must install the CoppeliaSim system binary and set `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, and `QT_QPA_PLATFORM_PLUGIN_PATH` before runtime use. Headless execution also needs a working OpenGL/X/GPU setup such as `DISPLAY=:99` on NVIDIA hosts. The optional runtime smoke skips when RLBench/PyRep or CoppeliaSim are unavailable unless `MLLM_TELEOP_REQUIRE_RLBENCH=1` is set.
+The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, and uses `DISPLAY=:1` when that X socket exists. The verified path is display-backed OpenGL; headless GPU validation is not claimed on this host.
 
-Colosseum is not a separate backend in this worktree yet. It remains documented as a robustness extension blocked on a verified RLBench `reset -> step -> render -> close` smoke. See `docs/rlbench_colosseum_integration.md`.
+Colosseum is not a separate backend in this worktree yet. It remains documented as a robustness extension that should be added after this verified RLBench route by pinning a Colosseum source commit and adding one perturbation smoke config. See `docs/rlbench_colosseum_integration.md`.
 
 ## Editable Install Check
 

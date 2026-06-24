@@ -107,23 +107,17 @@ class RLBenchSimAdapter(SimAdapter):
             return
         try:
             import pyrep  # noqa: F401
-            from rlbench.action_modes.action_mode import MoveArmThenGripper
-            from rlbench.action_modes.arm_action_modes import EndEffectorPoseViaPlanning
-            from rlbench.action_modes.gripper_action_modes import Discrete
             from rlbench.environment import Environment
         except ImportError as exc:
             raise ImportError(
                 "RLBench backend requires rlbench, pyrep, and an external CoppeliaSim install. "
-                "Create the uv backend with `python3 scripts/manage_uv_env.py create rlbench`, "
-                "then set COPPELIASIM_ROOT, LD_LIBRARY_PATH, and QT_QPA_PLATFORM_PLUGIN_PATH "
-                "before using simulator.type=rlbench."
+                "Create the conda backend with `python3 scripts/manage_conda_env.py create rlbench`, "
+                "then set or inherit COPPELIASIM_ROOT, LD_LIBRARY_PATH, QT_QPA_PLATFORM_PLUGIN_PATH, "
+                "and DISPLAY/headless settings before using simulator.type=rlbench."
             ) from exc
 
         task_class = self._resolve_task_class()
-        action_mode = MoveArmThenGripper(
-            arm_action_mode=EndEffectorPoseViaPlanning(),
-            gripper_action_mode=Discrete(),
-        )
+        action_mode = self._action_mode()
         obs_config = self._observation_config()
         kwargs = dict(self.config.env_kwargs)
         kwargs.setdefault("headless", self.headless)
@@ -149,6 +143,24 @@ class RLBenchSimAdapter(SimAdapter):
                 "Failed to launch RLBench/CoppeliaSim. Verify CoppeliaSim v4.1.0, PyRep, "
                 "COPPELIASIM_ROOT, LD_LIBRARY_PATH, QT_QPA_PLATFORM_PLUGIN_PATH, and DISPLAY/headless GPU setup."
             ) from exc
+
+    def _action_mode(self) -> Any:
+        try:
+            from rlbench.action_modes.action_mode import MoveArmThenGripper
+            from rlbench.action_modes.arm_action_modes import EndEffectorPoseViaPlanning
+            from rlbench.action_modes.gripper_action_modes import Discrete
+
+            return MoveArmThenGripper(
+                arm_action_mode=EndEffectorPoseViaPlanning(),
+                gripper_action_mode=Discrete(),
+            )
+        except ImportError:
+            from rlbench.action_modes import ActionMode, ArmActionMode, GripperActionMode
+
+            return ActionMode(
+                arm=ArmActionMode.ABS_EE_POSE_PLAN_WORLD_FRAME,
+                gripper=GripperActionMode.OPEN_AMOUNT,
+            )
 
     def _resolve_task_class(self) -> type[Any]:
         aliases = {

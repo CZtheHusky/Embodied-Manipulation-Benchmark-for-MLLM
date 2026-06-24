@@ -13,7 +13,7 @@ simulator:
   params:
     task_class: ReachTarget
     action_mode: move_arm_then_gripper_end_effector_pose_via_planning_discrete
-    headless: true
+    headless: false
     static_positions: false
 
 task:

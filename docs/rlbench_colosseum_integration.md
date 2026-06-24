@@ -10,7 +10,7 @@ Implemented in this repository:
 - `task.type: rlbench_generic`
 - `controller.type: rlbench_delta_eef`
 - Example config: `configs/rlbench_reach_target_delta_eef.yaml`
-- uv backend: `rlbench`
+- Miniconda fallback backend: `rlbench`
 
 Not claimed yet:
 
@@ -18,11 +18,24 @@ Not claimed yet:
 - Colosseum perturbation configs
 - Any Colosseum runtime smoke result
 
-The blocker is explicit: Colosseum builds on the same CoppeliaSim/PyRep/RLBench route, and this worktree has not verified a real RLBench `reset -> step -> render -> close` smoke run on a host with CoppeliaSim. Do not add Colosseum runtime claims until that passes.
+Verified on 2026-06-24 with display-backed CoppeliaSim:
+
+```bash
+python3 scripts/manage_conda_env.py install-coppeliasim
+python3 scripts/manage_conda_env.py create rlbench
+python3 scripts/manage_conda_env.py smoke rlbench
+```
+
+The smoke result was:
+
+- `tests/test_rlbench_colosseum_integration.py`: `7 passed, 1 skipped`
+- `configs/rlbench_reach_target_delta_eef_smoke.yaml`: one benchmark episode, `average_steps=1.0`, `success_rate=0.0`
+
+The remaining skip is the explicit Colosseum placeholder. Colosseum builds on this now-verified RLBench/CoppeliaSim route, but `simulator.type: colosseum` and perturbation configs are still not wired.
 
 ## External Prerequisites
 
-uv manages only Python packages for the `rlbench` backend. It does not install or validate the CoppeliaSim system binary.
+The Miniconda fallback manages Python packages and pinned source checkouts. It also provides a helper to install CoppeliaSim v4.1.0 under `/home/caozhe/opt/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04`.
 
 RLBench upstream documents CoppeliaSim v4.1.0 with PyRep. Use a matching Linux CoppeliaSim archive and set:
 
@@ -32,45 +45,42 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$COPPELIASIM_ROOT
 export QT_QPA_PLATFORM_PLUGIN_PATH=$COPPELIASIM_ROOT
 ```
 
-For headless rendering, RLBench/PyRep still need a working OpenGL path. On GPU hosts this usually means an NVIDIA driver, an X server such as `DISPLAY=:99`, and host-level X/GPU setup outside uv. On desktop hosts, a normal display-backed OpenGL context is enough. If these pieces are missing, the smoke test should skip or fail with an actionable CoppeliaSim/PyRep message rather than pretending the backend is usable.
+The verified run used the existing desktop display socket (`DISPLAY=:1`) rather than headless mode. `nvidia-smi` was not usable in the shell, so headless GPU validation is not claimed. On this host, display-backed OpenGL is the supported path.
 
 ## Environment
 
-The Python dependency input pins RLBench to upstream commit `f214b6ecc177babce12d3ad13dd92049c824c1d9` so lock generation does not depend on a moving Git `HEAD`.
+The fallback source pins are:
 
-Current lock status on June 24, 2026: `envs/uv/locks/rlbench.lock.txt` is not generated in this worktree. Bounded attempts to run `python3 scripts/manage_uv_env.py lock rlbench` stalled while uv was updating the pinned RLBench Git source. A published `rlbench` package was not available from the configured package registry, and a direct shallow clone of upstream RLBench tag `1.1.0` also timed out on this host. Treat this as a Python-source acquisition blocker, not as a reason to add CoppeliaSim to uv.
-
-`scripts/manage_uv_env.py` intentionally fails fast for `lock`, `create`, `run`, and `smoke` on the `rlbench` backend until source transfer and runtime smoke are both verified. This avoids repeatedly entering the known-hanging Git resolver path.
-
-Actionable next step: rerun lock generation from a host/network path that can complete a GitHub RLBench source transfer, or replace the direct Git dependency with a pinned local source checkout flow. Check in `envs/uv/locks/rlbench.lock.txt` only after `python3 scripts/manage_uv_env.py lock rlbench` completes.
+- PyRep: `https://github.com/stepjam/PyRep.git@076ca15c57f2495a4194da03565891ab1aaa317e`
+- RLBench: `https://github.com/stepjam/RLBench.git@f214b6ecc177babce12d3ad13dd92049c824c1d9`
 
 Create the Python backend:
 
 ```bash
-python3 scripts/manage_uv_env.py create rlbench
+python3 scripts/manage_conda_env.py create rlbench
 ```
-
-This requires `envs/uv/locks/rlbench.lock.txt`; do not claim `create rlbench` until the lock exists and `uv pip sync` completes.
 
 Run the focused smoke:
 
 ```bash
-python3 scripts/manage_uv_env.py smoke rlbench
+python3 scripts/manage_conda_env.py smoke rlbench
 ```
 
-This requires both the Python environment and the external CoppeliaSim/PyRep runtime. If CoppeliaSim is missing, the smoke may skip or fail with the prerequisite message, but it is not runtime verification.
+This requires both the Python environment and the external CoppeliaSim/PyRep runtime. The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, and falls back to `DISPLAY=:1` when that X socket exists.
 
 Run only the tests:
 
 ```bash
-python3 scripts/manage_uv_env.py run rlbench -- python -m pytest -q tests/test_rlbench_colosseum_integration.py -rs
+python3 scripts/manage_conda_env.py run rlbench -- python -m pytest -q tests/test_rlbench_colosseum_integration.py -rs
 ```
 
 To make runtime launch failures fail the test instead of being reported as optional-backend skips:
 
 ```bash
-MLLM_TELEOP_REQUIRE_RLBENCH=1 python3 scripts/manage_uv_env.py run rlbench -- python -m pytest -q tests/test_rlbench_colosseum_integration.py -rs
+MLLM_TELEOP_REQUIRE_RLBENCH=1 python3 scripts/manage_conda_env.py run rlbench -- python -m pytest -q tests/test_rlbench_colosseum_integration.py -rs
 ```
+
+The older uv route is not the verified path for this backend. CoppeliaSim is an external binary, PyRep needs a source build, and the conda flow is the reproducible route currently proven on this host.
 
 ## Control Contract
 
@@ -113,9 +123,9 @@ The observation provider configures RGB-only RLBench observations before environ
 
 Colosseum should be added only after RLBench has a verified runtime smoke on the target host. The next minimal step is a perturbation config over the same route, not a parallel simulator abstraction:
 
-1. Verify `configs/rlbench_reach_target_delta_eef.yaml` with real CoppeliaSim/PyRep.
-2. Add the Colosseum Python dependency in a separate `rlbench-colosseum` backend or extend the documented backend name intentionally.
+1. Add the Colosseum Python dependency in a separate conda-managed backend or extend the documented backend name intentionally.
+2. Pin the upstream Colosseum source commit before installing it.
 3. Add a single perturbation config using an official Colosseum task/variation.
 4. Add smoke coverage that either runs `reset -> step -> render -> close` or fails loud with the exact missing Colosseum/CoppeliaSim prerequisite.
 
-Until step 1 is done, tests contain an explicit skip documenting this blocker.
+Until those steps are done, tests contain an explicit skip documenting the Colosseum blocker.

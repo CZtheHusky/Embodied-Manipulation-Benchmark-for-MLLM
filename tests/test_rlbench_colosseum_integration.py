@@ -126,5 +126,5 @@ def test_rlbench_runtime_reset_step_render_smoke_when_installed():
 def test_colosseum_route_is_blocked_until_rlbench_smoke_is_verified():
     pytest.skip(
         "Colosseum is intentionally not wired yet: first verify RLBench reset/step/render against "
-        "CoppeliaSim/PyRep in the rlbench uv backend; see docs/rlbench_colosseum_integration.md."
+        "CoppeliaSim/PyRep in the rlbench conda backend; see docs/rlbench_colosseum_integration.md."
     )
