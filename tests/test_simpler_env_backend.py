@@ -31,6 +31,14 @@ def test_simpler_env_config_builds_without_simpler_env_install():
     assert isinstance(observation_provider, SimplerEnvObservationProvider)
 
 
+def test_simpler_env_config_uses_worker_play_runtime():
+    config = load_config("configs/simpler_env_google_robot_pick_coke_can.yaml")
+
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
+    assert config.ui.frame_camera == "default"
+
+
 def test_simpler_env_delta_eef_controller_maps_pose_and_gripper_to_7d_action():
     config = load_config("configs/simpler_env_google_robot_pick_coke_can.yaml")
     controller = SimplerEnvDeltaEEFController.from_config(config.controller, build_mapping(config, config.benchmark.seed))

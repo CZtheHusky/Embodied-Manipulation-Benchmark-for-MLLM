@@ -44,6 +44,14 @@ python3 scripts/manage_uv_env.py smoke simpler-env
 
 The smoke run passed `6 passed` and exercised `simpler_env` import, reset, RGB observation/render extraction, one zero action step, and close.
 
+Manual play uses the shared Pygame worker runtime:
+
+```bash
+python3 scripts/manage_uv_env.py run simpler-env -- python scripts/play_benchmark.py --config configs/simpler_env_google_robot_pick_coke_can.yaml
+```
+
+On this station the SAPIEN runtime smoke requires access to the desktop X11 session, for example `DISPLAY=:1 XAUTHORITY=/run/user/1001/gdm/Xauthority`. Running the same command inside a sandbox that cannot open the X display fails before benchmark code runs.
+
 ## Initial Task
 
 The initial config targets upstream task name `google_robot_pick_coke_can`, which maps upstream to `GraspSingleOpenedCokeCanInScene-v0`. Upstream currently documents this task in the minimal example:
@@ -81,5 +89,4 @@ The adapter stores the latest native observation, reward, info, `success`, `trun
 
 - Initial support is single-environment and Box-action focused.
 - Runtime camera mutation is out of scope; the initial config uses the default SimplerEnv rendered image.
-- Human direct play is not wired as a separate `direct_simpler_env` backend yet.
 - The uv backend has no policy inference stack; it is for environment reset/step/render integration only.
