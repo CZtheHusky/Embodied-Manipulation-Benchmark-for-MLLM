@@ -10,6 +10,7 @@ from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
 from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionController, PusherDeltaEEFJoystickController, ReacherDeltaEEFJoystickController
 from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
+from mllm_teleop_benchmark.control.rlbench import RLBenchDeltaEEFController
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
 from mllm_teleop_benchmark.observation.camera import (
@@ -59,6 +60,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.calvin.adapter import CalvinSimAdapter
 
         return CalvinSimAdapter(config.simulator)
+    if config.simulator.type == "rlbench":
+        from mllm_teleop_benchmark.sim.rlbench.adapter import RLBenchSimAdapter
+
+        return RLBenchSimAdapter(config.simulator)
     raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
 
 
@@ -85,6 +90,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.calvin_task import CalvinTask
 
         return CalvinTask(config.task)
+    if config.task.type == "rlbench_generic":
+        from mllm_teleop_benchmark.tasks.rlbench_task import RLBenchTask
+
+        return RLBenchTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -130,6 +139,10 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.calvin.observation import CalvinObservationProvider
 
         return CalvinObservationProvider(camera_manager)
+    if config.simulator.type == "rlbench":
+        from mllm_teleop_benchmark.sim.rlbench.observation import RLBenchObservationProvider
+
+        return RLBenchObservationProvider(camera_manager)
     return DefaultObservationProvider(camera_manager)
 
 
@@ -174,6 +187,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         return PusherDeltaEEFJoystickController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "maniskill_delta_eef":
         return ManiSkillDeltaEEFController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "rlbench_delta_eef":
+        return RLBenchDeltaEEFController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "robosuite_osc":
         from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
 

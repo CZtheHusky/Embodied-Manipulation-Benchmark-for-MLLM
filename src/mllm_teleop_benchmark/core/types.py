@@ -45,6 +45,14 @@ class ManiSkillAction(SimulatorAction):
 
 
 @dataclass(frozen=True)
+class RLBenchAction(SimulatorAction):
+    delta_position: Vec3
+    delta_rotation_rpy: Vec3 = (0.0, 0.0, 0.0)
+    gripper: float = 1.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RobosuiteAction(SimulatorAction):
     values: tuple[float, ...]
     metadata: dict[str, Any] = field(default_factory=dict)

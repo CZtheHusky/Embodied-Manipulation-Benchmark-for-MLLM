@@ -69,6 +69,14 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "scripts/run_benchmark.py", "--config", "configs/calvin_delta_eef.yaml"],
         ],
     },
+    "rlbench": {
+        "python": "3.10",
+        "input": "rlbench.in",
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_rlbench_colosseum_integration.py", "-rs"],
+            ["python", "scripts/run_benchmark.py", "--config", "configs/rlbench_reach_target_delta_eef.yaml"],
+        ],
+    },
 }
 
 

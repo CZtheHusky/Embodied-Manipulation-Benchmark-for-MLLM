@@ -12,6 +12,7 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
 - Do not commit `.venvs/` or CALVIN's upstream source checkout.
 - Use CPU PyTorch for `maniskill-cpu` by default; use `maniskill-cu126` on NVIDIA CUDA 12.6 hosts.
 - Keep backend imports lazy so the core environment works without optional simulators installed.
+- Treat CoppeliaSim/PyRep as an external runtime prerequisite; uv can isolate Python packages but cannot install or validate the CoppeliaSim system binary.
 
 ## uv Commands
 
@@ -101,6 +102,17 @@ python3 scripts/manage_uv_env.py run calvin -- python scripts/run_benchmark.py -
 ```
 
 CALVIN is special: uv can resolve the pinned Git dependency, but it cannot install an editable Git URL directly. The create step clones `calvin_env` to `.venvs/_sources/calvin-env`, checks out commit `797142c588c21e76717268b7b430958dbd13bf48`, initializes submodules, and installs that local checkout editable so CALVIN's runtime Hydra `conf/` directory is available.
+
+RLBench:
+
+```bash
+python3 scripts/manage_uv_env.py create rlbench
+python3 scripts/manage_uv_env.py run rlbench -- python scripts/run_benchmark.py --config configs/rlbench_reach_target_delta_eef.yaml
+```
+
+The `rlbench` uv environment installs Python packages only. It does not install CoppeliaSim. RLBench upstream targets CoppeliaSim v4.1.0 with PyRep, so hosts must install the CoppeliaSim system binary and set `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, and `QT_QPA_PLATFORM_PLUGIN_PATH` before runtime use. Headless execution also needs a working OpenGL/X/GPU setup such as `DISPLAY=:99` on NVIDIA hosts. The optional runtime smoke skips when RLBench/PyRep or CoppeliaSim are unavailable unless `MLLM_TELEOP_REQUIRE_RLBENCH=1` is set.
+
+Colosseum is not a separate backend in this worktree yet. It remains documented as a robustness extension blocked on a verified RLBench `reset -> step -> render -> close` smoke. See `docs/rlbench_colosseum_integration.md`.
 
 ## Editable Install Check
 
