@@ -26,6 +26,12 @@ To require the optional backend smoke test instead of skipping it:
 MLLM_TELEOP_REQUIRE_ROBOSUITE=1 pytest tests/test_robosuite_integration.py -rs
 ```
 
+Manual play uses the same uv environment:
+
+```bash
+python3 scripts/manage_uv_env.py run robosuite -- python scripts/play_benchmark.py --config configs/robosuite_lift.yaml
+```
+
 ## Control
 
 The initial config targets robosuite `Lift` with Panda and OSC pose control.
@@ -46,4 +52,3 @@ Camera settings are sampled from the episode seed and applied during reset throu
 
 - Initial support is focused on Lift.
 - The adapter is intentionally lightweight and should be hardened as more robosuite tasks are added.
-- Human play for robosuite is not yet implemented.

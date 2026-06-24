@@ -1,5 +1,6 @@
 import pytest
 
+import multiprocessing as mp
 import numpy as np
 from mllm_teleop_benchmark import BenchmarkRunner, load_config
 from mllm_teleop_benchmark.action.joystick import JoystickAction
@@ -9,6 +10,7 @@ from mllm_teleop_benchmark.control.dmcontrol_controller import DMControlControll
 from mllm_teleop_benchmark.core.registry import build_controller, build_mapping
 from mllm_teleop_benchmark.core.types import DMControlAction
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
+from mllm_teleop_benchmark.ui.runtime import PlayerCommand, PlayerRuntimeResult, sim_adapter_worker_entry
 
 def test_dmcontrol_short_episode(tmp_path):
     pytest.importorskip("dm_control")
@@ -168,3 +170,50 @@ def test_dmcontrol_free_camera_randomization_fails_loudly():
             object(),
             {"distance": 1.0, "azimuth": 10.0, "elevation": -30.0, "lookat": (0.0, 0.0, 0.0)},
         )
+
+
+def test_dmcontrol_sim_adapter_worker_reset_step_shutdown():
+    pytest.importorskip("dm_control")
+    pytest.importorskip("mujoco")
+
+    config = load_config("configs/dmcontrol_example.yaml")
+    context = mp.get_context("spawn")
+    action_queue: mp.Queue = context.Queue()
+    result_queue: mp.Queue = context.Queue()
+    worker = context.Process(target=sim_adapter_worker_entry, args=(config, action_queue, result_queue))
+    worker.start()
+    try:
+        action_queue.put(PlayerCommand("reset"))
+        initial = result_queue.get(timeout=15)
+        assert isinstance(initial, PlayerRuntimeResult)
+        if initial.error:
+            pytest.skip(f"DMControl runtime unavailable: {initial.error}")
+        assert initial.observation is not None
+        assert np.asarray(initial.frame).ndim == 3
+
+        controller = build_controller(config, build_mapping(config), config.benchmark.seed)
+        sim_action = controller.translate(
+            JoystickAction(
+                {
+                    "joystick_0": 0.0,
+                    "joystick_1": 0.0,
+                    "joystick_2": 0.0,
+                    "joystick_3": 0.0,
+                    "joystick_4": 0.0,
+                }
+            )
+        )
+        action_queue.put(PlayerCommand("step", sim_action))
+        stepped = result_queue.get(timeout=15)
+        assert isinstance(stepped, PlayerRuntimeResult)
+        if stepped.error:
+            pytest.skip(f"DMControl runtime step unavailable: {stepped.error}")
+        assert stepped.observation is not None
+        assert np.asarray(stepped.frame).shape[-1] == 3
+        assert stepped.step_result is not None
+        assert stepped.step_result.info["step_id"] == 1
+    finally:
+        action_queue.put(PlayerCommand("close"))
+        worker.join(timeout=5)
+        if worker.is_alive():
+            worker.terminate()

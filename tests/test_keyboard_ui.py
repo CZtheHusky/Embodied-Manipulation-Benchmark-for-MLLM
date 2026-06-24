@@ -2,8 +2,9 @@ from mllm_teleop_benchmark.action.parser import ActionParser
 from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.core.registry import build_action_space
-from mllm_teleop_benchmark.ui.pygame_app import PygameBenchmarkApp
+from mllm_teleop_benchmark.ui.human_player import PygameHumanPlayer
 from mllm_teleop_benchmark.ui.keyboard import KeyboardJoystickMapper
+from mllm_teleop_benchmark.ui.runtime import SimAdapterWorkerRuntime
 
 
 def test_keyboard_mapper_generates_standard_joystick_action():
@@ -35,14 +36,14 @@ def test_keyboard_mapper_toggles_configured_final_gripper_channel():
 
 def test_pygame_backend_uses_control_interface_gripper_channel():
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
-    app = PygameBenchmarkApp(config)
+    app = PygameHumanPlayer(config, SimAdapterWorkerRuntime(config))
 
     assert app._gripper_channel() == "joystick_6"
 
 
 def test_pygame_backend_invalid_action_recovers_to_noop():
     config = load_config("configs/reacher_delta_eef.yaml")
-    app = PygameBenchmarkApp(config)
+    app = PygameHumanPlayer(config, SimAdapterWorkerRuntime(config))
     action_space = build_action_space(config)
 
     parsed, validation = app._parse_and_validate(

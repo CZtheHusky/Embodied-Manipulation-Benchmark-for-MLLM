@@ -62,7 +62,8 @@ logging:
   save_trajectory: true
 
 ui:
-  backend: direct_dmcontrol
+  backend: pygame
+  runtime: sim_adapter_worker
   window_width: 800
   window_height: 600
   fps: 20

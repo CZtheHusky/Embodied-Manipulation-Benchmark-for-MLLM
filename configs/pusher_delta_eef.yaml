@@ -78,7 +78,8 @@ logging:
   save_config_snapshot: true
 
 ui:
-  backend: direct_gymnasium
+  backend: pygame
+  runtime: sim_adapter_worker
   window_width: 720
   window_height: 540
   info_panel_height: 190

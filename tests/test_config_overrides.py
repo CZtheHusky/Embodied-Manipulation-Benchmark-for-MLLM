@@ -17,6 +17,17 @@ def test_cli_style_override_updates_control_interface():
     assert "mapping" not in metadata
 
 
+def test_cli_style_override_updates_ui_config():
+    config = load_config(
+        "configs/reacher_delta_eef.yaml",
+        ("ui.backend=pygame", "ui.runtime=sim_adapter_worker", "ui.worker_timeout_seconds=3"),
+    )
+
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
+    assert config.ui.worker_timeout_seconds == 3.0
+
+
 def test_control_interface_is_required():
     with pytest.raises(ValueError, match="control_interface"):
         load_config("configs/dummy_reach.yaml", ("control_interface=null",))

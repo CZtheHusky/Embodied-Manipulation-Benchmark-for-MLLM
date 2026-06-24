@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import multiprocessing as mp
 import os
 import time
-from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
-import pygame
 
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.action.parser import ActionParseError, ActionParser
@@ -22,43 +19,29 @@ from mllm_teleop_benchmark.logging.debug_session import DebugSession
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
 from mllm_teleop_benchmark.logging.frame_debug import FrameDebugRecorder
 from mllm_teleop_benchmark.ui.keyboard import KeyboardJoystickMapper
+from mllm_teleop_benchmark.ui.runtime import PlayerRuntime, PlayerRuntimeResult
 
 
-@dataclass(frozen=True)
-class WorkerCommand:
-    kind: str
-    action: Any = None
-
-
-@dataclass(frozen=True)
-class WorkerResult:
-    frame: Any
-    info: dict[str, Any]
-    done: bool
-    state: dict[str, Any] | None = None
-    step_result: StepResult | None = None
-    error: str | None = None
-
-
-WorkerTarget = Callable[[BenchmarkConfig, mp.Queue, mp.Queue], None]
-
-
-class DirectBenchmarkPlayer:
-    def __init__(self, config: BenchmarkConfig, *, worker_target: WorkerTarget, runtime_tag: str) -> None:
+class PygameHumanPlayer:
+    def __init__(self, config: BenchmarkConfig, runtime: PlayerRuntime) -> None:
         self.config = config
-        self.worker_target = worker_target
-        self.runtime_tag = runtime_tag
-        ui_config = config.raw.get("ui", {}) if isinstance(config.raw.get("ui", {}), dict) else {}
-        self.width = int(ui_config.get("window_width", 640))
-        self.image_height = int(ui_config.get("window_height", 480))
-        self.panel_height = int(ui_config.get("info_panel_height", 170))
+        self.runtime = runtime
+        self.width = int(config.ui.window_width)
+        self.image_height = int(config.ui.window_height)
+        self.panel_height = int(config.ui.info_panel_height)
         self.height = self.image_height + self.panel_height
-        self.max_steps = int(ui_config.get("max_steps", config.task.max_steps))
-        self.debug_frames_enabled = bool(ui_config.get("debug_frames", True))
-        self.debug_control_history_enabled = bool(ui_config.get("debug_control_history", True))
+        self.fps = int(config.ui.fps)
+        self.max_steps = int(config.ui.max_steps if config.ui.max_steps is not None else config.task.max_steps)
+        self.debug_frames_enabled = bool(config.ui.debug_frames)
+        self.debug_control_history_enabled = bool(config.ui.debug_control_history)
 
     def run(self) -> EpisodeResult:
+        if self.config.ui.display:
+            os.environ["DISPLAY"] = self.config.ui.display
         os.environ.setdefault("SDL_VIDEODRIVER", "x11")
+
+        import pygame
+
         seed = self.config.benchmark.seed
         action_space = build_action_space(self.config)
         parser = ActionParser()
@@ -72,32 +55,33 @@ class DirectBenchmarkPlayer:
             actor="human_keyboard",
             episode_id=0,
             seed=seed,
-            extra_metadata={"runtime": self.runtime_tag},
+            extra_metadata={"runtime": self.config.ui.runtime},
         )
         frame_debug = FrameDebugRecorder(self.config, enabled=self.debug_frames_enabled, session=debug_session)
         control_debug = ControlDebugRecorder(self.config, enabled=self.debug_control_history_enabled, session=debug_session)
         logger_metadata = {
-            "mode": "human_direct_worker",
+            "mode": "human_play",
             "action_schema": action_space.schema(),
             "controller": controller.metadata(),
             "control_interface": control_interface_metadata(self.config, seed),
             "debug_session": debug_session.metadata,
+            "player": {
+                "backend": self.config.ui.backend,
+                "runtime": self.config.ui.runtime,
+                "process_model": "control_ui_main_sim_worker",
+            },
         }
         panel_lines = ControlInstructionBuilder().build(logger_metadata["control_interface"], logger_metadata["action_schema"]).panel_lines
         metrics = MetricsRecorder()
         history: list[StepTransition] = []
 
-        action_queue: mp.Queue = mp.Queue()
-        res_queue: mp.Queue = mp.Queue()
-        worker = mp.Process(target=self.worker_target, args=(self.config, action_queue, res_queue))
-        worker.start()
-
+        self.runtime.start()
         pygame.init()
         font = pygame.font.Font(None, 24)
+        clock = pygame.time.Clock()
 
         steps = 0
         success = False
-        last_info: dict[str, Any] = {}
         last_action = key_mapper.action_from_pressed(set())
         logger.start(logger_metadata)
         control_debug.reset()
@@ -105,13 +89,11 @@ class DirectBenchmarkPlayer:
             debug_session.write_manifest()
 
         try:
-            initial = res_queue.get()
-            if initial.error:
-                raise RuntimeError(initial.error)
-            frame, last_info, _ = initial.frame, initial.info, initial.done
-            observation = self._observation_from_result(initial)
+            initial = self.runtime.reset()
+            frame, observation = self._frame_observation(initial)
             self._configure_canvas_from_frame(frame)
             screen = pygame.display.set_mode((self.width, self.height))
+            pygame.display.set_caption(self.config.benchmark.name)
             frame_debug.record_frame(frame, step_id=observation.step_id, prefix="initial")
             self._draw(screen, font, frame, steps, None, last_action, panel_lines, success)
             pygame.display.flip()
@@ -135,13 +117,10 @@ class DirectBenchmarkPlayer:
                             )
                             running = False
                         elif event.key == pygame.K_r:
-                            action_queue.put(WorkerCommand("reset"))
-                            result = res_queue.get()
-                            if result.error:
-                                raise RuntimeError(result.error)
-                            frame, last_info, _ = result.frame, result.info, result.done
+                            result = self.runtime.reset()
+                            frame, next_observation = self._frame_observation(result)
                             before_state = observation.state
-                            observation = self._observation_from_result(result)
+                            observation = next_observation
                             frame_debug.record_frame(frame, step_id=observation.step_id, prefix="reset")
                             control_debug.record(
                                 control_debug.build_event_record(
@@ -170,13 +149,9 @@ class DirectBenchmarkPlayer:
                             last_action = raw_action
                             parsed_action, validation = self._parse_and_validate(parser, validator, action_space, raw_action)
                             sim_action = controller.translate(parsed_action)
-                            action_queue.put(WorkerCommand("step", sim_action))
-                            result = res_queue.get()
-                            if result.error:
-                                raise RuntimeError(result.error)
-                            frame, last_info, done = result.frame, result.info, result.done
+                            result = self.runtime.step(sim_action)
+                            frame, next_observation = self._frame_observation(result)
                             steps += 1
-                            next_observation = self._observation_from_result(result)
                             frame_debug.record_frame(frame, step_id=next_observation.step_id, prefix="step")
                             control_record = control_debug.build_step_record(
                                 source="human_keyboard",
@@ -194,8 +169,8 @@ class DirectBenchmarkPlayer:
                             truncated = steps >= self.max_steps and not success
                             step_result = result.step_result or StepResult(
                                 observation=next_observation,
-                                terminated=done,
-                                truncated=truncated,
+                                terminated=result.terminated,
+                                truncated=result.truncated,
                                 info=next_observation.state,
                             )
                             transition = StepTransition(
@@ -218,15 +193,13 @@ class DirectBenchmarkPlayer:
                             pygame.display.flip()
                             if transition.terminated or transition.truncated:
                                 running = False
-                time.sleep(0.01)
+                clock.tick(self.fps)
+                time.sleep(0.001)
         finally:
-            action_queue.put(WorkerCommand("close"))
-            worker.join(timeout=1.0)
-            if worker.is_alive():
-                worker.terminate()
+            self.runtime.close()
             pygame.quit()
 
-        final_state = observation.state if "observation" in locals() else dict(last_info)
+        final_state = observation.state if "observation" in locals() else {}
         final_metrics = metrics.finalize(success, task.metrics(final_state))
         result = EpisodeResult(
             episode_id=0,
@@ -238,6 +211,13 @@ class DirectBenchmarkPlayer:
         )
         logger.finish(result)
         return result
+
+    def _frame_observation(self, result: PlayerRuntimeResult) -> tuple[Any, Observation]:
+        if result.error:
+            raise RuntimeError(result.error)
+        if result.observation is None:
+            raise RuntimeError("Player runtime returned no observation")
+        return result.frame, result.observation
 
     def _parse_and_validate(self, parser: ActionParser, validator: ActionValidator, action_space: Any, raw_action: dict[str, float]) -> tuple[JoystickAction, ValidationResult]:
         try:
@@ -252,26 +232,12 @@ class DirectBenchmarkPlayer:
     def _noop_joystick_action(self, action_space: Any) -> JoystickAction:
         return JoystickAction({name: 0.0 for name in action_space.channels})
 
-    def _observation_from_result(self, result: WorkerResult) -> Observation:
-        state = dict(result.state or result.info)
-        step_id = int(state.get("step_id", 0))
-        frame_name = str(result.info.get("frame_name", "front"))
-        return Observation(
-            step_id=step_id,
-            images={frame_name: result.frame},
-            state=state,
-            metadata={
-                "simulator": self.config.simulator.type,
-                "source": "direct_worker",
-                "frame_name": frame_name,
-            },
-        )
-
     def _draw(self, screen: Any, font: Any, frame: Any, steps: int, distance: Any, action: dict[str, float] | None = None, panel_lines: tuple[str, ...] = (), success: bool = False) -> None:
+        import pygame
+
         screen.fill((18, 20, 24))
         self._draw_panel(screen, font, steps, distance, action, panel_lines, success)
         arr = self._rgb_array(frame)
-
         surface = pygame.image.frombuffer(arr.tobytes(), (arr.shape[1], arr.shape[0]), "RGB").convert()
         if surface.get_size() != (self.width, self.image_height):
             surface = pygame.transform.scale(surface, (self.width, self.image_height))
@@ -353,3 +319,6 @@ class DirectBenchmarkPlayer:
                     arr = np.clip(arr, 0, 255).astype(np.uint8)
                 return np.ascontiguousarray(arr)
         return np.zeros((self.image_height, self.width, 3), dtype=np.uint8)
+
+
+__all__ = ["PygameHumanPlayer"]
