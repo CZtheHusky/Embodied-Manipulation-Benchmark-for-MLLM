@@ -262,7 +262,9 @@ pydantic==2.13.4
 pydantic-core==2.46.4
     # via pydantic
 pygame==2.6.1
-    # via robocasa
+    # via
+    #   -r envs/uv/robocasa.in
+    #   robocasa
 pygments==2.20.0
     # via
     #   pytest

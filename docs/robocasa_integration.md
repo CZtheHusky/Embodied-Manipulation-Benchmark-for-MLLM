@@ -54,6 +54,7 @@ As of 2026-06-24:
 - `python3 scripts/manage_uv_env.py create robocasa` completes, including the fixed RoboCasa and robosuite editable source installs.
 - `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` passes with the fixed assets installed: `3 passed, 2 warnings`.
 - `python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml` completes one random-agent episode: `average_steps=100.0`, `success_rate=0.0`.
+- `python3 scripts/manage_uv_env.py run robocasa -- python scripts/play_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml --set ui.max_steps=0` starts the shared Pygame worker runtime, resets RoboCasa, extracts the configured camera frame, and exits cleanly.
 
 The previous robosuite source compatibility blocker is resolved by replacing PyPI `robosuite==1.5.2` with source commit `85abee228d1c43ab1939bce33028099945d453b4`. PyPI still lets uv resolve quickly, but its `ManipulationEnv.__init__` does not accept RoboCasa's `load_model_on_init=False` call. The upstream RoboCasa README says to install robosuite from `master`; this branch pins the current `master` head to make that instruction reproducible.
 
@@ -116,4 +117,5 @@ Run the actual backend smoke only after resolving the robosuite source blocker a
 ```bash
 python3 scripts/manage_uv_env.py smoke robocasa
 python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/play_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml --set ui.max_steps=0
 ```

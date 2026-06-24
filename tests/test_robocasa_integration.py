@@ -12,6 +12,7 @@ from mllm_teleop_benchmark.mapping.frame_transform import IdentityControlFrameTr
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 from mllm_teleop_benchmark.sim.robocasa.adapter import RoboCasaSimAdapter
 from mllm_teleop_benchmark.tasks.robocasa_task import RoboCasaGenericTask
+from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for_config
 
 
 CONFIG_PATH = "configs/robocasa_pick_place_counter_to_cabinet.yaml"
@@ -58,6 +59,15 @@ def test_robocasa_config_builds_without_backend():
     assert isinstance(controller, RoboCasaOSCController)
     assert config.simulator.env_id == "robocasa/PickPlaceCounterToCabinet"
     assert config.simulator.env_kwargs["split"] == "pretrain"
+
+
+def test_robocasa_config_uses_worker_play_runtime():
+    config = load_config(CONFIG_PATH)
+
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
+    assert config.ui.frame_camera == "robot0_agentview_left"
+    assert isinstance(hooks_for_config(config), MujocoPlayerRuntimeHooks)
 
 
 def test_robocasa_controller_action_shape_contract():

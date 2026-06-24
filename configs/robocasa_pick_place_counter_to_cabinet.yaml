@@ -58,3 +58,8 @@ agent:
 logging:
   output_dir: outputs/robocasa_pick_place_counter_to_cabinet
   save_trajectory: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: robot0_agentview_left

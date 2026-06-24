@@ -73,7 +73,7 @@ class MujocoPlayerRuntimeHooks(PlayerRuntimeHooks):
 
 
 def hooks_for_config(config: BenchmarkConfig) -> PlayerRuntimeHooks:
-    if config.simulator.type in {"gymnasium", "dmcontrol"}:
+    if config.simulator.type in {"gymnasium", "dmcontrol", "robosuite", "robocasa"}:
         return MujocoPlayerRuntimeHooks()
     return PlayerRuntimeHooks()
 
