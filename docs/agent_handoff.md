@@ -40,6 +40,7 @@ Implemented backend coverage in this directory:
 - Optional ManiSkill PickCube backend.
 - Optional robosuite Lift backend pinned around `robosuite==1.4.1`.
 - Optional DeepMind Control Suite backend for `manipulator/bring_ball`.
+- Optional Meta-World MT1 `reach-v3` backend through the Gymnasium API.
 - Optional CALVIN backend for `PlayTableSimEnv` smoke evaluation.
 
 Important shared components:
@@ -97,6 +98,7 @@ Current uv backend ids are:
 - `maniskill-cu126`
 - `robosuite`
 - `dmcontrol`
+- `metaworld`
 - `calvin`
 
 ## Sibling Worktrees
@@ -131,6 +133,7 @@ python3 scripts/manage_uv_env.py smoke core
 python3 scripts/manage_uv_env.py smoke gymnasium
 python3 scripts/manage_uv_env.py smoke dmcontrol
 python3 scripts/manage_uv_env.py smoke robosuite
+python3 scripts/manage_uv_env.py smoke metaworld
 python3 scripts/manage_uv_env.py smoke maniskill-cpu
 python3 scripts/manage_uv_env.py smoke maniskill-cu126  # GPU host only
 python3 scripts/manage_uv_env.py smoke calvin
@@ -145,6 +148,7 @@ Results:
 - uv Gymnasium smoke passed: `6 passed`; a 2-step Reacher benchmark smoke completed with `success_rate: 0.0`.
 - DMControl integration tests passed: `7 passed`; random-policy benchmark smoke completed one 250-step episode with `success_rate: 0.0`.
 - robosuite uv smoke passed: `3 passed` after pinning `mujoco>=2.3,<3.0`.
+- Meta-World uv smoke passed: `6 passed`; random-policy MT1 `reach-v3` benchmark smoke completed one 100-step episode with `success_rate: 0.0`.
 - ManiSkill CPU uv smoke passed: `8 passed`.
 - ManiSkill CUDA 12.6 env smoke passed on station with `torch==2.12.1+cu126`, CUDA 12.6, and NVIDIA GeForce RTX 2080. GPU checks must run outside the restricted command sandbox.
 - CALVIN integration tests passed: `5 passed`; random-policy benchmark smoke completed one 100-step episode with `success_rate: 0.0`.
@@ -161,6 +165,8 @@ prove task-solving ability.
   behavior, not every optional simulator backend.
 - DMControl free-camera orbit randomization is still unsupported and fails
   loudly.
+- Meta-World coverage is intentionally limited to MT1 `reach-v3`; MT10/MT50,
+  ML benchmarks, and vector envs are not implemented.
 - CALVIN camera randomization is best-effort against CALVIN internals and does
   not yet have a visual-change oracle.
 - CALVIN task success still needs a stricter language-task oracle for real

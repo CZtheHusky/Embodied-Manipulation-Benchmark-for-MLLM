@@ -61,6 +61,14 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "-m", "pytest", "-q", "tests/test_maniskill_backend.py"],
         ],
     },
+    "metaworld": {
+        "python": "3.11",
+        "input": "metaworld.in",
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_metaworld_integration.py", "-rs"],
+            ["python", "scripts/run_benchmark.py", "--config", "configs/metaworld_reach.yaml"],
+        ],
+    },
     "calvin": {
         "python": "3.10",
         "input": "calvin.in",

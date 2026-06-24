@@ -93,6 +93,14 @@ python3 scripts/manage_uv_env.py create dmcontrol
 python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
 ```
 
+Meta-World MT1 reach-v3:
+
+```bash
+python3 scripts/manage_uv_env.py create metaworld
+python3 scripts/manage_uv_env.py smoke metaworld
+python3 scripts/manage_uv_env.py run metaworld -- python scripts/run_benchmark.py --config configs/metaworld_reach.yaml
+```
+
 CALVIN:
 
 ```bash
