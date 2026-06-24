@@ -18,6 +18,7 @@ from mllm_teleop_benchmark.core.types import MetaworldAction
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 from mllm_teleop_benchmark.sim.metaworld.adapter import MetaworldSimAdapter
+from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for_config
 
 
 def test_metaworld_reach_config_builds_without_metaworld_install():
@@ -38,6 +39,15 @@ def test_metaworld_reach_config_builds_without_metaworld_install():
     assert task.instruction() == "Reach the target position with the robot end-effector."
     assert provider.__class__.__name__ == "MetaworldObservationProvider"
     assert controller.metadata()["type"] == "metaworld_box"
+
+
+def test_metaworld_config_uses_worker_play_runtime():
+    config = load_config("configs/metaworld_reach.yaml")
+
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
+    assert config.ui.frame_camera == "corner2"
+    assert isinstance(hooks_for_config(config), MujocoPlayerRuntimeHooks)
 
 
 def test_metaworld_box_controller_maps_xyz_and_default_gripper():

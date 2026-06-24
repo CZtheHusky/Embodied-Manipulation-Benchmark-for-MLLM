@@ -4,4 +4,5 @@ PyYAML>=6.0
 pytest>=8.0
 gymnasium>=1.0
 mujoco>=3.0
+pygame>=2.5
 metaworld>=3.0
