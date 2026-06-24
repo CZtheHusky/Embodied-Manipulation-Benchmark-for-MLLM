@@ -86,6 +86,17 @@ python3 scripts/manage_uv_env.py create robosuite
 python3 scripts/manage_uv_env.py run robosuite -- python scripts/run_benchmark.py --config configs/robosuite_lift.yaml
 ```
 
+RoboCasa / RoboCasa365:
+
+```bash
+python3 scripts/manage_uv_env.py create robocasa
+python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.setup_macros
+python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.download_kitchen_assets
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml
+```
+
+RoboCasa assets are around 10 GB and are downloaded from Hugging Face datasets by the upstream script. The asset folders are created under the installed `robocasa` package, for example `$(python -c "import robocasa; print(robocasa.__path__[0])")/models/assets`. Do not run the asset download from ordinary unit tests; `tests/test_robocasa_integration.py` skips the runtime smoke when RoboCasa or its assets are unavailable.
+
 DMControl:
 
 ```bash

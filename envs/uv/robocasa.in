@@ -1,0 +1,9 @@
+imageio>=2.0
+numpy==2.2.5
+PyYAML>=6.0
+pytest>=8.0
+gymnasium
+mujoco==3.3.1
+huggingface-hub
+robosuite @ git+https://github.com/ARISE-Initiative/robosuite.git@824ac14cefcfb7ec125fe5eb2e0bad7364466154
+robocasa @ git+https://github.com/robocasa/robocasa.git@8f3c96ec8d1bfcd8126cad2bca887da98d30e997

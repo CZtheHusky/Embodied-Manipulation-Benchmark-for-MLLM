@@ -46,6 +46,12 @@ BACKENDS: dict[str, dict[str, object]] = {
         "env": {"NUMBA_DISABLE_JIT": "1"},
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_robosuite_integration.py"]],
     },
+    "robocasa": {
+        "python": "3.11",
+        "input": "robocasa.in",
+        "env": {"NUMBA_DISABLE_JIT": "1"},
+        "smoke": [["python", "-m", "pytest", "-q", "tests/test_robocasa_integration.py", "-rs"]],
+    },
     "maniskill-cpu": {
         "python": "3.11",
         "input": "maniskill-cpu.in",

@@ -51,6 +51,12 @@ class RobosuiteAction(SimulatorAction):
 
 
 @dataclass(frozen=True)
+class RoboCasaAction(SimulatorAction):
+    values: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class CalvinAction(SimulatorAction):
     values: tuple[float, ...]
     metadata: dict[str, Any] = field(default_factory=dict)
