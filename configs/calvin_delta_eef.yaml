@@ -86,7 +86,8 @@ logging:
   save_config_snapshot: true
 
 ui:
-  backend: direct_calvin
+  backend: pygame
+  runtime: sim_adapter_worker
   info_panel_height: 200
   max_steps: 100
   debug_frames: true
