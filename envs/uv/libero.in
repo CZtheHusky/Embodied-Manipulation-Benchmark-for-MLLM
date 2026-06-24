@@ -1,5 +1,8 @@
 # LIBERO has no release artifact and its official instructions pin an old stack.
 # Keep it isolated from core and other simulator backends.
+# Status: uv setup is blocked. This input records the attempted Python 3.10/cu113
+# lock path; scripts/manage_uv_env.py fails fast for LIBERO until the upstream
+# Git source fetch/runtime stack is verified.
 imageio>=2.0
 numpy==1.22.4
 PyYAML>=6.0

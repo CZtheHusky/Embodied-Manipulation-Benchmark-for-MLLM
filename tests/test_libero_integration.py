@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 
 import numpy as np
@@ -28,6 +29,15 @@ class _FakeCameraManager:
 
     def metadata(self):
         return {"manager": "fixed"}
+
+
+def _import_runtime_dependency(module_name: str) -> None:
+    try:
+        importlib.import_module(module_name)
+    except ImportError as exc:
+        if os.environ.get("MLLM_TELEOP_REQUIRE_LIBERO") == "1":
+            raise
+        pytest.skip(f"LIBERO runtime dependency unavailable: {module_name}: {exc}")
 
 
 def test_libero_config_builds_without_libero_install():
@@ -96,8 +106,8 @@ def test_libero_adapter_extracts_rgb_images_and_validity_metadata():
 
 
 def test_libero_runtime_reset_init_state_step_render_smoke_when_installed():
-    pytest.importorskip("libero")
-    pytest.importorskip("robosuite")
+    _import_runtime_dependency("libero")
+    _import_runtime_dependency("robosuite")
 
     config = load_config("configs/libero_spatial_task0.yaml")
     sim = build_sim(config)

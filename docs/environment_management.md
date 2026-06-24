@@ -110,11 +110,22 @@ python3 scripts/manage_uv_env.py smoke libero
 python3 scripts/manage_uv_env.py run libero -- python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml
 ```
 
-LIBERO is isolated because its official stack is old: Python 3.8.13, Torch 1.11.0, CUDA 11.3, robosuite 1.4.0, and gym 0.25.2. This repository requires Python >=3.10, so the uv backend resolves with Python 3.10 and `--torch-backend cu113`; treat this as a compatibility attempt, not proof that the original LIBERO paper environment has been reproduced. If the lock or create step fails on Python, Torch/CUDA, robomimic, bddl, or upstream Git dependencies, keep the failure in the integration notes and fall back to the official conda instructions from the LIBERO repository.
+LIBERO is listed to make the blocked state explicit, but these uv commands intentionally fail fast. As of 2026-06-24, `envs/uv/locks/libero.lock.txt` is not checked in. The Python 3.10/cu113 dependency stack resolves when the upstream `libero @ git+...` package is removed, but uv and direct Git source fetches for pinned LIBERO commit `8f1084e3132a39270c3a13ebe37270a43ece2a01` did not complete cleanly in this environment. `create`, `run`, and `smoke` are therefore not runtime verified.
 
-The LIBERO create step writes `LIBERO_CONFIG_PATH=.venvs/libero_config` so upstream `libero.libero.get_libero_path()` can find packaged BDDL, init-state, asset, and dataset directories without prompting interactively on first import.
+Use the LIBERO-specific docs for the fallback:
 
-As of 2026-06-24, `envs/uv/locks/libero.lock.txt` is not checked in: the initial uv lock attempt reached the pinned LIBERO Git update and then did not finish dependency resolution before being interrupted. `create libero` is blocked on producing that lock or using the official conda fallback.
+```bash
+conda create -n libero python=3.8.13
+conda activate libero
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
+cd LIBERO
+git checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
+pip install -r requirements.txt
+pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
+pip install -e .
+```
+
+That is the upstream official conda environment. It validates LIBERO itself, not this repository's adapter, because this repository requires Python >=3.10. A repository runtime fallback must keep Python 3.10, install the same pinned LIBERO source in a separate conda environment, and pass `MLLM_TELEOP_REQUIRE_LIBERO=1 python -m pytest -q tests/test_libero_integration.py -rs` plus `python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml` before anyone reports LIBERO as runtime verified.
 
 ## Editable Install Check
 

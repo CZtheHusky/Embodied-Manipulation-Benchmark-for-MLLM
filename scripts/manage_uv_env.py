@@ -19,6 +19,12 @@ CUDA_SMOKE = (
     "assert torch.cuda.is_available(), 'CUDA is not available'; "
     "print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"
 )
+LIBERO_UV_BLOCKED = (
+    "LIBERO uv setup is blocked and not runtime verified. The Python 3.10/cu113 lock attempt "
+    "does not complete when the pinned upstream LIBERO Git source is included, so no "
+    "envs/uv/locks/libero.lock.txt is checked in. Use the conda fallback documented in "
+    "docs/libero_integration.md."
+)
 
 
 BACKENDS: dict[str, dict[str, object]] = {
@@ -73,6 +79,7 @@ BACKENDS: dict[str, dict[str, object]] = {
         "python": "3.10",
         "input": "libero.in",
         "torch_backend": "cu113",
+        "blocked_reason": LIBERO_UV_BLOCKED,
         "env": {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "NUMBA_DISABLE_JIT": "1"},
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_libero_integration.py", "-rs"],
@@ -133,6 +140,7 @@ def python_bin(name: str) -> Path:
 
 
 def lock_backend(name: str, platform: str) -> None:
+    require_unblocked_backend(name, "lock")
     cfg = backend_config(name)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     command = [
@@ -154,6 +162,7 @@ def lock_backend(name: str, platform: str) -> None:
 
 
 def create_backend(name: str) -> None:
+    require_unblocked_backend(name, "create")
     cfg = backend_config(name)
     if not lock_path(name).exists():
         lock_backend(name, PYTHON_PLATFORM)
@@ -205,6 +214,7 @@ def write_libero_config() -> None:
 
 
 def run_backend(name: str, command: list[str]) -> None:
+    require_unblocked_backend(name, "run")
     python = python_bin(name)
     if not python.exists():
         raise SystemExit(f"uv environment does not exist: {venv_path(name)}; run create first")
@@ -216,9 +226,16 @@ def run_backend(name: str, command: list[str]) -> None:
 
 
 def smoke_backend(name: str) -> None:
+    require_unblocked_backend(name, "smoke")
     cfg = backend_config(name)
     for command in cfg["smoke"]:  # type: ignore[index]
         run_backend(name, list(command))
+
+
+def require_unblocked_backend(name: str, command: str) -> None:
+    reason = backend_config(name).get("blocked_reason")
+    if reason:
+        raise SystemExit(f"{name} uv {command} is blocked: {reason}")
 
 
 def backend_env(name: str) -> dict[str, str]:

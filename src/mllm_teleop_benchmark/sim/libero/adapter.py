@@ -127,8 +127,8 @@ class LiberoSimAdapter(SimAdapter):
             from libero.libero.envs import OffScreenRenderEnv
         except ImportError as exc:
             raise ImportError(
-                "LIBERO backend requires the pinned LIBERO stack in the mllm-teleop-libero uv environment. "
-                "Create it with `python3 scripts/manage_uv_env.py create libero`."
+                "LIBERO backend requires the pinned upstream LIBERO stack. The uv environment is blocked "
+                "and not runtime verified; use the conda fallback documented in docs/libero_integration.md."
             ) from exc
         return benchmark, OffScreenRenderEnv
 

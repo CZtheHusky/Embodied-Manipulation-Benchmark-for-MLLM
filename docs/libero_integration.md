@@ -29,7 +29,9 @@ obs, reward, done, info = env.step([0.0] * 7)
 
 This matches the upstream README and current `env_wrapper.py`: `OffScreenRenderEnv` wraps robosuite and exposes `reset`, `set_init_state`, `step`, `check_success`, `sim`, and `close`.
 
-Dependency lock status on 2026-06-24: `python3 scripts/manage_uv_env.py lock libero` started `uv pip compile` with Python 3.10 and `--torch-backend cu113`, updated the pinned LIBERO Git dependency, then remained in dependency resolution with no further output for multiple 30-second polling windows. The command was interrupted to keep this integration minimal. No `envs/uv/locks/libero.lock.txt` is checked in yet.
+Dependency status on 2026-06-24: LIBERO uv setup is blocked and not runtime verified. `python3 scripts/manage_uv_env.py lock libero` starts `uv pip compile` with Python 3.10 and `--torch-backend cu113`, updates the pinned LIBERO Git dependency, then remains in the upstream Git source fetch/resolution path without completing. Follow-up probes showed the direct pinned dependency stack without `libero @ git+...` resolves 100 packages in about 15 seconds, while Git-only uv resolution, a GitHub archive URL, and direct Git source checkout did not complete cleanly in this environment. No `envs/uv/locks/libero.lock.txt` is checked in.
+
+`scripts/manage_uv_env.py` intentionally fails fast for `lock`, `create`, `run`, and `smoke` on the `libero` backend until a lock and runtime smoke have both been verified.
 
 ## Architecture
 
@@ -82,14 +84,53 @@ Do not report LIBERO success without also reporting these metadata fields and th
 
 ## Dependencies
 
-Use uv isolation:
+The uv backend is blocked:
 
 ```bash
 python3 scripts/manage_uv_env.py create libero
 python3 scripts/manage_uv_env.py smoke libero
 ```
 
-`envs/uv/libero.in` pins upstream LIBERO to commit `8f1084e3132a39270c3a13ebe37270a43ece2a01` and follows the old official stack as closely as this project can:
+Both commands fail fast by design. `envs/uv/libero.in` records the attempted Python 3.10 compatibility lock input and pins upstream LIBERO to commit `8f1084e3132a39270c3a13ebe37270a43ece2a01`, but this path has not produced a lock or runtime smoke.
+
+The upstream official conda reproduction path is:
+
+```bash
+conda create -n libero python=3.8.13
+conda activate libero
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
+cd LIBERO
+git checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
+pip install -r requirements.txt
+pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
+pip install -e .
+```
+
+That official Python 3.8.13 environment is useful for validating upstream LIBERO itself, but it is not a verified runtime for this repository because `pyproject.toml` requires Python >=3.10. Do not weaken the repository-wide Python requirement to fit LIBERO.
+
+For this repository, the only acceptable fallback is a separate conda compatibility environment that keeps Python 3.10 and then proves the adapter with required runtime smoke:
+
+```bash
+conda create -n mllm-teleop-libero python=3.10
+conda activate mllm-teleop-libero
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
+cd LIBERO
+git checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
+pip install -r requirements.txt
+pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
+pip install -e .
+cd /home/caozhe/workspace/embodied-sim-libero
+pip install -e .
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+export NUMBA_DISABLE_JIT=1
+MLLM_TELEOP_REQUIRE_LIBERO=1 python -m pytest -q tests/test_libero_integration.py -rs
+python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml
+```
+
+Until those final two commands pass, report LIBERO as adapter-implemented but runtime-blocked.
+
+The compatibility stack follows the old official dependencies as closely as this project can:
 
 - Torch `1.11.0`
 - torchvision `0.12.0`
@@ -99,13 +140,9 @@ python3 scripts/manage_uv_env.py smoke libero
 - gym `0.25.2`
 - bddl `1.0.1`
 
-Known risk: official LIBERO asks for Python 3.8.13, but this repository's package metadata requires Python >=3.10. The uv backend therefore uses Python 3.10. If resolution or runtime fails, use the failure as a blocker for this backend rather than weakening the global project Python requirement.
-
-Current blocker: the first uv lock attempt did not complete in this environment before being interrupted. Treat `create libero` and real runtime smoke as blocked until `envs/uv/locks/libero.lock.txt` is generated or an official conda fallback is used.
-
 ## Smoke Test
 
-The runtime smoke in `tests/test_libero_integration.py` skips when LIBERO, robosuite, BDDL files, init states, assets, or headless rendering are unavailable. When the stack is installed, it verifies:
+The runtime smoke in `tests/test_libero_integration.py` skips when LIBERO is not required and LIBERO, robosuite, BDDL files, init states, assets, or headless rendering are unavailable. Set `MLLM_TELEOP_REQUIRE_LIBERO=1` in a claimed LIBERO runtime environment so missing dependencies or runtime failures fail loudly. When the stack is installed, it verifies:
 
 - config and controller build
 - reset
