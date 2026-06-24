@@ -20,19 +20,20 @@ def test_maniskill_pickcube_config_builds_without_maniskill_install():
     controller = build_controller(config, build_mapping(config, seed=7), seed=7)
 
     assert config.simulator.type == "maniskill"
-    assert config.raw["ui"]["backend"] == "direct_maniskill"
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
     assert tuple(action_space.channels) == tuple(f"joystick_{idx}" for idx in range(7))
     assert controller.metadata()["type"] == "maniskill_delta_eef"
 
 
-def test_direct_maniskill_player_builds_without_starting_env():
-    pytest.importorskip("pygame")
-    from mllm_teleop_benchmark.ui.direct_maniskill_player import DirectManiSkillPlayer
+def test_pygame_maniskill_player_builds_without_starting_env():
+    from mllm_teleop_benchmark.ui.human_player import PygameHumanPlayer
+    from mllm_teleop_benchmark.ui.registry import build_player
 
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
-    player = DirectManiSkillPlayer(config)
+    player = build_player(config)
 
-    assert player.runtime_tag == "direct_maniskill_player"
+    assert isinstance(player, PygameHumanPlayer)
     assert player.max_steps == 100
 
 
@@ -134,22 +135,23 @@ def test_maniskill_adapter_clips_native_action_against_box_space():
     assert metadata["clipped"] is True
 
 
-def test_direct_maniskill_worker_reset_step_shutdown_when_installed():
-    pytest.importorskip("pygame")
+def test_sim_adapter_worker_maniskill_reset_step_shutdown_when_installed():
     pytest.importorskip("mani_skill")
-    from mllm_teleop_benchmark.ui.direct_maniskill_player import env_worker as maniskill_env_worker
-    from mllm_teleop_benchmark.ui.direct_player import WorkerCommand, WorkerResult
+    from mllm_teleop_benchmark.ui.runtime import PlayerCommand, PlayerRuntimeResult, sim_adapter_worker_entry
 
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
-    action_queue: mp.Queue = mp.Queue()
-    result_queue: mp.Queue = mp.Queue()
-    worker = mp.Process(target=maniskill_env_worker, args=(config, action_queue, result_queue))
+    context = mp.get_context("spawn")
+    action_queue: mp.Queue = context.Queue()
+    result_queue: mp.Queue = context.Queue()
+    worker = context.Process(target=sim_adapter_worker_entry, args=(config, action_queue, result_queue))
     worker.start()
     try:
+        action_queue.put(PlayerCommand("reset"))
         initial = result_queue.get(timeout=30)
-        assert isinstance(initial, WorkerResult)
+        assert isinstance(initial, PlayerRuntimeResult)
         if initial.error:
             pytest.skip(f"ManiSkill runtime unavailable: {initial.error}")
+        assert initial.observation is not None
         assert np.asarray(initial.frame).ndim == 3
 
         controller = build_controller(config, build_mapping(config), config.benchmark.seed)
@@ -166,16 +168,17 @@ def test_direct_maniskill_worker_reset_step_shutdown_when_installed():
                 }
             )
         )
-        action_queue.put(WorkerCommand("step", sim_action))
+        action_queue.put(PlayerCommand("step", sim_action))
         stepped = result_queue.get(timeout=30)
-        assert isinstance(stepped, WorkerResult)
+        assert isinstance(stepped, PlayerRuntimeResult)
         if stepped.error:
             pytest.skip(f"ManiSkill runtime step unavailable: {stepped.error}")
+        assert stepped.observation is not None
         assert np.asarray(stepped.frame).shape[-1] == 3
         assert stepped.step_result is not None
         assert stepped.step_result.info["step_id"] == 1
     finally:
-        action_queue.put(WorkerCommand("close"))
+        action_queue.put(PlayerCommand("close"))
         worker.join(timeout=10)
         if worker.is_alive():
             worker.terminate()

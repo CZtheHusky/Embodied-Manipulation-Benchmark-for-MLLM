@@ -1,14 +1,16 @@
 from unittest.mock import MagicMock
 
+import multiprocessing as mp
 import numpy as np
 import pytest
 
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.config.schema import FrameTransformConfig
-from mllm_teleop_benchmark.core.registry import build_camera_manager, build_observation_provider, build_sim
+from mllm_teleop_benchmark.core.registry import build_camera_manager, build_controller, build_mapping, build_observation_provider, build_sim
 from mllm_teleop_benchmark.core.types import CalvinAction
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
+from mllm_teleop_benchmark.ui.runtime import PlayerCommand, PlayerRuntimeResult, sim_adapter_worker_entry
 
 
 def test_calvin_config_load():
@@ -147,3 +149,51 @@ def test_calvin_randomized_camera_manager():
     manager.reset(seed=43)
     pos3 = manager.get_active_cameras()[0].params["position"]
     assert pos1 != pos3
+
+
+def test_calvin_sim_adapter_worker_reset_step_shutdown():
+    pytest.importorskip("calvin_env")
+
+    config = load_config("configs/calvin_delta_eef.yaml")
+    context = mp.get_context("spawn")
+    action_queue: mp.Queue = context.Queue()
+    result_queue: mp.Queue = context.Queue()
+    worker = context.Process(target=sim_adapter_worker_entry, args=(config, action_queue, result_queue))
+    worker.start()
+    try:
+        action_queue.put(PlayerCommand("reset"))
+        initial = result_queue.get(timeout=30)
+        assert isinstance(initial, PlayerRuntimeResult)
+        if initial.error:
+            pytest.skip(f"CALVIN runtime unavailable: {initial.error}")
+        assert initial.observation is not None
+        assert np.asarray(initial.frame).ndim == 3
+
+        controller = build_controller(config, build_mapping(config), config.benchmark.seed)
+        sim_action = controller.translate(
+            JoystickAction(
+                {
+                    "joystick_0": 0.0,
+                    "joystick_1": 0.0,
+                    "joystick_2": 0.0,
+                    "joystick_3": 0.0,
+                    "joystick_4": 0.0,
+                    "joystick_5": 0.0,
+                    "joystick_6": 1.0,
+                }
+            )
+        )
+        action_queue.put(PlayerCommand("step", sim_action))
+        stepped = result_queue.get(timeout=30)
+        assert isinstance(stepped, PlayerRuntimeResult)
+        if stepped.error:
+            pytest.skip(f"CALVIN runtime step unavailable: {stepped.error}")
+        assert stepped.observation is not None
+        assert np.asarray(stepped.frame).shape[-1] == 3
+        assert stepped.step_result is not None
+        assert stepped.step_result.info["step_id"] == 1
+    finally:
+        action_queue.put(PlayerCommand("close"))
+        worker.join(timeout=10)
+        if worker.is_alive():
+            worker.terminate()
