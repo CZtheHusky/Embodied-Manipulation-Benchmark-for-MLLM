@@ -334,6 +334,8 @@ six==1.17.0
     #   python-xlib
 smmap==5.0.3
     # via gitdb
+socksio==1.0.0
+    # via -r envs/uv/robocasa.in
 sympy==1.14.0
     # via torch
 tensorboard==2.20.0

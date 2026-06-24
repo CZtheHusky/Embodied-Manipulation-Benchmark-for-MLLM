@@ -252,6 +252,10 @@ def backend_env(name: str) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
     env.update(cfg.get("env", {}))  # type: ignore[arg-type]
+    if name == "robocasa":
+        env.setdefault("HF_HUB_DISABLE_XET", "1")
+        env.pop("ALL_PROXY", None)
+        env.pop("all_proxy", None)
     return env
 
 

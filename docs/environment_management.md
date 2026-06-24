@@ -91,7 +91,8 @@ RoboCasa / RoboCasa365:
 ```bash
 python3 scripts/manage_uv_env.py create robocasa
 python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.setup_macros
-python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.download_kitchen_assets
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/download_robocasa_lightwheel_assets.py --type all
+python3 scripts/manage_uv_env.py run robocasa -- python -c "import builtins; builtins.input=lambda prompt='': 'y'; from robocasa.scripts.download_kitchen_assets import download_kitchen_assets; download_kitchen_assets(['tex', 'tex_generative'])"
 python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml
 ```
 
@@ -99,7 +100,7 @@ RoboCasa assets are around 10 GB and are downloaded from Hugging Face datasets b
 
 RoboCasa v1.0 needs a backend-specific uv setup: `lock robocasa` targets `x86_64-manylinux_2_31`, uses CPU Torch wheels, and excludes robosuite's `mink` dependency because it conflicts with RoboCasa's `numpy==2.2.5`. The create step also installs the fixed RoboCasa source checkout editable from `.venvs/_sources/robocasa`, because the built wheel omits `robocasa/scripts` required during `import robocasa`.
 
-Current RoboCasa state: lock and create complete, and the previous robosuite `load_model_on_init` API blocker is resolved by pinning the upstream `master` instruction to robosuite commit `85abee228d1c43ab1939bce33028099945d453b4`. Runtime is still not verified because required smoke now fails on missing downloaded kitchen assets. Run the upstream setup/download commands, then require `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` before claiming runtime verification.
+Current RoboCasa state: lock, create, required asset download, runtime smoke, and one random-agent benchmark episode are verified. The previous robosuite `load_model_on_init` API blocker is resolved by pinning the upstream `master` instruction to robosuite commit `85abee228d1c43ab1939bce33028099945d453b4`. RoboCasa v1.0 expects monolithic Lightwheel asset zips, but the current NVIDIA Hugging Face dataset publishes split zip files; `scripts/download_robocasa_lightwheel_assets.py` pins dataset revision `420a04af939c34873e6839a586b70844baf28aab` and restores the expected layout. For large texture downloads behind Clash, the `robocasa` uv runner disables Hugging Face Xet and removes `ALL_PROXY/all_proxy` so downloads keep using the HTTP proxy path instead of the SOCKS/Xet path.
 
 DMControl:
 

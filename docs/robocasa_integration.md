@@ -52,21 +52,22 @@ As of 2026-06-24:
 
 - `python3 scripts/manage_uv_env.py lock robocasa` completes and writes `envs/uv/locks/robocasa.lock.txt`.
 - `python3 scripts/manage_uv_env.py create robocasa` completes, including the fixed RoboCasa and robosuite editable source installs.
-- `python3 scripts/manage_uv_env.py smoke robocasa` exits successfully only because the runtime reset test is optional and skips when assets are absent. It is not runtime verification.
-- `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` no longer fails with `load_model_on_init`; it fails on the missing kitchen asset `models/assets/objects/lightwheel/stool/Stool017/model.xml`.
+- `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` passes with the fixed assets installed: `3 passed, 2 warnings`.
+- `python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml` completes one random-agent episode: `average_steps=100.0`, `success_rate=0.0`.
 
 The previous robosuite source compatibility blocker is resolved by replacing PyPI `robosuite==1.5.2` with source commit `85abee228d1c43ab1939bce33028099945d453b4`. PyPI still lets uv resolve quickly, but its `ManipulationEnv.__init__` does not accept RoboCasa's `load_model_on_init=False` call. The upstream RoboCasa README says to install robosuite from `master`; this branch pins the current `master` head to make that instruction reproducible.
 
-Next command sequence once assets are available:
+Verified command sequence:
 
 ```bash
 python3 scripts/manage_uv_env.py create robocasa
 python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.setup_macros
-python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.download_kitchen_assets
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/download_robocasa_lightwheel_assets.py --type all
+python3 scripts/manage_uv_env.py run robocasa -- python -c "import builtins; builtins.input=lambda prompt='': 'y'; from robocasa.scripts.download_kitchen_assets import download_kitchen_assets; download_kitchen_assets(['tex', 'tex_generative'])"
 MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa
 ```
 
-Do not mark RoboCasa runtime verified until the required smoke runs without skipping.
+The random-agent benchmark is expected to have `success_rate=0.0`; the validation claim is reset/step/render/logging, not task success.
 
 Upstream references:
 
@@ -82,16 +83,25 @@ After creating the uv environment, run:
 
 ```bash
 python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.setup_macros
-python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.download_kitchen_assets
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/download_robocasa_lightwheel_assets.py --type all
+python3 scripts/manage_uv_env.py run robocasa -- python -c "import builtins; builtins.input=lambda prompt='': 'y'; from robocasa.scripts.download_kitchen_assets import download_kitchen_assets; download_kitchen_assets(['tex', 'tex_generative'])"
 ```
 
-The upstream downloader fetches zip files from Hugging Face datasets and extracts them under the installed `robocasa` package:
+The verified downloader flow fetches zip files from Hugging Face datasets and extracts them under the installed `robocasa` package:
 
 ```bash
 python3 scripts/manage_uv_env.py run robocasa -- python -c "import robocasa; print(robocasa.__path__[0] + '/models/assets')"
 ```
 
 The runtime smoke test skips when the package, compatible robosuite source, or assets are missing. Set `MLLM_TELEOP_REQUIRE_ROBOCASA=1` to make those failures hard failures during backend validation.
+
+RoboCasa v1.0 still expects monolithic Lightwheel zip files, but the NVIDIA Hugging Face dataset now publishes split zip files under `fixtures_lightwheel/` and `objects_lightwheel/`. `scripts/download_robocasa_lightwheel_assets.py` pins the current dataset revision `420a04af939c34873e6839a586b70844baf28aab` and extracts those split archives into the paths expected by the pinned RoboCasa source.
+
+For `generative_textures.zip`, Hugging Face's Xet download path stalled behind the local Clash proxy. `scripts/manage_uv_env.py run robocasa` sets `HF_HUB_DISABLE_XET=1` and removes `ALL_PROXY/all_proxy`, while keeping HTTP/HTTPS proxy variables:
+
+```bash
+python3 scripts/manage_uv_env.py run robocasa -- python -c "import builtins; builtins.input=lambda prompt='': 'y'; from robocasa.scripts.download_kitchen_assets import download_kitchen_assets; download_kitchen_assets(['tex_generative'])"
+```
 
 ## Validation
 
