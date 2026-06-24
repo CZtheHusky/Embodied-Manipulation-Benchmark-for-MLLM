@@ -5,6 +5,7 @@ from mllm_teleop_benchmark.control.joint import JointDeltaController
 from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.control.metaworld import MetaworldBoxActionController
 from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
+from mllm_teleop_benchmark.control.simpler_env import SimplerEnvDeltaEEFController
 
 __all__ = [
     "Controller",
@@ -16,4 +17,5 @@ __all__ = [
     "PusherDeltaEEFJoystickController",
     "ReacherDeltaEEFJoystickController",
     "RobosuiteOSCController",
+    "SimplerEnvDeltaEEFController",
 ]

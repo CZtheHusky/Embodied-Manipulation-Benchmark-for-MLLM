@@ -11,6 +11,7 @@ from mllm_teleop_benchmark.control.ee_delta_pose import EEDeltaPoseController
 from mllm_teleop_benchmark.control.gymnasium_box import GymnasiumBoxActionController, PusherDeltaEEFJoystickController, ReacherDeltaEEFJoystickController
 from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.control.metaworld import MetaworldBoxActionController
+from mllm_teleop_benchmark.control.simpler_env import SimplerEnvDeltaEEFController
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
 from mllm_teleop_benchmark.observation.camera import (
@@ -52,6 +53,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.metaworld.adapter import MetaworldSimAdapter
 
         return MetaworldSimAdapter(config.simulator)
+    if config.simulator.type == "simpler_env":
+        from mllm_teleop_benchmark.sim.simpler_env.adapter import SimplerEnvSimAdapter
+
+        return SimplerEnvSimAdapter(config.simulator)
     if config.simulator.type == "robosuite":
         from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
 
@@ -82,6 +87,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.metaworld_task import MetaworldTask
 
         return MetaworldTask(config.task)
+    if config.task.type == "simpler_env_generic":
+        from mllm_teleop_benchmark.tasks.simpler_env_task import SimplerEnvTask
+
+        return SimplerEnvTask(config.task)
     if config.task.type == "robosuite_lift":
         from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
 
@@ -135,6 +144,10 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.metaworld.observation import MetaworldObservationProvider
 
         return MetaworldObservationProvider(camera_manager)
+    if config.simulator.type == "simpler_env":
+        from mllm_teleop_benchmark.sim.simpler_env.observation import SimplerEnvObservationProvider
+
+        return SimplerEnvObservationProvider(camera_manager)
     if config.simulator.type == "dmcontrol":
         from mllm_teleop_benchmark.sim.dmcontrol.observation import DMControlObservationProvider
 
@@ -189,6 +202,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         return ManiSkillDeltaEEFController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "metaworld_box":
         return MetaworldBoxActionController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "simpler_env_delta_eef":
+        return SimplerEnvDeltaEEFController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "robosuite_osc":
         from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
 

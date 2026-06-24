@@ -1,0 +1,67 @@
+benchmark:
+  name: simpler_env_google_robot_pick_coke_can_delta_eef_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: simpler_env
+  env_id: google_robot_pick_coke_can
+  render_mode: rgb_array
+
+task:
+  type: simpler_env_generic
+  max_steps: 80
+  success_threshold: 1.0
+  params:
+    instruction: Pick up the Coke can.
+    success_key: success
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: default
+      type: simpler_env_rgb
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  params:
+    scale_mode: simpler_env_delta_eef
+
+controller:
+  type: simpler_env_delta_eef
+  frame: controller
+  scales:
+    dx: 0.05
+    dy: 0.05
+    dz: 0.05
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+  params:
+    dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
+    gripper_open_value: -1.0
+    gripper_closed_value: 1.0
+
+agent:
+  type: random
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/simpler_env_google_robot_pick_coke_can
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true

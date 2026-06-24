@@ -14,6 +14,18 @@ VENV_DIR = ROOT / ".venvs"
 PYTHON_PLATFORM = "x86_64-unknown-linux-gnu"
 CALVIN_REPO = "https://github.com/mees/calvin_env.git"
 CALVIN_COMMIT = "797142c588c21e76717268b7b430958dbd13bf48"
+SIMPLER_ENV_SOURCES = (
+    (
+        "mani-skill2-real2sim",
+        "https://github.com/simpler-env/ManiSkill2_real2sim.git",
+        "ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682",
+    ),
+    (
+        "simpler-env",
+        "https://github.com/simpler-env/SimplerEnv.git",
+        "06accaca93535902d408da4855f21cece12bceb7",
+    ),
+)
 CUDA_SMOKE = (
     "import torch; "
     "assert torch.cuda.is_available(), 'CUDA is not available'; "
@@ -68,6 +80,11 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "-m", "pytest", "-q", "tests/test_metaworld_integration.py", "-rs"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/metaworld_reach.yaml"],
         ],
+    },
+    "simpler-env": {
+        "python": "3.10",
+        "input": "simpler-env.in",
+        "smoke": [["python", "-m", "pytest", "-q", "tests/test_simpler_env_backend.py", "-rs"]],
     },
     "calvin": {
         "python": "3.10",
@@ -163,8 +180,31 @@ def create_backend(name: str) -> None:
         sync_command.extend(["--torch-backend", str(torch_backend)])
     run(sync_command)
     run(["uv", "pip", "install", "--python", str(venv_path(name)), "-e", str(ROOT)])
+    if name == "simpler-env":
+        install_simpler_env_sources()
     if name == "calvin":
         install_calvin_editable()
+
+
+def install_simpler_env_sources() -> None:
+    for source_name, repo, commit in SIMPLER_ENV_SOURCES:
+        source_dir = VENV_DIR / "_sources" / source_name
+        ensure_git_checkout(source_dir, repo, commit)
+        run(["uv", "pip", "install", "--python", str(venv_path("simpler-env")), "--no-deps", "-e", str(source_dir)])
+
+
+def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
+    if source_dir.exists():
+        if not (source_dir / ".git").exists():
+            raise SystemExit(f"source directory exists but is not a Git checkout: {source_dir}")
+        run(["git", "remote", "set-url", "origin", repo], cwd=source_dir)
+    else:
+        source_dir.parent.mkdir(parents=True, exist_ok=True)
+        source_dir.mkdir()
+        run(["git", "init"], cwd=source_dir)
+        run(["git", "remote", "add", "origin", repo], cwd=source_dir)
+    run(["git", "fetch", "--depth", "1", "origin", commit], cwd=source_dir)
+    run(["git", "checkout", "--detach", commit], cwd=source_dir)
 
 
 def install_calvin_editable() -> None:
