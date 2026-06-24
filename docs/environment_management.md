@@ -178,6 +178,17 @@ The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_P
 
 Colosseum is not a separate backend in this worktree yet. It remains documented as a robustness extension that should be added after this verified RLBench route by pinning a Colosseum source commit and adding one perturbation smoke config. See `docs/rlbench_colosseum_integration.md`.
 
+LIBERO:
+
+```bash
+python3 scripts/manage_conda_env.py create libero
+python3 scripts/manage_conda_env.py smoke libero
+```
+
+LIBERO is runtime verified through the Miniconda fallback in this branch. The helper pins upstream LIBERO commit `8f1084e3132a39270c3a13ebe37270a43ece2a01`, installs the minimal runtime stack needed for this benchmark adapter, writes non-interactive LIBERO and robosuite config files, and removes `ALL_PROXY/all_proxy` so pip keeps using the local HTTP/HTTPS Clash proxy instead of the SOCKS path.
+
+The uv commands intentionally fail fast for LIBERO because that path is not runtime verified. The conda route is a benchmark runtime subset, not a full reproduction of LIBERO's training and policy stack. Use `docs/libero_integration.md` for details.
+
 ## Editable Install Check
 
 After creating any backend environment, verify that the benchmark package points to this repository:

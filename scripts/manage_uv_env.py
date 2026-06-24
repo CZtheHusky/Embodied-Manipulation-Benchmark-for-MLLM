@@ -23,6 +23,12 @@ RLBENCH_UV_BLOCKED = (
     "envs/uv/locks/rlbench.lock.txt in this workspace, and runtime smoke also requires "
     "an external CoppeliaSim/PyRep installation. See docs/rlbench_colosseum_integration.md."
 )
+LIBERO_UV_BLOCKED = (
+    "LIBERO uv setup is blocked and not runtime verified. The Python 3.10/cu113 lock attempt "
+    "does not complete when the pinned upstream LIBERO Git source is included, so no "
+    "envs/uv/locks/libero.lock.txt is checked in. Use the conda fallback documented in "
+    "docs/libero_integration.md."
+)
 
 
 BACKENDS: dict[str, dict[str, object]] = {
@@ -150,10 +156,23 @@ BACKENDS: dict[str, dict[str, object]] = {
     "rlbench": {
         "python": "3.10",
         "input": "rlbench.in",
+        "support_level": "fallback_blocked",
         "blocked_reason": RLBENCH_UV_BLOCKED,
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_rlbench_colosseum_integration.py", "-rs"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/rlbench_reach_target_delta_eef.yaml"],
+        ],
+    },
+    "libero": {
+        "python": "3.10",
+        "input": "libero.in",
+        "support_level": "fallback_blocked",
+        "torch_backend": "cu113",
+        "blocked_reason": LIBERO_UV_BLOCKED,
+        "env": {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "NUMBA_DISABLE_JIT": "1"},
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_libero_integration.py", "-rs"],
+            ["python", "scripts/run_benchmark.py", "--config", "configs/libero_spatial_task0.yaml"],
         ],
     },
 }
@@ -329,6 +348,27 @@ def verify_git_checkout(source_dir: Path, commit: str) -> None:
         raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
 
 
+def write_libero_config() -> None:
+    config_dir = VENV_DIR / "libero_config"
+    script = (
+        "from pathlib import Path; "
+        "import importlib.util, yaml; "
+        "spec = importlib.util.find_spec('libero.libero'); "
+        "assert spec and spec.origin, 'libero.libero is not importable'; "
+        "root = Path(spec.origin).resolve().parent; "
+        f"cfg_dir = Path({str(config_dir)!r}); "
+        "cfg_dir.mkdir(parents=True, exist_ok=True); "
+        "yaml.safe_dump({"
+        "'benchmark_root': str(root), "
+        "'bddl_files': str(root / 'bddl_files'), "
+        "'init_states': str(root / 'init_files'), "
+        "'datasets': str(root.parent / 'datasets'), "
+        "'assets': str(root / 'assets')"
+        "}, (cfg_dir / 'config.yaml').open('w', encoding='utf-8'), sort_keys=True)"
+    )
+    run([str(python_bin("libero")), "-c", script], env=backend_env("libero"))
+
+
 def run_backend(name: str, command: list[str]) -> None:
     require_unblocked_backend(name, "run")
     python = python_bin(name)
@@ -358,6 +398,8 @@ def backend_env(name: str) -> dict[str, str]:
     cfg = backend_config(name)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
+    if name == "libero":
+        env.setdefault("LIBERO_CONFIG_PATH", str(VENV_DIR / "libero_config"))
     env.update(cfg.get("env", {}))  # type: ignore[arg-type]
     if name == "robocasa":
         env.setdefault("HF_HUB_DISABLE_XET", "1")
