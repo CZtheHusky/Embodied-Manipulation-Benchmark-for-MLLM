@@ -48,6 +48,32 @@ BACKENDS: dict[str, dict[str, object]] = {
         "env": {"NUMBA_DISABLE_JIT": "1"},
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_robosuite_integration.py"]],
     },
+    "robocasa": {
+        "python": "3.11",
+        "input": "robocasa.in",
+        "support_level": "uv_source",
+        "platform": "x86_64-manylinux_2_31",
+        "torch_backend": "cpu",
+        "excludes": ["robocasa-excludes.in"],
+        "env": {"NUMBA_DISABLE_JIT": "1"},
+        "sources": [
+            {
+                "name": "robosuite",
+                "repo": "https://github.com/ARISE-Initiative/robosuite.git",
+                "commit": "85abee228d1c43ab1939bce33028099945d453b4",
+                "install_args": ["--no-deps", "-e"],
+                "target_backend": "robocasa",
+            },
+            {
+                "name": "robocasa",
+                "repo": "https://github.com/robocasa/robocasa.git",
+                "commit": "8f3c96ec8d1bfcd8126cad2bca887da98d30e997",
+                "install_args": ["--no-deps", "-e"],
+                "target_backend": "robocasa",
+            },
+        ],
+        "smoke": [["python", "-m", "pytest", "-q", "tests/test_robocasa_integration.py", "-rs"]],
+    },
     "maniskill-cpu": {
         "python": "3.11",
         "input": "maniskill-cpu.in",
@@ -196,6 +222,8 @@ def lock_backend(name: str, platform: str) -> None:
     require_unblocked_backend(name, "lock")
     cfg = backend_config(name)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    if platform == PYTHON_PLATFORM and "platform" in cfg:
+        platform = str(cfg["platform"])
     command = [
         "uv",
         "pip",
@@ -208,6 +236,8 @@ def lock_backend(name: str, platform: str) -> None:
         "--output-file",
         str(lock_path(name)),
     ]
+    for exclude in cfg.get("excludes", []):  # type: ignore[union-attr]
+        command.extend(["--excludes", str(UV_DIR / str(exclude))])
     torch_backend = cfg.get("torch_backend")
     if torch_backend:
         command.extend(["--torch-backend", str(torch_backend)])
@@ -308,6 +338,10 @@ def backend_env(name: str) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
     env.update(cfg.get("env", {}))  # type: ignore[arg-type]
+    if name == "robocasa":
+        env.setdefault("HF_HUB_DISABLE_XET", "1")
+        env.pop("ALL_PROXY", None)
+        env.pop("all_proxy", None)
     return env
 
 

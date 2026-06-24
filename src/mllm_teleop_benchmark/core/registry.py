@@ -61,6 +61,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
 
         return RobosuiteSimAdapter(config.simulator)
+    if config.simulator.type == "robocasa":
+        from mllm_teleop_benchmark.sim.robocasa.adapter import RoboCasaSimAdapter
+
+        return RoboCasaSimAdapter(config.simulator)
     if config.simulator.type == "dmcontrol":
         from mllm_teleop_benchmark.sim.dmcontrol.adapter import DMControlSimAdapter
 
@@ -95,6 +99,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
 
         return RobosuiteLiftTask(config.task)
+    if config.task.type == "robocasa_generic":
+        from mllm_teleop_benchmark.tasks.robocasa_task import RoboCasaGenericTask
+
+        return RoboCasaGenericTask(config.task)
     if config.task.type == "dmcontrol_generic":
         from mllm_teleop_benchmark.tasks.dmcontrol_task import DMControlTask
 
@@ -208,6 +216,10 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
 
         return RobosuiteOSCController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "robocasa_osc":
+        from mllm_teleop_benchmark.control.robocasa_controller import RoboCasaOSCController
+
+        return RoboCasaOSCController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "dmcontrol":
         from mllm_teleop_benchmark.control.dmcontrol_controller import DMControlController
 

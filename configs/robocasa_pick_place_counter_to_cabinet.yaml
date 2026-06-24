@@ -1,0 +1,65 @@
+benchmark:
+  name: robocasa_pick_place_counter_to_cabinet_v0
+  num_episodes: 1
+  seed: 42
+
+simulator:
+  type: robocasa
+  env_id: robocasa/PickPlaceCounterToCabinet
+  env_kwargs:
+    split: pretrain
+    camera_widths: 256
+    camera_heights: 256
+
+task:
+  type: robocasa_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: Pick the object from the counter and place it in the cabinet.
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: robot0_agentview_left
+      width: 256
+      height: 256
+    - name: robot0_agentview_right
+      width: 256
+      height: 256
+    - name: robot0_eye_in_hand
+      width: 256
+      height: 256
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: ["dx", "dy", "dz"]
+  gripper: direct
+  mapping_strategy: fixed
+  frame_transform: identity
+
+controller:
+  type: robocasa_osc
+  scales:
+    dx: 0.05
+    dy: 0.05
+    dz: 0.05
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+    gripper: 1.0
+  params:
+    control_mode: 1.0
+
+agent:
+  type: random
+
+logging:
+  output_dir: outputs/robocasa_pick_place_counter_to_cabinet
+  save_trajectory: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: robot0_agentview_left
