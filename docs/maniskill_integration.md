@@ -8,7 +8,7 @@ ManiSkill is integrated as an optional backend. The benchmark does not fork or m
 - Observation provider: `sim/maniskill/observation.py`
 - Controller: `control/maniskill.py`
 - Task wrapper: `tasks/maniskill.py`
-- Human play UI: `ui/direct_maniskill_player.py`
+- Human play UI: `ui/human_player.py` with `ui.runtime: sim_adapter_worker`
 - Example config: `configs/maniskill_pickcube_delta_eef.yaml`
 
 ## Dependency
@@ -44,13 +44,13 @@ The gripper, when present, remains the final virtual joystick. The default mappi
 
 ## Human Play
 
-The ManiSkill play UI uses a direct two-process backend:
+The ManiSkill play UI uses the shared Pygame human player and SimAdapter worker:
 
 ```bash
 python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/play_benchmark.py --config configs/maniskill_pickcube_delta_eef.yaml
 ```
 
-The config selects `ui.backend: direct_maniskill`. The main process owns Pygame, keyboard input, action parsing, validation, mapping, frame transform, controller translation, logging, and debug files. The worker process owns ManiSkill environment creation, reset, step, and RGB extraction.
+The config selects `ui.backend: pygame` and `ui.runtime: sim_adapter_worker`. The main process owns Pygame, keyboard input, action parsing, validation, mapping, frame transform, controller translation, logging, and debug files. The worker process owns `ManiSkillSimAdapter`, task reset, step, observation extraction, and RGB rendering fallback.
 
 Keyboard controls are virtual joystick controls, not privileged task shortcuts. `W/S`, `A/D`, `Q/E`, `J/L`, `K/I`, and `U/O` drive motion joysticks in order. `G` or `Space` toggles the final gripper joystick when the configured control interface has a gripper.
 
