@@ -72,7 +72,7 @@ This file records implementation decisions that matter for future maintenance.
 - Added repo-owned `pusher_pos.xml`, derived from Gymnasium's Pusher XML, with joint position actuators replacing native torque motors.
 - Added `PusherDeltaEEFEnv`, which accepts `dx/dy/dz` delta end-effector commands and translates them to 7 arm joint position targets using damped least-squares MuJoCo Jacobian IK.
 - Added `PusherDeltaEEFJoystickController`, `GymnasiumPusherTask`, and `configs/pusher_delta_eef.yaml`.
-- Generalized the two-process manual player as `DirectGymnasiumPlayer`.
+- Generalized the two-process manual player for Gymnasium.
 - Added reusable `ControlDebugRecorder` for optional control-history logging. Human play now records source/control id, raw joystick action, expected EEF delta, actual EEF delta, target delta, clamp status, and before/after state snapshots.
 - Added reusable `FrameDebugRecorder` for optional raw RGB frame logging. Human play uses it through `ui.debug_frames`.
 
@@ -115,7 +115,7 @@ This file records implementation decisions that matter for future maintenance.
 ## 2026-05-14: ManiSkill direct human play
 
 - Added a shared direct-player base for human keyboard play so Gymnasium and ManiSkill reuse the same Pygame loop, action parsing, controller translation, logging, and debug recorders.
-- Added `direct_maniskill` as a two-process human-play backend for ManiSkill PickCube.
+- Added a two-process human-play backend for ManiSkill PickCube.
 - Added gripper keyboard toggling for the final virtual joystick through `G` or `Space`.
 - Updated ManiSkill play docs and the ManiSkill conda env to include Pygame.
 
@@ -145,8 +145,8 @@ This file records implementation decisions that matter for future maintenance.
 ## 2026-06-23: DMControl and CALVIN backend port
 
 - Recovered the active goals from the sibling Gemini worktrees and delegated separate real-runtime validation for DMControl and CALVIN before merging.
-- Added DMControl support through `DMControlSimAdapter`, `DMControlObservationProvider`, `DMControlController`, `DMControlTask`, `direct_dmcontrol`, `configs/dmcontrol_example.yaml`, and `envs/environment-dmcontrol.yml`.
-- Added CALVIN support through `CalvinSimAdapter`, `CalvinObservationProvider`, `CalvinDeltaEEFController`, `CalvinTask`, `calvin_randomized` camera sampling, `direct_calvin`, `configs/calvin_delta_eef.yaml`, and `envs/environment-calvin.yml`.
+- Added DMControl support through `DMControlSimAdapter`, `DMControlObservationProvider`, `DMControlController`, `DMControlTask`, human play, `configs/dmcontrol_example.yaml`, and `envs/environment-dmcontrol.yml`.
+- Added CALVIN support through `CalvinSimAdapter`, `CalvinObservationProvider`, `CalvinDeltaEEFController`, `CalvinTask`, `calvin_randomized` camera sampling, human play, `configs/calvin_delta_eef.yaml`, and `envs/environment-calvin.yml`.
 - Preserved the benchmark-layer control pipeline: joystick mapping and frame transforms happen before simulator-native action arrays for both new backends.
 - Verified DMControl in `mllm-teleop-dmcontrol` with unit tests, a direct-worker step smoke, and a full random-policy benchmark smoke. Verified CALVIN in `mllm-teleop-calvin` with real reset/image/step tests and a 100-step random-policy benchmark smoke.
 - Remaining known gaps: DMControl free-camera orbit randomization is unsupported and fails loudly; CALVIN camera randomization is best-effort without a visual oracle; CALVIN task success still needs a stricter language-task oracle.

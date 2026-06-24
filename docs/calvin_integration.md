@@ -39,7 +39,7 @@ python3 scripts/manage_uv_env.py create calvin
 python3 scripts/manage_uv_env.py run calvin -- python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml
 ```
 
-The human play UI uses the `direct_calvin` backend, which runs the CALVIN simulator in a separate worker process to avoid OpenGL context conflicts with Pygame.
+The human play UI uses `ui.backend: pygame` and `ui.runtime: sim_adapter_worker`, which runs the CALVIN simulator in a separate worker process to avoid OpenGL context conflicts with Pygame while still using `CalvinSimAdapter` and `CalvinObservationProvider`.
 
 ## Cameras
 

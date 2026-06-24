@@ -7,7 +7,7 @@ This backend integrates the [DeepMind Control Suite (DMControl)](https://github.
 Verified on 2026-06-23 with the `dmcontrol` uv environment:
 
 - `pytest` runs a short real `manipulator/bring_ball` episode and validates action shape/bounds handling.
-- A direct-worker smoke produced an RGB frame and stepped once with clipped out-of-bounds action input.
+- A `sim_adapter_worker` smoke produced an RGB frame and stepped once with clipped out-of-bounds action input.
 - `scripts/run_benchmark.py --config configs/dmcontrol_example.yaml` completed one 250-step random-policy episode. The random policy did not solve the task, so the observed `success_rate` was `0.0`.
 
 ## Architecture
@@ -24,7 +24,7 @@ The integration follows the benchmark's decoupled design:
 One of the core requirements is supporting control confusion (mapping permutations, sign flips) and camera randomization without modifying DMControl's source code or MJCF XML assets.
 
 - **Joystick Mapping & Frame Rotation**: These are computed in `DMControlController` before the final action is passed to the simulator.
-- **Action Bounds**: Final `DMControlAction` values are checked against `env.action_spec()` shape and clipped to bounded action ranges in both the adapter path and the direct manual-play worker.
+- **Action Bounds**: Final `DMControlAction` values are checked against `env.action_spec()` shape and clipped to bounded action ranges in `DMControlSimAdapter`, including manual play because the worker uses the same adapter.
 - **Camera Configuration**: Explicit named fixed-camera parameters are applied at runtime by modifying `physics.model.cam_pos`, `physics.model.cam_quat`, and `physics.model.cam_fovy`. The shared `mujoco_randomized` free-camera orbit manager is not supported for DMControl yet.
 
 ## Configuration
@@ -79,11 +79,11 @@ python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.p
 ### Manual Play
 
 ```bash
-python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml
 ```
 
 ## Limitations
 
 - Currently supports `suite.load` environments. `composer` environments may require minor updates to the `SimAdapter`.
 - Camera pose/FOV edits require explicit named fixed-camera config. The existing `RandomizedMujocoCameraManager` emits free-camera orbit parameters (`distance`, `azimuth`, `elevation`, `lookat`); DMControl `physics.render` does not expose a stable backend hook for applying those through this provider, so the backend fails loudly instead of silently pretending support.
-- `DirectDMControlPlayer` intentionally keeps a separate worker process for GL isolation. The worker still bypasses `DMControlSimAdapter`, but it now shares the same native action validation/clipping helper used by the adapter. Rendering uses the configured camera spec size and lets the Pygame side scale/display frames.
+- Manual play intentionally keeps `dm_control` in a separate worker process for GL isolation. The worker uses `DMControlSimAdapter` and `DMControlObservationProvider`, so manual play and benchmark runs share reset, action clipping, camera, observation, and state semantics.

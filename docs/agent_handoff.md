@@ -51,8 +51,8 @@ Important shared components:
   Heavy simulator imports should remain inside backend branches.
 - `src/mllm_teleop_benchmark/mapping/`: joystick mapping and frame transforms.
 - `src/mllm_teleop_benchmark/control/`: benchmark-to-backend controllers.
-- `src/mllm_teleop_benchmark/ui/direct_player.py`: shared two-process human
-  player loop.
+- `src/mllm_teleop_benchmark/ui/human_player.py` and `ui/runtime.py`: shared
+  Pygame human player and SimAdapter-first worker runtime.
 - `src/mllm_teleop_benchmark/logging/debug_session.py`,
   `frame_debug.py`, and `control_debug.py`: debug artifact layout and recorders.
 

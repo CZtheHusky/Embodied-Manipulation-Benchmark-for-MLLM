@@ -81,7 +81,8 @@ logging:
   save_config_snapshot: true
 
 ui:
-  backend: direct_maniskill
+  backend: pygame
+  runtime: sim_adapter_worker
   info_panel_height: 190
   max_steps: 100
   debug_frames: true
