@@ -40,8 +40,9 @@ python3 scripts/manage_conda_env.py smoke libero
 
 The smoke result was:
 
-- `tests/test_libero_integration.py`: `4 passed`
+- `tests/test_libero_integration.py`: `5 passed`
 - `configs/libero_spatial_task0.yaml`: one random-agent benchmark episode, `average_steps=200.0`, `success_rate=0.0`
+- `scripts/play_benchmark.py --config configs/libero_spatial_task0.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts LIBERO, extracts the `agentview` frame, and exits cleanly.
 
 The benchmark success rate is expected to be zero for the random policy. The verification claim is reset, init-state application, one environment step, image/render access, close, and benchmark-runner completion.
 
@@ -116,6 +117,12 @@ This repository uses a separate Miniconda compatibility environment that keeps P
 ```bash
 python3 scripts/manage_conda_env.py create libero
 python3 scripts/manage_conda_env.py smoke libero
+```
+
+Manual play uses the same conda backend:
+
+```bash
+python3 scripts/manage_conda_env.py run libero -- python scripts/play_benchmark.py --config configs/libero_spatial_task0.yaml
 ```
 
 The script pins upstream LIBERO to commit `8f1084e3132a39270c3a13ebe37270a43ece2a01` and writes a `.pth` file because that repository's root `setup.py` installs metadata but does not expose the nested `libero.libero` package correctly in this Python 3.10 editable install.

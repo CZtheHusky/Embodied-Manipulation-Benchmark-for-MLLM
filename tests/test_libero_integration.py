@@ -18,6 +18,7 @@ from mllm_teleop_benchmark.core.registry import (
 )
 from mllm_teleop_benchmark.core.types import LiberoAction
 from mllm_teleop_benchmark.sim.libero.adapter import LiberoSimAdapter
+from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for_config
 
 
 class _FakeCameraManager:
@@ -55,6 +56,15 @@ def test_libero_config_builds_without_libero_install():
     assert isinstance(sim, LiberoSimAdapter)
     assert task.instruction() == "pick up the black bowl between the plate and the ramekin and place it on the plate"
     assert provider.__class__.__name__ == "LiberoObservationProvider"
+
+
+def test_libero_config_uses_worker_play_runtime():
+    config = load_config("configs/libero_spatial_task0.yaml")
+
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
+    assert config.ui.frame_camera == "agentview"
+    assert isinstance(hooks_for_config(config), MujocoPlayerRuntimeHooks)
 
 
 def test_libero_delta_eef_controller_outputs_7d_action():
