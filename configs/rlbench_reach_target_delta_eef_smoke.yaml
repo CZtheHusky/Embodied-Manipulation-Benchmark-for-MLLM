@@ -1,0 +1,76 @@
+benchmark:
+  name: rlbench_reach_target_delta_eef_smoke_v0
+  num_episodes: 1
+  seed: 11
+
+simulator:
+  type: rlbench
+  env_id: ReachTarget
+  control_dt: 0.1
+  workspace_bounds:
+    low: [-0.6, -0.6, 0.75]
+    high: [0.6, 0.6, 1.35]
+  params:
+    task_class: ReachTarget
+    action_mode: move_arm_then_gripper_end_effector_pose_via_planning_discrete
+    headless: false
+    static_positions: false
+
+task:
+  type: rlbench_generic
+  max_steps: 1
+  success_threshold: 1.0
+  params:
+    instruction: Move the robot end-effector to the target.
+    success_key: success
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: front
+      type: rlbench_rgb
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz]
+  gripper: none
+  channel_kind: discrete
+  channel_values: [0]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  params:
+    scale_mode: rlbench_absolute_pose_target_from_delta_eef
+
+controller:
+  type: rlbench_delta_eef
+  frame: controller
+  scales:
+    dx: 0.02
+    dy: 0.02
+    dz: 0.02
+  params:
+    dimensions: [dx, dy, dz]
+    default_gripper: 1.0
+
+agent:
+  type: random
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/rlbench_reach_target_delta_eef_smoke
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: front

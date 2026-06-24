@@ -20,6 +20,7 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
 - Use CPU PyTorch for `maniskill-cpu` by default; use `maniskill-cu126` on NVIDIA CUDA 12.6 hosts.
 - Keep backend imports lazy so the core environment works without optional simulators installed.
 - Keep current backend status in `docs/simulator_backend_status.md`.
+- Treat CoppeliaSim/PyRep as an external runtime prerequisite; uv can isolate Python packages but cannot install or validate the CoppeliaSim system binary.
 
 ## uv Commands
 
@@ -162,6 +163,20 @@ python3 scripts/manage_uv_env.py run calvin -- python scripts/run_benchmark.py -
 ```
 
 CALVIN is special: uv can resolve the pinned Git dependency, but it cannot install an editable Git URL directly. The create step fetches `calvin_env` to `.venvs/_sources/calvin-env`, verifies commit `797142c588c21e76717268b7b430958dbd13bf48`, initializes submodules, and installs that local checkout editable so CALVIN's runtime Hydra `conf/` directory is available.
+
+RLBench:
+
+```bash
+python3 scripts/manage_conda_env.py install-coppeliasim
+python3 scripts/manage_conda_env.py create rlbench
+python3 scripts/manage_conda_env.py smoke rlbench
+```
+
+RLBench is runtime verified through the Miniconda fallback in this branch. `scripts/manage_conda_env.py` installs the external CoppeliaSim v4.1.0 binary under `/home/caozhe/opt/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04`, creates `mllm-teleop-rlbench`, and installs pinned source commits for PyRep and RLBench. The uv route is not the supported route for this backend because the lock path stalled on the pinned Git source and still would not manage the external CoppeliaSim binary.
+
+The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, and uses `DISPLAY=:1` when that X socket exists. The verified path is display-backed OpenGL; headless GPU validation is not claimed on this host.
+
+Colosseum is not a separate backend in this worktree yet. It remains documented as a robustness extension that should be added after this verified RLBench route by pinning a Colosseum source commit and adding one perturbation smoke config. See `docs/rlbench_colosseum_integration.md`.
 
 ## Editable Install Check
 

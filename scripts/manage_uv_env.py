@@ -17,6 +17,12 @@ CUDA_SMOKE = (
     "assert torch.cuda.is_available(), 'CUDA is not available'; "
     "print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"
 )
+RLBENCH_UV_BLOCKED = (
+    "RLBench uv setup is blocked and not runtime verified. The pinned upstream RLBench "
+    "Git source commit f214b6ecc177babce12d3ad13dd92049c824c1d9 has not produced "
+    "envs/uv/locks/rlbench.lock.txt in this workspace, and runtime smoke also requires "
+    "an external CoppeliaSim/PyRep installation. See docs/rlbench_colosseum_integration.md."
+)
 
 
 BACKENDS: dict[str, dict[str, object]] = {
@@ -139,6 +145,15 @@ BACKENDS: dict[str, dict[str, object]] = {
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_calvin_integration.py", "-rs"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/calvin_delta_eef.yaml"],
+        ],
+    },
+    "rlbench": {
+        "python": "3.10",
+        "input": "rlbench.in",
+        "blocked_reason": RLBENCH_UV_BLOCKED,
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_rlbench_colosseum_integration.py", "-rs"],
+            ["python", "scripts/run_benchmark.py", "--config", "configs/rlbench_reach_target_delta_eef.yaml"],
         ],
     },
 }
@@ -331,6 +346,12 @@ def smoke_backend(name: str) -> None:
     cfg = backend_config(name)
     for command in cfg["smoke"]:  # type: ignore[index]
         run_backend(name, list(command))
+
+
+def require_unblocked_backend(name: str, command: str) -> None:
+    reason = backend_config(name).get("blocked_reason")
+    if reason:
+        raise SystemExit(f"{name} uv {command} is blocked: {reason}")
 
 
 def backend_env(name: str) -> dict[str, str]:
