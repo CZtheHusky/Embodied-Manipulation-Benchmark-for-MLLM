@@ -149,6 +149,25 @@ ui:
 
 The CALVIN player reuses the benchmark parser, validator, mapping, controller, logging, and debug recorders in the main process. The worker owns CALVIN environment creation, reset, stepping, and RGB frame extraction through `CalvinSimAdapter` and `CalvinObservationProvider`.
 
+## robosuite Lift
+
+Run:
+
+```bash
+python3 scripts/manage_uv_env.py run robosuite -- python scripts/play_benchmark.py --config configs/robosuite_lift.yaml
+```
+
+The default config uses the same worker runtime as the other simulator backends and displays the `agentview` camera:
+
+```yaml
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: agentview
+```
+
+robosuite owns MuJoCo setup and rendering in the worker process. The main process handles keyboard input, benchmark action parsing, controller translation, logging, and the Pygame window.
+
 ## Known GL Failure Modes
 
 Single-process Pygame + MuJoCo rendering can fail on X11 with:
