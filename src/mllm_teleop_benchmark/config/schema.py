@@ -352,6 +352,50 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class UIConfig:
+    backend: str = "pygame"
+    runtime: str = "sim_adapter_worker"
+    window_width: int = 640
+    window_height: int = 480
+    info_panel_height: int = 170
+    fps: int = 20
+    max_steps: int | None = None
+    step_when_idle: bool = False
+    simple_blit: bool = True
+    debug_frames: bool = False
+    debug_control_history: bool = False
+    frame_camera: str | None = None
+    mujoco_gl: str | None = None
+    display: str | None = None
+    worker_timeout_seconds: float = 60.0
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "UIConfig":
+        values = dict(data or {})
+        max_steps = values.get("max_steps")
+        frame_camera = values.get("frame_camera")
+        mujoco_gl = values.get("mujoco_gl")
+        display = values.get("display")
+        return cls(
+            backend=str(values.get("backend", "pygame")),
+            runtime=str(values.get("runtime", "sim_adapter_worker")),
+            window_width=int(values.get("window_width", 640)),
+            window_height=int(values.get("window_height", 480)),
+            info_panel_height=int(values.get("info_panel_height", 170)),
+            fps=int(values.get("fps", 20)),
+            max_steps=int(max_steps) if max_steps is not None else None,
+            step_when_idle=bool(values.get("step_when_idle", False)),
+            simple_blit=bool(values.get("simple_blit", True)),
+            debug_frames=bool(values.get("debug_frames", False)),
+            debug_control_history=bool(values.get("debug_control_history", False)),
+            frame_camera=str(frame_camera) if frame_camera is not None else None,
+            mujoco_gl=str(mujoco_gl) if mujoco_gl is not None else None,
+            display=str(display) if display is not None else None,
+            worker_timeout_seconds=float(values.get("worker_timeout_seconds", 60.0)),
+        )
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     benchmark: BenchmarkSection
     simulator: SimulatorConfig
@@ -363,6 +407,7 @@ class BenchmarkConfig:
     frame_transform: FrameTransformConfig
     agent: AgentConfig
     logging: LoggingConfig
+    ui: UIConfig
     control_interface: ControlInterfaceConfig
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -391,6 +436,7 @@ class BenchmarkConfig:
             ),
             agent=AgentConfig.from_dict(_require(data, "agent")),
             logging=LoggingConfig.from_dict(_require(data, "logging")),
+            ui=UIConfig.from_dict(data.get("ui", {})),
             control_interface=control_interface,
             raw=data,
         )

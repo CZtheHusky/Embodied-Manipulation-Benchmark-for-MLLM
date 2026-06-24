@@ -23,6 +23,14 @@ def _require_robosuite() -> None:
         pytest.skip(f"robosuite failed to import in this optional-backend environment: {exc}")
 
 
+def test_robosuite_config_uses_worker_play_runtime():
+    config = load_config("configs/robosuite_lift.yaml")
+
+    assert config.ui.backend == "pygame"
+    assert config.ui.runtime == "sim_adapter_worker"
+    assert config.ui.frame_camera == "agentview"
+
+
 def test_robosuite_adapter_init():
     _require_robosuite()
     config = load_config("configs/robosuite_lift.yaml")
