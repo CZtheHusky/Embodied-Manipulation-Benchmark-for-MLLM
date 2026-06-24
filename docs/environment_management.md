@@ -1,17 +1,24 @@
 # Environment Management
 
-This project uses uv as the primary environment manager. Simulator backends still use separate environments so incompatible or heavy dependencies are not installed together.
+This project uses a uv-first hybrid environment policy. Simulator backends still use separate environments so incompatible or heavy dependencies are not installed together, but not every simulator can be represented as a pure PyPI lock.
 
-Conda env files under `envs/environment-*.yml` remain as a fallback during the uv migration, but new setup and smoke-test commands should use `scripts/manage_uv_env.py`.
+Conda env files under `envs/environment-*.yml` remain as a fallback during the uv migration. New setup and smoke-test commands should use `scripts/manage_uv_env.py` unless a backend is explicitly marked as blocked or fallback-only.
 
 ## Policy
 
-- Use one uv virtual environment per simulator backend.
-- Keep backend requirements in `envs/uv/*.in` and checked-in locks in `envs/uv/locks/*.lock.txt`.
+- Use one isolated environment per simulator backend.
+- Prefer uv locks in `envs/uv/*.in` and `envs/uv/locks/*.lock.txt` whenever the backend can be resolved and installed reproducibly.
 - Do not install every simulator dependency into one environment.
 - Do not commit `.venvs/` or CALVIN's upstream source checkout.
+- Classify every backend with one support level:
+  - `uv`: uv lock plus normal package install.
+  - `uv_source`: uv lock plus pinned source checkouts installed after sync.
+  - `external_runtime`: uv-managed Python dependencies plus a required host runtime, simulator binary, or driver stack.
+  - `fallback_blocked`: uv is not currently reliable enough; use a documented conda or container fallback instead.
+- Do not mix uv and conda inside the same backend environment. If a backend uses a conda fallback, treat that conda env as the primary environment for that backend.
 - Use CPU PyTorch for `maniskill-cpu` by default; use `maniskill-cu126` on NVIDIA CUDA 12.6 hosts.
 - Keep backend imports lazy so the core environment works without optional simulators installed.
+- Keep current backend status in `docs/simulator_backend_status.md`.
 
 ## uv Commands
 
@@ -20,6 +27,8 @@ List known backends:
 ```bash
 python3 scripts/manage_uv_env.py list
 ```
+
+The list output is tab-separated: `<backend>\t<support_level>`.
 
 Regenerate a lock:
 
@@ -150,13 +159,17 @@ conda activate mllm-teleop-gymnasium
 
 Do not add new simulator dependencies to the root `environment.yml`. New backends should add uv input and lock files first, then add a conda fallback file only when there is a concrete reason.
 
+A fallback backend should fail fast from `scripts/manage_uv_env.py` with a clear reason and a documentation link. Do not run `uv pip sync` inside a conda fallback environment; that produces an untracked hybrid state that cannot be recreated from either manager alone.
+
 ## Adding A New Backend
 
 When a new simulator backend is added:
 
 1. Add `envs/uv/<backend>.in`.
-2. Add a backend entry in `scripts/manage_uv_env.py`.
-3. Generate `envs/uv/locks/<backend>.lock.txt`.
-4. Keep heavy imports lazy so core tests pass without the backend installed.
-5. Add smoke tests that skip or mock the heavy dependency when it is absent.
-6. Document the backend here and in its integration doc.
+2. Classify the backend as `uv`, `uv_source`, `external_runtime`, or `fallback_blocked`.
+3. Add a backend entry in `scripts/manage_uv_env.py`. A blocked backend must include `blocked_reason` and `doc`.
+4. Generate `envs/uv/locks/<backend>.lock.txt` unless the backend is `fallback_blocked`.
+5. Keep heavy imports lazy so core tests pass without the backend installed.
+6. Add smoke tests that skip or mock the heavy dependency when it is absent.
+7. Document the backend here, in its integration doc, and in `docs/simulator_backend_status.md`.
+8. Run `python3 scripts/manage_uv_env.py list` and a backend smoke test before merging.

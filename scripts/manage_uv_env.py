@@ -37,16 +37,19 @@ BACKENDS: dict[str, dict[str, object]] = {
     "core": {
         "python": "3.11",
         "input": "core.in",
+        "support_level": "uv",
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_dummy_episode.py", "tests/test_control_interface.py", "tests/test_mapping.py", "tests/test_frame_transform.py"]],
     },
     "gymnasium": {
         "python": "3.11",
         "input": "gymnasium.in",
+        "support_level": "uv",
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_gymnasium_controller.py", "tests/test_dummy_episode.py"]],
     },
     "dmcontrol": {
         "python": "3.11",
         "input": "dmcontrol.in",
+        "support_level": "uv",
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_dmcontrol_integration.py"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/dmcontrol_example.yaml"],
@@ -55,18 +58,21 @@ BACKENDS: dict[str, dict[str, object]] = {
     "robosuite": {
         "python": "3.10",
         "input": "robosuite.in",
+        "support_level": "uv",
         "env": {"NUMBA_DISABLE_JIT": "1"},
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_robosuite_integration.py"]],
     },
     "maniskill-cpu": {
         "python": "3.11",
         "input": "maniskill-cpu.in",
+        "support_level": "uv",
         "torch_backend": "cpu",
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_maniskill_backend.py"]],
     },
     "maniskill-cu126": {
         "python": "3.11",
         "input": "maniskill-cu126.in",
+        "support_level": "external_runtime",
         "torch_backend": "cu126",
         "smoke": [
             ["python", "-c", CUDA_SMOKE],
@@ -76,6 +82,7 @@ BACKENDS: dict[str, dict[str, object]] = {
     "metaworld": {
         "python": "3.11",
         "input": "metaworld.in",
+        "support_level": "uv",
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_metaworld_integration.py", "-rs"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/metaworld_reach.yaml"],
@@ -84,11 +91,13 @@ BACKENDS: dict[str, dict[str, object]] = {
     "simpler-env": {
         "python": "3.10",
         "input": "simpler-env.in",
+        "support_level": "uv_source",
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_simpler_env_backend.py", "-rs"]],
     },
     "calvin": {
         "python": "3.10",
         "input": "calvin.in",
+        "support_level": "uv_source",
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_calvin_integration.py", "-rs"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/calvin_delta_eef.yaml"],
@@ -106,8 +115,8 @@ def main() -> None:
     ns = parser.parse_args()
 
     if ns.command == "list":
-        for name in BACKENDS:
-            print(name)
+        for line in list_backends():
+            print(line)
         return
     if ns.backend is None:
         parser.error("backend is required")
@@ -131,6 +140,26 @@ def backend_config(name: str) -> dict[str, object]:
     return BACKENDS[name]
 
 
+def backend_support_level(name: str) -> str:
+    return str(backend_config(name).get("support_level", "uv"))
+
+
+def list_backends() -> list[str]:
+    return [f"{name}\t{backend_support_level(name)}" for name in BACKENDS]
+
+
+def require_unblocked_backend(name: str, command: str) -> None:
+    cfg = backend_config(name)
+    blocked_reason = cfg.get("blocked_reason")
+    if not blocked_reason:
+        return
+    doc = cfg.get("doc")
+    message = f"{name} uv {command} is blocked: {blocked_reason}"
+    if doc:
+        message = f"{message} See {doc}."
+    raise SystemExit(message)
+
+
 def input_path(name: str) -> Path:
     return UV_DIR / str(backend_config(name)["input"])
 
@@ -148,6 +177,7 @@ def python_bin(name: str) -> Path:
 
 
 def lock_backend(name: str, platform: str) -> None:
+    require_unblocked_backend(name, "lock")
     cfg = backend_config(name)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     command = [
@@ -169,6 +199,7 @@ def lock_backend(name: str, platform: str) -> None:
 
 
 def create_backend(name: str) -> None:
+    require_unblocked_backend(name, "create")
     cfg = backend_config(name)
     if not lock_path(name).exists():
         lock_backend(name, PYTHON_PLATFORM)
@@ -220,6 +251,7 @@ def install_calvin_editable() -> None:
 
 
 def run_backend(name: str, command: list[str]) -> None:
+    require_unblocked_backend(name, "run")
     python = python_bin(name)
     if not python.exists():
         raise SystemExit(f"uv environment does not exist: {venv_path(name)}; run create first")
@@ -231,6 +263,7 @@ def run_backend(name: str, command: list[str]) -> None:
 
 
 def smoke_backend(name: str) -> None:
+    require_unblocked_backend(name, "smoke")
     cfg = backend_config(name)
     for command in cfg["smoke"]:  # type: ignore[index]
         run_backend(name, list(command))
