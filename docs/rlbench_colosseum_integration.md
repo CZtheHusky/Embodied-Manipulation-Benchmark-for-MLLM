@@ -28,8 +28,9 @@ python3 scripts/manage_conda_env.py smoke rlbench
 
 The smoke result was:
 
-- `tests/test_rlbench_colosseum_integration.py`: `7 passed, 1 skipped`
+- `tests/test_rlbench_colosseum_integration.py`: `8 passed, 1 skipped`
 - `configs/rlbench_reach_target_delta_eef_smoke.yaml`: one benchmark episode, `average_steps=1.0`, `success_rate=0.0`
+- `scripts/play_benchmark.py --config configs/rlbench_reach_target_delta_eef_smoke.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts RLBench, extracts the `front` camera frame, and exits cleanly.
 
 The remaining skip is the explicit Colosseum placeholder. Colosseum builds on this now-verified RLBench/CoppeliaSim route, but `simulator.type: colosseum` and perturbation configs are still not wired.
 
@@ -45,7 +46,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$COPPELIASIM_ROOT
 export QT_QPA_PLATFORM_PLUGIN_PATH=$COPPELIASIM_ROOT
 ```
 
-The verified run used the existing desktop display socket (`DISPLAY=:1`) rather than headless mode. `nvidia-smi` was not usable in the shell, so headless GPU validation is not claimed. On this host, display-backed OpenGL is the supported path.
+The verified run used the existing desktop display socket (`DISPLAY=:1`) rather than headless mode. On this host, display-backed OpenGL is the supported path; headless GPU validation is not claimed.
 
 ## Environment
 
@@ -67,6 +68,12 @@ python3 scripts/manage_conda_env.py smoke rlbench
 ```
 
 This requires both the Python environment and the external CoppeliaSim/PyRep runtime. The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, and falls back to `DISPLAY=:1` when that X socket exists.
+
+Run the non-interactive manual-play smoke:
+
+```bash
+python3 scripts/manage_conda_env.py run rlbench -- python scripts/play_benchmark.py --config configs/rlbench_reach_target_delta_eef_smoke.yaml --set ui.max_steps=0
+```
 
 Run only the tests:
 

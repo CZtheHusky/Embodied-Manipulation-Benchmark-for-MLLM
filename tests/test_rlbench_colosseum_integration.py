@@ -40,6 +40,18 @@ def test_rlbench_reach_target_config_builds_without_rlbench_install():
     assert isinstance(sim, RLBenchSimAdapter)
 
 
+def test_rlbench_configs_use_worker_play_runtime():
+    for config_path in (
+        "configs/rlbench_reach_target_delta_eef.yaml",
+        "configs/rlbench_reach_target_delta_eef_smoke.yaml",
+    ):
+        config = load_config(config_path)
+
+        assert config.ui.backend == "pygame"
+        assert config.ui.runtime == "sim_adapter_worker"
+        assert config.ui.frame_camera == "front"
+
+
 def test_rlbench_delta_eef_controller_maps_delta_position_and_default_gripper():
     config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
     controller = RLBenchDeltaEEFController.from_config(config.controller, build_mapping(config, config.benchmark.seed))

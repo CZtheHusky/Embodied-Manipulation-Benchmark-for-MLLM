@@ -69,3 +69,8 @@ logging:
   save_video: false
   save_trajectory: true
   save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: front
