@@ -79,6 +79,16 @@ python3 scripts/manage_uv_env.py run maniskill-cu126 -- python scripts/run_bench
 
 The `maniskill-cu126` smoke test checks `torch.cuda.is_available()` before running ManiSkill tests. A host without an NVIDIA driver should fail this smoke test instead of pretending the GPU environment is valid.
 
+SimplerEnv:
+
+```bash
+python3 scripts/manage_uv_env.py create simpler-env
+python3 scripts/manage_uv_env.py smoke simpler-env
+python3 scripts/manage_uv_env.py run simpler-env -- python scripts/run_benchmark.py --config configs/simpler_env_google_robot_pick_coke_can.yaml
+```
+
+The `simpler-env` backend installs the minimal environment runtime only: `simpler_env`, `mani_skill2_real2sim`, and their simulator dependencies. It intentionally does not install RT-1, Octo, TensorFlow/JAX policy inference, or the full SimplerEnv development stack. SimplerEnv is SAPIEN based and expects a Linux NVIDIA GPU setup for practical rendering; missing GPU drivers, incompatible CUDA/SAPIEN wheels, or missing upstream assets should be treated as backend setup failures rather than core benchmark failures.
+
 robosuite:
 
 ```bash

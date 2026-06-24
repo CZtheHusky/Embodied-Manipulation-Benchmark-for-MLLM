@@ -61,6 +61,11 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "-m", "pytest", "-q", "tests/test_maniskill_backend.py"],
         ],
     },
+    "simpler-env": {
+        "python": "3.10",
+        "input": "simpler-env.in",
+        "smoke": [["python", "-m", "pytest", "-q", "tests/test_simpler_env_backend.py", "-rs"]],
+    },
     "calvin": {
         "python": "3.10",
         "input": "calvin.in",

@@ -1,0 +1,6 @@
+imageio>=2.0
+numpy==1.24.4
+PyYAML>=6.0
+pytest>=8.0
+mani_skill2_real2sim @ git+https://github.com/simpler-env/ManiSkill2_real2sim.git
+simpler_env @ git+https://github.com/simpler-env/SimplerEnv.git
