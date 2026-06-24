@@ -12,20 +12,6 @@ UV_DIR = ROOT / "envs" / "uv"
 LOCK_DIR = UV_DIR / "locks"
 VENV_DIR = ROOT / ".venvs"
 PYTHON_PLATFORM = "x86_64-unknown-linux-gnu"
-CALVIN_REPO = "https://github.com/mees/calvin_env.git"
-CALVIN_COMMIT = "797142c588c21e76717268b7b430958dbd13bf48"
-SIMPLER_ENV_SOURCES = (
-    (
-        "mani-skill2-real2sim",
-        "https://github.com/simpler-env/ManiSkill2_real2sim.git",
-        "ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682",
-    ),
-    (
-        "simpler-env",
-        "https://github.com/simpler-env/SimplerEnv.git",
-        "06accaca93535902d408da4855f21cece12bceb7",
-    ),
-)
 CUDA_SMOKE = (
     "import torch; "
     "assert torch.cuda.is_available(), 'CUDA is not available'; "
@@ -92,12 +78,38 @@ BACKENDS: dict[str, dict[str, object]] = {
         "python": "3.10",
         "input": "simpler-env.in",
         "support_level": "uv_source",
+        "sources": [
+            {
+                "name": "mani-skill2-real2sim",
+                "repo": "https://github.com/simpler-env/ManiSkill2_real2sim.git",
+                "commit": "ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682",
+                "install_args": ["--no-deps", "-e"],
+                "target_backend": "simpler-env",
+            },
+            {
+                "name": "simpler-env",
+                "repo": "https://github.com/simpler-env/SimplerEnv.git",
+                "commit": "06accaca93535902d408da4855f21cece12bceb7",
+                "install_args": ["--no-deps", "-e"],
+                "target_backend": "simpler-env",
+            },
+        ],
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_simpler_env_backend.py", "-rs"]],
     },
     "calvin": {
         "python": "3.10",
         "input": "calvin.in",
         "support_level": "uv_source",
+        "sources": [
+            {
+                "name": "calvin-env",
+                "repo": "https://github.com/mees/calvin_env.git",
+                "commit": "797142c588c21e76717268b7b430958dbd13bf48",
+                "install_args": ["--no-deps", "-e"],
+                "target_backend": "calvin",
+                "submodules": True,
+            },
+        ],
         "smoke": [
             ["python", "-m", "pytest", "-q", "tests/test_calvin_integration.py", "-rs"],
             ["python", "scripts/run_benchmark.py", "--config", "configs/calvin_delta_eef.yaml"],
@@ -142,6 +154,10 @@ def backend_config(name: str) -> dict[str, object]:
 
 def backend_support_level(name: str) -> str:
     return str(backend_config(name).get("support_level", "uv"))
+
+
+def backend_sources(name: str) -> list[dict[str, object]]:
+    return list(backend_config(name).get("sources", []))  # type: ignore[arg-type]
 
 
 def list_backends() -> list[str]:
@@ -211,20 +227,43 @@ def create_backend(name: str) -> None:
         sync_command.extend(["--torch-backend", str(torch_backend)])
     run(sync_command)
     run(["uv", "pip", "install", "--python", str(venv_path(name)), "-e", str(ROOT)])
-    if name == "simpler-env":
-        install_simpler_env_sources()
-    if name == "calvin":
-        install_calvin_editable()
+    install_backend_sources(name)
 
 
-def install_simpler_env_sources() -> None:
-    for source_name, repo, commit in SIMPLER_ENV_SOURCES:
-        source_dir = VENV_DIR / "_sources" / source_name
-        ensure_git_checkout(source_dir, repo, commit)
-        run(["uv", "pip", "install", "--python", str(venv_path("simpler-env")), "--no-deps", "-e", str(source_dir)])
+def install_backend_sources(name: str) -> None:
+    for source in backend_sources(name):
+        install_source(name, source)
+
+
+def install_source(default_backend: str, source: dict[str, object]) -> None:
+    validate_source_config(source)
+    source_dir = source_path(source)
+    ensure_git_checkout(source_dir, str(source["repo"]), str(source["commit"]))
+    if source.get("submodules"):
+        run(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
+    target_backend = str(source.get("target_backend", default_backend))
+    install_args = [str(arg) for arg in source.get("install_args", ["--no-deps", "-e"])]  # type: ignore[union-attr]
+    run(["uv", "pip", "install", "--python", str(venv_path(target_backend)), *install_args, str(source_dir)])
+
+
+def validate_source_config(source: dict[str, object]) -> None:
+    missing = [key for key in ("name", "repo", "commit", "install_args", "target_backend") if key not in source]
+    if missing:
+        raise SystemExit(f"source config is missing required keys: {', '.join(missing)}")
+    validate_exact_commit(str(source["commit"]), str(source["name"]))
+
+
+def validate_exact_commit(commit: str, source_name: str) -> None:
+    if len(commit) != 40 or any(char not in "0123456789abcdefABCDEF" for char in commit):
+        raise SystemExit(f"{source_name} source commit must be a 40-character Git commit SHA: {commit}")
+
+
+def source_path(source: dict[str, object]) -> Path:
+    return VENV_DIR / "_sources" / str(source["name"])
 
 
 def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
+    validate_exact_commit(commit, source_dir.name)
     if source_dir.exists():
         if not (source_dir / ".git").exists():
             raise SystemExit(f"source directory exists but is not a Git checkout: {source_dir}")
@@ -236,18 +275,13 @@ def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
         run(["git", "remote", "add", "origin", repo], cwd=source_dir)
     run(["git", "fetch", "--depth", "1", "origin", commit], cwd=source_dir)
     run(["git", "checkout", "--detach", commit], cwd=source_dir)
+    verify_git_checkout(source_dir, commit)
 
 
-def install_calvin_editable() -> None:
-    source_dir = VENV_DIR / "_sources" / "calvin-env"
-    if source_dir.exists():
-        run(["git", "fetch", "origin"], cwd=source_dir)
-    else:
-        source_dir.parent.mkdir(parents=True, exist_ok=True)
-        run(["git", "clone", CALVIN_REPO, str(source_dir)])
-    run(["git", "checkout", CALVIN_COMMIT], cwd=source_dir)
-    run(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
-    run(["uv", "pip", "install", "--python", str(venv_path("calvin")), "-e", str(source_dir)])
+def verify_git_checkout(source_dir: Path, commit: str) -> None:
+    actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
+    if actual != commit:
+        raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
 
 
 def run_backend(name: str, command: list[str]) -> None:
@@ -280,6 +314,12 @@ def backend_env(name: str) -> dict[str, str]:
 def run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command), flush=True)
     subprocess.run(command, cwd=str(cwd or ROOT), env=env, check=True)
+
+
+def run_output(command: list[str], *, cwd: Path | None = None) -> str:
+    print("+", " ".join(command), flush=True)
+    result = subprocess.run(command, cwd=str(cwd or ROOT), check=True, capture_output=True, text=True)
+    return result.stdout.strip()
 
 
 if __name__ == "__main__":

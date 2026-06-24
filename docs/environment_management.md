@@ -9,12 +9,13 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
 - Use one isolated environment per simulator backend.
 - Prefer uv locks in `envs/uv/*.in` and `envs/uv/locks/*.lock.txt` whenever the backend can be resolved and installed reproducibly.
 - Do not install every simulator dependency into one environment.
-- Do not commit `.venvs/` or CALVIN's upstream source checkout.
+- Do not commit `.venvs/` or upstream source checkouts under `.venvs/_sources/`.
 - Classify every backend with one support level:
   - `uv`: uv lock plus normal package install.
   - `uv_source`: uv lock plus pinned source checkouts installed after sync.
   - `external_runtime`: uv-managed Python dependencies plus a required host runtime, simulator binary, or driver stack.
   - `fallback_blocked`: uv is not currently reliable enough; use a documented conda or container fallback instead.
+- For `uv_source` backends, declare each upstream source in `scripts/manage_uv_env.py` with a repo URL and a 40-character commit SHA. Do not use floating branches, tags, or unpinned Git URLs as runtime verification inputs.
 - Do not mix uv and conda inside the same backend environment. If a backend uses a conda fallback, treat that conda env as the primary environment for that backend.
 - Use CPU PyTorch for `maniskill-cpu` by default; use `maniskill-cu126` on NVIDIA CUDA 12.6 hosts.
 - Keep backend imports lazy so the core environment works without optional simulators installed.
@@ -29,6 +30,14 @@ python3 scripts/manage_uv_env.py list
 ```
 
 The list output is tab-separated: `<backend>\t<support_level>`.
+
+For `uv_source` backends, `create` runs in this order:
+
+1. Sync the uv lock.
+2. Install this repository editable.
+3. Fetch each declared upstream source into `.venvs/_sources/<name>`.
+4. Check out and verify the exact commit.
+5. Install that checkout into the target backend environment.
 
 Regenerate a lock:
 
@@ -98,7 +107,7 @@ python3 scripts/manage_uv_env.py run simpler-env -- python scripts/run_benchmark
 
 The `simpler-env` backend installs the minimal environment runtime only: `simpler_env`, `mani_skill2_real2sim`, and their simulator dependencies. It intentionally does not install RT-1, Octo, TensorFlow/JAX policy inference, or the full SimplerEnv development stack.
 
-The lock file contains the PyPI runtime dependencies. `create simpler-env` then fetches pinned upstream source checkouts into `.venvs/_sources/` and installs them editable with `--no-deps`:
+The lock file contains the PyPI runtime dependencies. `create simpler-env` then fetches pinned upstream source checkouts declared in `scripts/manage_uv_env.py` into `.venvs/_sources/` and installs them editable with `--no-deps`:
 
 - `mani_skill2_real2sim`: `ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682`
 - `simpler_env`: `06accaca93535902d408da4855f21cece12bceb7`
@@ -136,7 +145,7 @@ python3 scripts/manage_uv_env.py create calvin
 python3 scripts/manage_uv_env.py run calvin -- python scripts/run_benchmark.py --config configs/calvin_delta_eef.yaml
 ```
 
-CALVIN is special: uv can resolve the pinned Git dependency, but it cannot install an editable Git URL directly. The create step clones `calvin_env` to `.venvs/_sources/calvin-env`, checks out commit `797142c588c21e76717268b7b430958dbd13bf48`, initializes submodules, and installs that local checkout editable so CALVIN's runtime Hydra `conf/` directory is available.
+CALVIN is special: uv can resolve the pinned Git dependency, but it cannot install an editable Git URL directly. The create step fetches `calvin_env` to `.venvs/_sources/calvin-env`, verifies commit `797142c588c21e76717268b7b430958dbd13bf48`, initializes submodules, and installs that local checkout editable so CALVIN's runtime Hydra `conf/` directory is available.
 
 ## Editable Install Check
 
@@ -167,7 +176,7 @@ When a new simulator backend is added:
 
 1. Add `envs/uv/<backend>.in`.
 2. Classify the backend as `uv`, `uv_source`, `external_runtime`, or `fallback_blocked`.
-3. Add a backend entry in `scripts/manage_uv_env.py`. A blocked backend must include `blocked_reason` and `doc`.
+3. Add a backend entry in `scripts/manage_uv_env.py`. A blocked backend must include `blocked_reason` and `doc`; a source backend must include exact source commits in `sources`.
 4. Generate `envs/uv/locks/<backend>.lock.txt` unless the backend is `fallback_blocked`.
 5. Keep heavy imports lazy so core tests pass without the backend installed.
 6. Add smoke tests that skip or mock the heavy dependency when it is absent.
