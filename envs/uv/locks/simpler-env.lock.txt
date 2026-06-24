@@ -55,6 +55,8 @@ pluggy==1.6.0
     # via pytest
 psutil==7.2.2
     # via imageio
+pygame==2.6.1
+    # via -r envs/uv/simpler-env.in
 pygments==2.20.0
     # via pytest
 pysocks==1.7.1
