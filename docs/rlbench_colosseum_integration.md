@@ -40,7 +40,9 @@ The Python dependency input pins RLBench to upstream commit `f214b6ecc177babce12
 
 Current lock status on June 24, 2026: `envs/uv/locks/rlbench.lock.txt` is not generated in this worktree. Bounded attempts to run `python3 scripts/manage_uv_env.py lock rlbench` stalled while uv was updating the pinned RLBench Git source. A published `rlbench` package was not available from the configured package registry, and a direct shallow clone of upstream RLBench tag `1.1.0` also timed out on this host. Treat this as a Python-source acquisition blocker, not as a reason to add CoppeliaSim to uv.
 
-Actionable next step: rerun lock generation from a host/network path that can complete a GitHub RLBench source transfer, or pre-seed uv's cache with the pinned RLBench commit. Check in `envs/uv/locks/rlbench.lock.txt` only after `python3 scripts/manage_uv_env.py lock rlbench` completes.
+`scripts/manage_uv_env.py` intentionally fails fast for `lock`, `create`, `run`, and `smoke` on the `rlbench` backend until source transfer and runtime smoke are both verified. This avoids repeatedly entering the known-hanging Git resolver path.
+
+Actionable next step: rerun lock generation from a host/network path that can complete a GitHub RLBench source transfer, or replace the direct Git dependency with a pinned local source checkout flow. Check in `envs/uv/locks/rlbench.lock.txt` only after `python3 scripts/manage_uv_env.py lock rlbench` completes.
 
 Create the Python backend:
 
