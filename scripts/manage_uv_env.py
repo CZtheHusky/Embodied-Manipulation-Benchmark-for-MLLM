@@ -14,6 +14,8 @@ VENV_DIR = ROOT / ".venvs"
 PYTHON_PLATFORM = "x86_64-unknown-linux-gnu"
 CALVIN_REPO = "https://github.com/mees/calvin_env.git"
 CALVIN_COMMIT = "797142c588c21e76717268b7b430958dbd13bf48"
+ROBOCASA_REPO = "https://github.com/robocasa/robocasa.git"
+ROBOCASA_COMMIT = "8f3c96ec8d1bfcd8126cad2bca887da98d30e997"
 CUDA_SMOKE = (
     "import torch; "
     "assert torch.cuda.is_available(), 'CUDA is not available'; "
@@ -49,6 +51,9 @@ BACKENDS: dict[str, dict[str, object]] = {
     "robocasa": {
         "python": "3.11",
         "input": "robocasa.in",
+        "platform": "x86_64-manylinux_2_31",
+        "torch_backend": "cpu",
+        "excludes": ["robocasa-excludes.in"],
         "env": {"NUMBA_DISABLE_JIT": "1"},
         "smoke": [["python", "-m", "pytest", "-q", "tests/test_robocasa_integration.py", "-rs"]],
     },
@@ -131,6 +136,8 @@ def python_bin(name: str) -> Path:
 def lock_backend(name: str, platform: str) -> None:
     cfg = backend_config(name)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    if platform == PYTHON_PLATFORM and "platform" in cfg:
+        platform = str(cfg["platform"])
     command = [
         "uv",
         "pip",
@@ -143,6 +150,8 @@ def lock_backend(name: str, platform: str) -> None:
         "--output-file",
         str(lock_path(name)),
     ]
+    for exclude in cfg.get("excludes", []):  # type: ignore[union-attr]
+        command.extend(["--excludes", str(UV_DIR / str(exclude))])
     torch_backend = cfg.get("torch_backend")
     if torch_backend:
         command.extend(["--torch-backend", str(torch_backend)])
@@ -163,6 +172,8 @@ def create_backend(name: str) -> None:
     run(["uv", "pip", "install", "--python", str(venv_path(name)), "-e", str(ROOT)])
     if name == "calvin":
         install_calvin_editable()
+    if name == "robocasa":
+        install_robocasa_editable()
 
 
 def install_calvin_editable() -> None:
@@ -175,6 +186,17 @@ def install_calvin_editable() -> None:
     run(["git", "checkout", CALVIN_COMMIT], cwd=source_dir)
     run(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
     run(["uv", "pip", "install", "--python", str(venv_path("calvin")), "-e", str(source_dir)])
+
+
+def install_robocasa_editable() -> None:
+    source_dir = VENV_DIR / "_sources" / "robocasa"
+    if source_dir.exists():
+        run(["git", "fetch", "origin"], cwd=source_dir)
+    else:
+        source_dir.parent.mkdir(parents=True, exist_ok=True)
+        run(["git", "clone", ROBOCASA_REPO, str(source_dir)])
+    run(["git", "checkout", ROBOCASA_COMMIT], cwd=source_dir)
+    run(["uv", "pip", "install", "--python", str(venv_path("robocasa")), "--no-deps", "-e", str(source_dir)])
 
 
 def run_backend(name: str, command: list[str]) -> None:

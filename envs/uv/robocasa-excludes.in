@@ -1,0 +1,3 @@
+# robosuite 1.5.2 declares mink==0.0.5, whose numpy<2 pin conflicts with
+# RoboCasa v1.0's numpy==2.2.5 runtime requirement.
+mink

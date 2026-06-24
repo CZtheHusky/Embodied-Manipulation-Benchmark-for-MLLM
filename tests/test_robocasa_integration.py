@@ -15,6 +15,15 @@ from mllm_teleop_benchmark.tasks.robocasa_task import RoboCasaGenericTask
 
 
 CONFIG_PATH = "configs/robocasa_pick_place_counter_to_cabinet.yaml"
+ROBOCASA_SETUP_HINT = (
+    "Run `python3 scripts/manage_uv_env.py create robocasa`; runtime validation requires "
+    "`MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa`."
+)
+ROBOCASA_RUNTIME_HINT = (
+    "If this fails with `load_model_on_init`, the remaining blocker is the robosuite runtime "
+    "source commit `824ac14cefcfb7ec125fe5eb2e0bad7364466154`, which must be fetched and "
+    "installed no-deps/editable before claiming runtime verification."
+)
 
 
 def _require_robocasa() -> None:
@@ -23,17 +32,17 @@ def _require_robocasa() -> None:
         __import__("gymnasium")
         __import__("robocasa")
     except ImportError as exc:
-        pytest.skip(f"robocasa is not available in this environment: {exc}")
+        pytest.skip(f"robocasa is not available in this environment: {exc}. {ROBOCASA_SETUP_HINT}")
     except Exception as exc:
         if os.environ.get("MLLM_TELEOP_REQUIRE_ROBOCASA") == "1":
             raise
-        pytest.skip(f"robocasa failed to import in this optional-backend environment: {exc}")
+        pytest.skip(f"robocasa failed to import in this optional-backend environment: {exc}. {ROBOCASA_SETUP_HINT}")
 
 
 def _skip_unless_required(message: str, exc: Exception) -> None:
     if os.environ.get("MLLM_TELEOP_REQUIRE_ROBOCASA") == "1":
         raise exc
-    pytest.skip(f"{message}: {exc}")
+    pytest.skip(f"{message}: {exc}. {ROBOCASA_RUNTIME_HINT}")
 
 
 def test_robocasa_config_builds_without_backend():
