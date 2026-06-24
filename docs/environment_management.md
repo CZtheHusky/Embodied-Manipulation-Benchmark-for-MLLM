@@ -105,27 +105,13 @@ CALVIN is special: uv can resolve the pinned Git dependency, but it cannot insta
 LIBERO:
 
 ```bash
-python3 scripts/manage_uv_env.py create libero
-python3 scripts/manage_uv_env.py smoke libero
-python3 scripts/manage_uv_env.py run libero -- python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml
+python3 scripts/manage_conda_env.py create libero
+python3 scripts/manage_conda_env.py smoke libero
 ```
 
-LIBERO is listed to make the blocked state explicit, but these uv commands intentionally fail fast. As of 2026-06-24, `envs/uv/locks/libero.lock.txt` is not checked in. The Python 3.10/cu113 dependency stack resolves when the upstream `libero @ git+...` package is removed, but uv and direct Git source fetches for pinned LIBERO commit `8f1084e3132a39270c3a13ebe37270a43ece2a01` did not complete cleanly in this environment. `create`, `run`, and `smoke` are therefore not runtime verified.
+LIBERO is runtime verified through the Miniconda fallback in this branch. The helper pins upstream LIBERO commit `8f1084e3132a39270c3a13ebe37270a43ece2a01`, installs the minimal runtime stack needed for this benchmark adapter, writes non-interactive LIBERO and robosuite config files, and removes `ALL_PROXY/all_proxy` so pip keeps using the local HTTP/HTTPS Clash proxy instead of the SOCKS path.
 
-Use the LIBERO-specific docs for the fallback:
-
-```bash
-conda create -n libero python=3.8.13
-conda activate libero
-git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
-cd LIBERO
-git checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
-pip install -r requirements.txt
-pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
-pip install -e .
-```
-
-That is the upstream official conda environment. It validates LIBERO itself, not this repository's adapter, because this repository requires Python >=3.10. A repository runtime fallback must keep Python 3.10, install the same pinned LIBERO source in a separate conda environment, and pass `MLLM_TELEOP_REQUIRE_LIBERO=1 python -m pytest -q tests/test_libero_integration.py -rs` plus `python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml` before anyone reports LIBERO as runtime verified.
+The uv commands intentionally fail fast for LIBERO because that path is not runtime verified. The conda route is a benchmark runtime subset, not a full reproduction of LIBERO's training and policy stack. Use `docs/libero_integration.md` for details.
 
 ## Editable Install Check
 

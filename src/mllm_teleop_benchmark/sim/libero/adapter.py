@@ -127,23 +127,27 @@ class LiberoSimAdapter(SimAdapter):
             from libero.libero.envs import OffScreenRenderEnv
         except ImportError as exc:
             raise ImportError(
-                "LIBERO backend requires the pinned upstream LIBERO stack. The uv environment is blocked "
-                "and not runtime verified; use the conda fallback documented in docs/libero_integration.md."
+                "LIBERO backend requires the pinned upstream LIBERO stack. Run "
+                "`python3 scripts/manage_conda_env.py create libero` and "
+                "`python3 scripts/manage_conda_env.py smoke libero`; see docs/libero_integration.md."
             ) from exc
         return benchmark, OffScreenRenderEnv
 
     def _ensure_libero_config(self) -> None:
-        spec = importlib.util.find_spec("libero.libero")
-        if spec is None or spec.origin is None:
-            raise ImportError("LIBERO package is not installed")
-
         config_root = Path(os.environ.get("LIBERO_CONFIG_PATH", "/tmp/mllm_teleop_libero_config")).expanduser()
         os.environ["LIBERO_CONFIG_PATH"] = str(config_root)
         config_file = config_root / "config.yaml"
         if config_file.exists():
             return
 
-        benchmark_root = Path(spec.origin).resolve().parent
+        env_root = os.environ.get("MLLM_TELEOP_LIBERO_BENCHMARK_ROOT")
+        if env_root:
+            benchmark_root = Path(env_root).expanduser().resolve()
+        else:
+            spec = importlib.util.find_spec("libero")
+            if spec is None or spec.submodule_search_locations is None:
+                raise ImportError("LIBERO package is not installed")
+            benchmark_root = Path(tuple(spec.submodule_search_locations)[0]).resolve()
         config_root.mkdir(parents=True, exist_ok=True)
         with config_file.open("w", encoding="utf-8") as handle:
             yaml.safe_dump(

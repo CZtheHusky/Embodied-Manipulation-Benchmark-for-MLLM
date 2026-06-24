@@ -29,9 +29,21 @@ obs, reward, done, info = env.step([0.0] * 7)
 
 This matches the upstream README and current `env_wrapper.py`: `OffScreenRenderEnv` wraps robosuite and exposes `reset`, `set_init_state`, `step`, `check_success`, `sim`, and `close`.
 
-Dependency status on 2026-06-24: LIBERO uv setup is blocked and not runtime verified. `python3 scripts/manage_uv_env.py lock libero` starts `uv pip compile` with Python 3.10 and `--torch-backend cu113`, updates the pinned LIBERO Git dependency, then remains in the upstream Git source fetch/resolution path without completing. Follow-up probes showed the direct pinned dependency stack without `libero @ git+...` resolves 100 packages in about 15 seconds, while Git-only uv resolution, a GitHub archive URL, and direct Git source checkout did not complete cleanly in this environment. No `envs/uv/locks/libero.lock.txt` is checked in.
+Dependency status on 2026-06-24: LIBERO is runtime verified through the Miniconda fallback in this branch. The uv setup remains blocked by the old upstream dependency stack and is not the supported route for this backend.
 
-`scripts/manage_uv_env.py` intentionally fails fast for `lock`, `create`, `run`, and `smoke` on the `libero` backend until a lock and runtime smoke have both been verified.
+Verified commands:
+
+```bash
+python3 scripts/manage_conda_env.py create libero
+python3 scripts/manage_conda_env.py smoke libero
+```
+
+The smoke result was:
+
+- `tests/test_libero_integration.py`: `4 passed`
+- `configs/libero_spatial_task0.yaml`: one random-agent benchmark episode, `average_steps=200.0`, `success_rate=0.0`
+
+The benchmark success rate is expected to be zero for the random policy. The verification claim is reset, init-state application, one environment step, image/render access, close, and benchmark-runner completion.
 
 ## Architecture
 
@@ -84,15 +96,6 @@ Do not report LIBERO success without also reporting these metadata fields and th
 
 ## Dependencies
 
-The uv backend is blocked:
-
-```bash
-python3 scripts/manage_uv_env.py create libero
-python3 scripts/manage_uv_env.py smoke libero
-```
-
-Both commands fail fast by design. `envs/uv/libero.in` records the attempted Python 3.10 compatibility lock input and pins upstream LIBERO to commit `8f1084e3132a39270c3a13ebe37270a43ece2a01`, but this path has not produced a lock or runtime smoke.
-
 The upstream official conda reproduction path is:
 
 ```bash
@@ -106,39 +109,32 @@ pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --e
 pip install -e .
 ```
 
-That official Python 3.8.13 environment is useful for validating upstream LIBERO itself, but it is not a verified runtime for this repository because `pyproject.toml` requires Python >=3.10. Do not weaken the repository-wide Python requirement to fit LIBERO.
+That official Python 3.8.13 environment is useful for validating upstream LIBERO itself, but it is not the runtime for this repository because `pyproject.toml` requires Python >=3.10. Do not weaken the repository-wide Python requirement to fit LIBERO.
 
-For this repository, the only acceptable fallback is a separate conda compatibility environment that keeps Python 3.10 and then proves the adapter with required runtime smoke:
+This repository uses a separate Miniconda compatibility environment that keeps Python 3.10 and installs only the runtime subset needed for `OffScreenRenderEnv`, benchmark metadata, and the benchmark runner:
 
 ```bash
-conda create -n mllm-teleop-libero python=3.10
-conda activate mllm-teleop-libero
-git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
-cd LIBERO
-git checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
-pip install -r requirements.txt
-pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
-pip install -e .
-cd /home/caozhe/workspace/embodied-sim-libero
-pip install -e .
-export MUJOCO_GL=egl
-export PYOPENGL_PLATFORM=egl
-export NUMBA_DISABLE_JIT=1
-MLLM_TELEOP_REQUIRE_LIBERO=1 python -m pytest -q tests/test_libero_integration.py -rs
-python scripts/run_benchmark.py --config configs/libero_spatial_task0.yaml
+python3 scripts/manage_conda_env.py create libero
+python3 scripts/manage_conda_env.py smoke libero
 ```
 
-Until those final two commands pass, report LIBERO as adapter-implemented but runtime-blocked.
+The script pins upstream LIBERO to commit `8f1084e3132a39270c3a13ebe37270a43ece2a01` and writes a `.pth` file because that repository's root `setup.py` installs metadata but does not expose the nested `libero.libero` package correctly in this Python 3.10 editable install.
 
-The compatibility stack follows the old official dependencies as closely as this project can:
+The verified compatibility stack is:
 
-- Torch `1.11.0`
-- torchvision `0.12.0`
-- torchaudio `0.11.0`
-- CUDA backend `cu113`
+- Torch `1.11.0+cpu`
 - robosuite `1.4.0`
+- MuJoCo `2.3.7`
+- NumPy `1.22.4`
+- SciPy `1.10.1`
+- numba `0.57.1`
 - gym `0.25.2`
 - bddl `1.0.1`
+- matplotlib `3.5.3`
+
+This is deliberately not the full LIBERO training stack. `wandb`, `transformers`, `robomimic`, `torchvision`, and `torchaudio` are not needed for the runtime adapter smoke and should not be pulled into this environment unless a policy-training/evaluation workflow is added and verified separately.
+
+Proxy note: pip downloads used `HTTP_PROXY/HTTPS_PROXY=http://127.0.0.1:7897`. The conda helper removes `ALL_PROXY/all_proxy` so pip does not accidentally take a SOCKS path through Clash.
 
 ## Smoke Test
 
