@@ -87,7 +87,16 @@ python3 scripts/manage_uv_env.py smoke simpler-env
 python3 scripts/manage_uv_env.py run simpler-env -- python scripts/run_benchmark.py --config configs/simpler_env_google_robot_pick_coke_can.yaml
 ```
 
-The `simpler-env` backend installs the minimal environment runtime only: `simpler_env`, `mani_skill2_real2sim`, and their simulator dependencies. It intentionally does not install RT-1, Octo, TensorFlow/JAX policy inference, or the full SimplerEnv development stack. SimplerEnv is SAPIEN based and expects a Linux NVIDIA GPU setup for practical rendering; missing GPU drivers, incompatible CUDA/SAPIEN wheels, or missing upstream assets should be treated as backend setup failures rather than core benchmark failures.
+The `simpler-env` backend installs the minimal environment runtime only: `simpler_env`, `mani_skill2_real2sim`, and their simulator dependencies. It intentionally does not install RT-1, Octo, TensorFlow/JAX policy inference, or the full SimplerEnv development stack.
+
+The lock file contains the PyPI runtime dependencies. `create simpler-env` then fetches pinned upstream source checkouts into `.venvs/_sources/` and installs them editable with `--no-deps`:
+
+- `mani_skill2_real2sim`: `ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682`
+- `simpler_env`: `06accaca93535902d408da4855f21cece12bceb7`
+
+This avoids uv resolver hangs on upstream Git URL dependencies while keeping the source revisions explicit. `sapien==2.2.2` still imports `pkg_resources`, so the backend pins `setuptools<81`.
+
+SimplerEnv is SAPIEN based and expects a Linux NVIDIA GPU setup for practical rendering; missing GPU drivers, incompatible CUDA/SAPIEN wheels, or missing upstream assets should be treated as backend setup failures rather than core benchmark failures. Once `simpler_env` is installed, the smoke test fails on import/reset/render/step errors instead of skipping them.
 
 robosuite:
 

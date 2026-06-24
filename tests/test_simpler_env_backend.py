@@ -1,3 +1,5 @@
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -111,7 +113,13 @@ def test_simpler_env_adapter_clips_native_action_against_box_space():
 
 
 def test_simpler_env_runtime_smoke_when_installed():
-    pytest.importorskip("simpler_env")
+    """When SimplerEnv is installed, reset/render/step must work instead of skipping setup failures."""
+    if importlib.util.find_spec("simpler_env") is None:
+        pytest.skip("simpler_env is not installed")
+    try:
+        import simpler_env  # noqa: F401
+    except ImportError as exc:
+        pytest.fail(f"simpler_env is installed but failed to import: {exc}")
     config = load_config("configs/simpler_env_google_robot_pick_coke_can.yaml")
     sim = build_sim(config)
     camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
@@ -131,6 +139,6 @@ def test_simpler_env_runtime_smoke_when_installed():
             next_observation = observation_provider.get_observation(sim)
             assert next_observation.images
         except Exception as exc:
-            pytest.skip(f"SimplerEnv runtime unavailable: {exc}")
+            pytest.fail(f"SimplerEnv runtime is installed but reset/render/step failed: {exc}")
     finally:
         sim.close()

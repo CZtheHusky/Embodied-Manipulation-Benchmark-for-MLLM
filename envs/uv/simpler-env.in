@@ -1,6 +1,21 @@
-imageio>=2.0
+# simpler_env and mani_skill2_real2sim are installed from pinned editable
+# Git checkouts by scripts/manage_uv_env.py create simpler-env. Keeping those
+# source packages out of this input avoids uv hanging while resolving Git URLs.
+GitPython
+gdown>=4.6.0
+gymnasium>=0.28.1,<1.0
+h5py
+imageio[ffmpeg]>=2.0
 numpy==1.24.4
+opencv-python
 PyYAML>=6.0
 pytest>=8.0
-mani_skill2_real2sim @ git+https://github.com/simpler-env/ManiSkill2_real2sim.git
-simpler_env @ git+https://github.com/simpler-env/SimplerEnv.git
+rtree
+ruckig
+sapien==2.2.2
+scipy
+setuptools>=62.3.0,<81
+tabulate
+tqdm
+transforms3d
+trimesh

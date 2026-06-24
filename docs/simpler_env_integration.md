@@ -22,12 +22,27 @@ python3 scripts/manage_uv_env.py smoke simpler-env
 
 The backend installs only the SimplerEnv environment runtime:
 
-- `simpler_env` from `https://github.com/simpler-env/SimplerEnv`
-- `mani_skill2_real2sim` from `https://github.com/simpler-env/ManiSkill2_real2sim`
+- PyPI runtime dependencies from `envs/uv/simpler-env.in`, locked in `envs/uv/locks/simpler-env.lock.txt`
+- `mani_skill2_real2sim` from `https://github.com/simpler-env/ManiSkill2_real2sim` at commit `ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682`
+- `simpler_env` from `https://github.com/simpler-env/SimplerEnv` at commit `06accaca93535902d408da4855f21cece12bceb7`
 
 It intentionally excludes RT-1, Octo, TensorFlow/JAX policy inference packages, and SimplerEnv's full-install dependencies. Core tests and non-SimplerEnv environments continue to work when `simpler_env` is not installed.
 
-SimplerEnv's upstream README lists CUDA and NVIDIA GPU prerequisites for practical SAPIEN rendering. Hosts without a working GPU driver, compatible CUDA/SAPIEN wheels, or required upstream assets may skip or fail the runtime smoke while config/controller tests still pass.
+The uv lock intentionally does not contain Git URL requirements for the two upstream source packages. Direct uv resolution against those Git repositories stalled while updating `ManiSkill2_real2sim`; `create simpler-env` instead fetches the pinned commits into `.venvs/_sources/` and installs them editable with `--no-deps` after syncing the lock.
+
+`sapien==2.2.2` imports `pkg_resources`, so the backend pins `setuptools<81`. Removing that pin makes `simpler_env` fail during import.
+
+SimplerEnv's upstream README lists CUDA and NVIDIA GPU prerequisites for practical SAPIEN rendering. Hosts without a working GPU driver, compatible CUDA/SAPIEN wheels, or required upstream assets should fail the runtime smoke rather than reporting runtime verification. Config/controller tests still pass when `simpler_env` is not installed.
+
+Verified on this branch on 2026-06-24:
+
+```bash
+python3 scripts/manage_uv_env.py lock simpler-env
+python3 scripts/manage_uv_env.py create simpler-env
+python3 scripts/manage_uv_env.py smoke simpler-env
+```
+
+The smoke run passed `6 passed` and exercised `simpler_env` import, reset, RGB observation/render extraction, one zero action step, and close.
 
 ## Initial Task
 
