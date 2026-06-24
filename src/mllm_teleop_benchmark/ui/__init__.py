@@ -1,11 +1,12 @@
 from importlib import import_module
 
 _LAZY_EXPORTS = {
-    "DirectCalvinPlayer": "mllm_teleop_benchmark.ui.direct_calvin_player",
-    "DirectDMControlPlayer": "mllm_teleop_benchmark.ui.direct_dmcontrol_player",
-    "DirectGymnasiumPlayer": "mllm_teleop_benchmark.ui.direct_gymnasium_player",
-    "DirectManiSkillPlayer": "mllm_teleop_benchmark.ui.direct_maniskill_player",
-    "PygameBenchmarkApp": "mllm_teleop_benchmark.ui.pygame_app",
+    "PygameHumanPlayer": "mllm_teleop_benchmark.ui.human_player",
+    "PlayerCommand": "mllm_teleop_benchmark.ui.runtime",
+    "PlayerRuntimeResult": "mllm_teleop_benchmark.ui.runtime",
+    "SimAdapterWorkerRuntime": "mllm_teleop_benchmark.ui.runtime",
+    "build_player": "mllm_teleop_benchmark.ui.registry",
+    "build_runtime": "mllm_teleop_benchmark.ui.registry",
 }
 
 __all__ = list(_LAZY_EXPORTS)

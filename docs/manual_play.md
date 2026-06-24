@@ -16,19 +16,20 @@ The default config uses:
 
 ```yaml
 ui:
-  backend: direct_gymnasium
+  backend: pygame
+  runtime: sim_adapter_worker
 ```
 
-This backend starts two processes:
+This player starts two processes:
 
 - main process: Pygame window, keyboard events, image display
-- worker process: Gymnasium/MuJoCo env stepping and rendering
+- worker process: `SimAdapter`, task reset, observation extraction, simulator stepping, and rendering
 
-This split avoids OpenGL context conflicts between MuJoCo and Pygame. The main process still uses the benchmark action path: keyboard input becomes a standard joystick action from the configured control interface, then `ActionParser`, `ActionValidator`, mapping, and controller translate it into a simulator action for the worker.
+This split avoids OpenGL context conflicts between simulator renderers and Pygame. The main process still uses the benchmark action path: keyboard input becomes a standard joystick action from the configured control interface, then `ActionParser`, `ActionValidator`, mapping, and controller translate it into a simulator action for the worker.
 
 The information panel shows task progress, control mode, joystick count, scale summary, mapping status, frame transform status, gripper availability, and the current joystick action.
 
-For the direct Gymnasium backend, Pygame canvas size is derived from the first valid raw frame returned by `env.render()`:
+For the Pygame human player, canvas size is derived from the first valid raw frame returned by the worker:
 
 - window width = raw frame width
 - environment image display height = raw frame height
@@ -92,10 +93,11 @@ The default config uses:
 
 ```yaml
 ui:
-  backend: direct_maniskill
+  backend: pygame
+  runtime: sim_adapter_worker
 ```
 
-This backend follows the same direct-player architecture as Gymnasium: the main process owns Pygame, keyboard input, benchmark action parsing, controller translation, episode logging, and debug files; the worker process owns ManiSkill environment creation, stepping, RGB extraction, and rendering fallback.
+This uses the same human-play architecture as Gymnasium: the main process owns Pygame, keyboard input, benchmark action parsing, controller translation, episode logging, and debug files; the worker process owns the ManiSkill `SimAdapter`, reset, stepping, RGB extraction, and rendering fallback.
 
 PickCube exposes six motion joysticks plus a final gripper joystick:
 
@@ -109,41 +111,43 @@ PickCube exposes six motion joysticks plus a final gripper joystick:
 
 The keyboard path still emits the same full joystick schema as an MLLM policy. Fixed visible mappings show exact joystick assignments. If mapping confusion, sign flips, or frame rotation are enabled, the panel only says that complexity is present and does not reveal the exact mapping, signs, or rotation.
 
-ManiSkill camera randomization remains episode-level only. The direct player displays the first active RGB camera returned by the configured observation provider and falls back to `env.render()` only if the RGB observation does not contain an image.
+ManiSkill camera randomization remains episode-level only. The human player displays `ui.frame_camera` when configured, otherwise the first active RGB camera returned by the configured observation provider, and falls back to `sim.render()` only if the RGB observation does not contain an image.
 
 ## DMControl
 
 Run:
 
 ```bash
-python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml --backend direct_dmcontrol
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/play_benchmark.py --config configs/dmcontrol_example.yaml
 ```
 
 The default config uses:
 
 ```yaml
 ui:
-  backend: direct_dmcontrol
+  backend: pygame
+  runtime: sim_adapter_worker
 ```
 
-The direct DMControl player keeps `dm_control` rendering in a worker process for GL isolation. The worker shares the same native action validation/clipping helper as `DMControlSimAdapter`, but it does not fully instantiate the adapter path.
+The DMControl player keeps `dm_control` rendering in a worker process for GL isolation. The worker uses `DMControlSimAdapter` and `DMControlObservationProvider`, so manual play and benchmark runs share simulator reset, action clipping, camera, and observation semantics.
 
 ## CALVIN
 
 Run:
 
 ```bash
-python3 scripts/manage_uv_env.py run calvin -- python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml --backend direct_calvin
+python3 scripts/manage_uv_env.py run calvin -- python scripts/play_benchmark.py --config configs/calvin_delta_eef.yaml
 ```
 
 The default config uses:
 
 ```yaml
 ui:
-  backend: direct_calvin
+  backend: pygame
+  runtime: sim_adapter_worker
 ```
 
-The direct CALVIN player reuses the benchmark parser, validator, mapping, controller, logging, and debug recorders in the main process. The worker owns CALVIN environment creation, reset, stepping, and RGB frame extraction through `CalvinObservationProvider`.
+The CALVIN player reuses the benchmark parser, validator, mapping, controller, logging, and debug recorders in the main process. The worker owns CALVIN environment creation, reset, stepping, and RGB frame extraction through `CalvinSimAdapter` and `CalvinObservationProvider`.
 
 ## Known GL Failure Modes
 
@@ -154,23 +158,13 @@ Single-process Pygame + MuJoCo rendering can fail on X11 with:
 - `EGL_BAD_ACCESS`
 - `X_GLXMakeCurrent BadAccess`
 
-Do not switch the default direct Gymnasium player back to a single-process renderer unless the target machine has been tested.
-
-## Benchmark Backend
-
-The script also supports:
-
-```bash
-python scripts/play_benchmark.py --config configs/reacher_delta_eef.yaml --backend benchmark
-```
-
-This path tries to run simulator rendering and Pygame in one process. It is useful for debugging architecture but is less robust for desktop play on machines with GL context conflicts.
+Do not reintroduce a single-process renderer unless the target machine and simulator backend have been tested.
 
 ## Logging
 
-The default direct backends write the normal episode files under `logging.output_dir/<run_id>/episode_0000`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
+The default human player writes the normal episode files under `logging.output_dir/<run_id>/episode_0000`, including `trajectory.jsonl` when enabled. Manual transitions record keyboard-generated joystick actions, parsed actions, validation results, translated simulator actions, and worker-returned state.
 
-When `ui.debug_frames: true`, the direct backend also saves raw environment render frames under:
+When `ui.debug_frames: true`, the human player also saves raw environment render frames under:
 
 ```text
 <logging.output_dir>/debug/<env_slug>/<control_slug>/human_keyboard/<run_id>/episode_0000/frames/env_render/front/
