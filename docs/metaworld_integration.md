@@ -46,6 +46,12 @@ JoystickAction -> JoystickMapping -> ControlFrameTransform -> MetaworldBoxAction
 python3 scripts/manage_uv_env.py run metaworld -- python scripts/run_benchmark.py --config configs/metaworld_reach.yaml
 ```
 
+Manual play uses the shared Pygame worker runtime:
+
+```bash
+python3 scripts/manage_uv_env.py run metaworld -- python scripts/play_benchmark.py --config configs/metaworld_reach.yaml
+```
+
 The runtime smoke in `tests/test_metaworld_integration.py` skips when `metaworld` is absent. When installed, it creates the MT1 `reach-v3` environment, calls reset, step, render, and close.
 
 ## Current Limitations
@@ -53,4 +59,3 @@ The runtime smoke in `tests/test_metaworld_integration.py` skips when `metaworld
 - Only MT1 `reach-v3` is configured.
 - MT10, MT50, ML benchmarks, vector envs, and task-specific expert policies are out of scope.
 - Camera selection is passed at environment creation through `camera_name`; per-camera runtime switching is not implemented.
-- There is no Meta-World direct human-play worker yet. The supported closed loop is the benchmark runner path.

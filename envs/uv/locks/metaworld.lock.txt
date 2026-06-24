@@ -42,6 +42,8 @@ pillow==12.2.0
     # via imageio
 pluggy==1.6.0
     # via pytest
+pygame==2.6.1
+    # via -r envs/uv/metaworld.in
 pygments==2.20.0
     # via pytest
 pyopengl==3.1.10
