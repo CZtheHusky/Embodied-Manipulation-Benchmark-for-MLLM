@@ -38,6 +38,9 @@ dmcontrol = [
   "dm_control>=1.0",
   "mujoco>=3.0",
 ]
+metaworld = [
+  "metaworld>=3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

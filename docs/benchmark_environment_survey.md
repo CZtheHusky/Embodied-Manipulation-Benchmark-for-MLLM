@@ -76,8 +76,8 @@ Fit:
 
 Recommendation:
 
-- Add a `metaworld` uv backend first if the goal is quick task diversity.
-- Implement one MT1 task first, then extend to MT10/MT50 only after action/state/success fields are stable.
+- Use the current `metaworld` MT1 backend as the quick task-diversity foothold.
+- Extend beyond MT1 `reach-v3` only after action/state/success fields are stable across another single-task config.
 - Treat it as a control and generalization sanity backend, not the headline MLLM benchmark.
 
 ### RoboCasa / RoboCasa365
@@ -418,10 +418,10 @@ Before a new environment is treated as a valid benchmark backend, add the follow
 
 ### Phase 1: Lowest-risk backend breadth
 
-- Add `metaworld` uv input and smoke lock.
-- Implement one `MetaWorldSimAdapter` over Gymnasium API.
-- Start with MT1 reach or push task, then add a task selector.
-- Gate success on import/reset/step/render and at least one benchmark episode with trajectory logging.
+- Done: add `metaworld` uv input/lock and one MT1 `reach-v3` adapter over the Gymnasium API.
+- Done: gate import/reset/step/render and one benchmark episode with trajectory logging through `tests/test_metaworld_integration.py`.
+- Next: add a task selector only after action/state/success fields are stable across a second MT1 task.
+- Next: defer MT10/MT50 vector-env support until the single-env contract has real benchmark coverage.
 
 ### Phase 2: Semantically rich household manipulation
 

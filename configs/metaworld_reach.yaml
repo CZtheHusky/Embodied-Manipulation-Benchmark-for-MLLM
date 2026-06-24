@@ -1,0 +1,69 @@
+benchmark:
+  name: metaworld_reach_v3_mt1_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: metaworld
+  env_id: Meta-World/MT1
+  render_mode: rgb_array
+  params:
+    env_name: reach-v3
+    camera_name: corner2
+    mujoco_gl: egl
+    max_episode_steps: 100
+  env_kwargs: {}
+
+task:
+  type: metaworld_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: Reach the target position with the robot end-effector.
+    success_key: success
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: corner2
+      type: metaworld_rgb
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz]
+  gripper: none
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  params:
+    scale_mode: metaworld_normalized_box
+
+controller:
+  type: metaworld_box
+  frame: controller
+  scales:
+    dx: 1.0
+    dy: 1.0
+    dz: 1.0
+  params:
+    dimensions: [dx, dy, dz, gripper]
+    default_gripper_value: 1.0
+
+agent:
+  type: random
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/metaworld_reach
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true
