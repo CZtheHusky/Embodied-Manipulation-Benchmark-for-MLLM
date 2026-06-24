@@ -99,7 +99,7 @@ RoboCasa assets are around 10 GB and are downloaded from Hugging Face datasets b
 
 RoboCasa v1.0 needs a backend-specific uv setup: `lock robocasa` targets `x86_64-manylinux_2_31`, uses CPU Torch wheels, and excludes robosuite's `mink` dependency because it conflicts with RoboCasa's `numpy==2.2.5`. The create step also installs the fixed RoboCasa source checkout editable from `.venvs/_sources/robocasa`, because the built wheel omits `robocasa/scripts` required during `import robocasa`.
 
-Current RoboCasa state: lock and create complete, but runtime is not verified. `smoke robocasa` skips the reset/step/render test because PyPI `robosuite==1.5.2` does not accept RoboCasa's `load_model_on_init=False` call. To finish validation, fetch robosuite commit `824ac14cefcfb7ec125fe5eb2e0bad7364466154`, install it no-deps/editable into `.venvs/robocasa`, then run `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa`.
+Current RoboCasa state: lock and create complete, and the previous robosuite `load_model_on_init` API blocker is resolved by pinning the upstream `master` instruction to robosuite commit `85abee228d1c43ab1939bce33028099945d453b4`. Runtime is still not verified because required smoke now fails on missing downloaded kitchen assets. Run the upstream setup/download commands, then require `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` before claiming runtime verification.
 
 DMControl:
 

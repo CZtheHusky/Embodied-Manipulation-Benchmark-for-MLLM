@@ -16,6 +16,8 @@ CALVIN_REPO = "https://github.com/mees/calvin_env.git"
 CALVIN_COMMIT = "797142c588c21e76717268b7b430958dbd13bf48"
 ROBOCASA_REPO = "https://github.com/robocasa/robocasa.git"
 ROBOCASA_COMMIT = "8f3c96ec8d1bfcd8126cad2bca887da98d30e997"
+ROBOSUITE_REPO = "https://github.com/ARISE-Initiative/robosuite.git"
+ROBOSUITE_COMMIT = "85abee228d1c43ab1939bce33028099945d453b4"
 CUDA_SMOKE = (
     "import torch; "
     "assert torch.cuda.is_available(), 'CUDA is not available'; "
@@ -173,6 +175,7 @@ def create_backend(name: str) -> None:
     if name == "calvin":
         install_calvin_editable()
     if name == "robocasa":
+        install_robosuite_for_robocasa()
         install_robocasa_editable()
 
 
@@ -190,13 +193,41 @@ def install_calvin_editable() -> None:
 
 def install_robocasa_editable() -> None:
     source_dir = VENV_DIR / "_sources" / "robocasa"
+    ensure_git_checkout(source_dir, ROBOCASA_REPO, ROBOCASA_COMMIT)
+    run(["uv", "pip", "install", "--python", str(venv_path("robocasa")), "--no-deps", "-e", str(source_dir)])
+
+
+def install_robosuite_for_robocasa() -> None:
+    source_dir = VENV_DIR / "_sources" / "robosuite"
+    ensure_git_checkout(source_dir, ROBOSUITE_REPO, ROBOSUITE_COMMIT)
+    run(["uv", "pip", "install", "--python", str(venv_path("robocasa")), "--no-deps", "-e", str(source_dir)])
+
+
+def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
+    validate_exact_commit(commit, source_dir.name)
     if source_dir.exists():
-        run(["git", "fetch", "origin"], cwd=source_dir)
+        if not (source_dir / ".git").exists():
+            raise SystemExit(f"source directory exists but is not a Git checkout: {source_dir}")
+        run(["git", "remote", "set-url", "origin", repo], cwd=source_dir)
     else:
         source_dir.parent.mkdir(parents=True, exist_ok=True)
-        run(["git", "clone", ROBOCASA_REPO, str(source_dir)])
-    run(["git", "checkout", ROBOCASA_COMMIT], cwd=source_dir)
-    run(["uv", "pip", "install", "--python", str(venv_path("robocasa")), "--no-deps", "-e", str(source_dir)])
+        source_dir.mkdir()
+        run(["git", "init"], cwd=source_dir)
+        run(["git", "remote", "add", "origin", repo], cwd=source_dir)
+    run(["git", "fetch", "--depth", "1", "origin", commit], cwd=source_dir)
+    run(["git", "checkout", "--detach", commit], cwd=source_dir)
+    verify_git_checkout(source_dir, commit)
+
+
+def validate_exact_commit(commit: str, source_name: str) -> None:
+    if len(commit) != 40 or any(char not in "0123456789abcdefABCDEF" for char in commit):
+        raise SystemExit(f"{source_name} source commit must be a 40-character Git commit SHA: {commit}")
+
+
+def verify_git_checkout(source_dir: Path, commit: str) -> None:
+    actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
+    if actual != commit:
+        raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
 
 
 def run_backend(name: str, command: list[str]) -> None:
@@ -227,6 +258,12 @@ def backend_env(name: str) -> dict[str, str]:
 def run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command), flush=True)
     subprocess.run(command, cwd=str(cwd or ROOT), env=env, check=True)
+
+
+def run_output(command: list[str], *, cwd: Path | None = None) -> str:
+    print("+", " ".join(command), flush=True)
+    result = subprocess.run(command, cwd=str(cwd or ROOT), check=True, capture_output=True, text=True)
+    return result.stdout.strip()
 
 
 if __name__ == "__main__":

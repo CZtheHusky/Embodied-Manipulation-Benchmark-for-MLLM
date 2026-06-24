@@ -37,12 +37,12 @@ python3 scripts/manage_uv_env.py smoke robocasa
 Pinned dependencies in `envs/uv/robocasa.in`:
 
 - RoboCasa commit `8f3c96ec8d1bfcd8126cad2bca887da98d30e997` (`v1.0` / RoboCasa365 release).
-- robosuite `1.5.2` from PyPI. The earlier Git URL for the same release can hang in `uv` during Git fetch / metadata extraction.
+- robosuite is resolved by the uv lock from PyPI, then replaced during `create robocasa` by an editable source checkout pinned to commit `85abee228d1c43ab1939bce33028099945d453b4`. The upstream README asks users to install robosuite from `master`; this commit makes that moving instruction reproducible.
 - `numpy==2.2.5` and `mujoco==3.3.1`, matching RoboCasa v1.0 import assertions.
 
 `scripts/manage_uv_env.py lock robocasa` uses the `x86_64-manylinux_2_31` target for this backend because `lerobot==0.3.3` requires `rerun-sdk>=0.21,<0.23`, and the compatible `rerun-sdk==0.22.1` wheel is published as `manylinux_2_31_x86_64`. It also uses the CPU Torch backend to avoid CUDA wheels for this CPU smoke.
 
-`envs/uv/robocasa-excludes.in` excludes `mink` from resolution. robosuite `1.5.2` declares `mink==0.0.5`, whose `numpy<2` requirement conflicts with RoboCasa v1.0's `numpy==2.2.5`; RoboCasa's selected kitchen runtime does not use `mink` directly.
+`envs/uv/robocasa-excludes.in` excludes `mink` from resolution. robosuite declares `mink==0.0.5`, whose `numpy<2` requirement conflicts with RoboCasa v1.0's `numpy==2.2.5`; RoboCasa's selected kitchen runtime does not use `mink` directly.
 
 RoboCasa v1.0's built wheel omits `robocasa/scripts`, but `robocasa/utils/env_utils.py` imports `robocasa.scripts.dataset_scripts.playback_dataset_hdf5` at package import time. The create step therefore clones the same fixed RoboCasa commit into `.venvs/_sources/robocasa` and installs it editable with `--no-deps` after syncing the lock.
 
@@ -51,17 +51,18 @@ RoboCasa v1.0's built wheel omits `robocasa/scripts`, but `robocasa/utils/env_ut
 As of 2026-06-24:
 
 - `python3 scripts/manage_uv_env.py lock robocasa` completes and writes `envs/uv/locks/robocasa.lock.txt`.
-- `python3 scripts/manage_uv_env.py create robocasa` completes, including the fixed RoboCasa editable source install.
-- `python3 scripts/manage_uv_env.py smoke robocasa` exits successfully only because the runtime reset test is optional and skips. It is not runtime verification.
+- `python3 scripts/manage_uv_env.py create robocasa` completes, including the fixed RoboCasa and robosuite editable source installs.
+- `python3 scripts/manage_uv_env.py smoke robocasa` exits successfully only because the runtime reset test is optional and skips when assets are absent. It is not runtime verification.
+- `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` no longer fails with `load_model_on_init`; it fails on the missing kitchen asset `models/assets/objects/lightwheel/stool/Stool017/model.xml`.
 
-The remaining runtime blocker is robosuite source compatibility. PyPI `robosuite==1.5.2` lets uv resolve quickly, but its `ManipulationEnv.__init__` does not accept RoboCasa's `load_model_on_init=False` call. The matching robosuite source commit is still `824ac14cefcfb7ec125fe5eb2e0bad7364466154`; both uv Git resolution and a direct `git clone https://github.com/ARISE-Initiative/robosuite.git` exceeded 5 minutes in this workspace.
+The previous robosuite source compatibility blocker is resolved by replacing PyPI `robosuite==1.5.2` with source commit `85abee228d1c43ab1939bce33028099945d453b4`. PyPI still lets uv resolve quickly, but its `ManipulationEnv.__init__` does not accept RoboCasa's `load_model_on_init=False` call. The upstream RoboCasa README says to install robosuite from `master`; this branch pins the current `master` head to make that instruction reproducible.
 
-Next command sequence once GitHub clone/fetch is available:
+Next command sequence once assets are available:
 
 ```bash
-git clone https://github.com/ARISE-Initiative/robosuite.git .venvs/_sources/robosuite
-git -C .venvs/_sources/robosuite checkout 824ac14cefcfb7ec125fe5eb2e0bad7364466154
-uv pip install --python .venvs/robocasa --no-deps -e .venvs/_sources/robosuite
+python3 scripts/manage_uv_env.py create robocasa
+python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.setup_macros
+python3 scripts/manage_uv_env.py run robocasa -- python -m robocasa.scripts.download_kitchen_assets
 MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa
 ```
 

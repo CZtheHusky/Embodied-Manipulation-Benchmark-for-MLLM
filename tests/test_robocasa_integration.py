@@ -20,9 +20,9 @@ ROBOCASA_SETUP_HINT = (
     "`MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa`."
 )
 ROBOCASA_RUNTIME_HINT = (
-    "If this fails with `load_model_on_init`, the remaining blocker is the robosuite runtime "
-    "source commit `824ac14cefcfb7ec125fe5eb2e0bad7364466154`, which must be fetched and "
-    "installed no-deps/editable before claiming runtime verification."
+    "The current pinned RoboCasa runtime uses robosuite source commit "
+    "`85abee228d1c43ab1939bce33028099945d453b4`. If source compatibility is solved but "
+    "this still skips, download the upstream RoboCasa kitchen assets before claiming runtime verification."
 )
 
 
