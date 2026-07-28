@@ -12,7 +12,7 @@ class PromptPayload:
     instruction: str
     control_instruction: str
     action_schema: dict[str, Any]
-    observation_metadata: dict[str, Any]
+    camera_names: tuple[str, ...]
     history_length: int
 
 
@@ -26,6 +26,6 @@ class PromptBuilder:
             instruction=context.task_instruction,
             control_instruction=control_instruction.text,
             action_schema=context.action_schema,
-            observation_metadata=context.observation.metadata,
+            camera_names=tuple(sorted(str(name) for name in context.observation.images)),
             history_length=len(context.history),
         )

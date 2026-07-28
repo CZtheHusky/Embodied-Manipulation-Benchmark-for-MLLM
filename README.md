@@ -91,6 +91,30 @@ python3 scripts/manage_uv_env.py run gymnasium -- python scripts/play_benchmark.
 
 More details are in `docs/manual_play.md` and `docs/reacher_integration.md`.
 
+## Run an API-Controlled MLLM
+
+The OpenAI-compatible Chat Completions agent uses public RGB observations and
+returns the same joystick action contract as human and baseline agents:
+
+```bash
+python3 scripts/manage_uv_env.py run gymnasium -- \
+  python scripts/run_benchmark.py \
+  --config configs/reacher_delta_eef_mllm.yaml \
+  --set task.max_steps=5 \
+  --set agent.history.image_window=0
+```
+
+Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `MLLM_TELEOP_MODEL` before
+running. The production default keeps all text/action history and the previous
+two images. See `docs/model_api_control.md` for the public-input boundary,
+history semantics, cache metrics, artifacts, and follow-up `2`/`all` smoke
+procedure.
+
+Add `--set logging.save_video=true` to create an offline
+`review/model_view.mp4` from the exact model-visible PNGs. The system must
+provide FFmpeg. Evaluator-oracle video is separate and opt-in through
+`logging.video.include_evaluator_debug=true`.
+
 ## Run ManiSkill
 
 ManiSkill uses the `maniskill-cpu` uv environment by default:
@@ -170,4 +194,8 @@ src/mllm_teleop_benchmark/
 
 ## Scope
 
-The first version is deliberately minimal. It does not train low-level robot controllers, call MLLM APIs, or bind the benchmark to a specific simulator. Those integrations should be added behind the existing `SimAdapter`, `Agent`, `Controller`, and mapping interfaces.
+The benchmark remains deliberately focused: it does not train low-level robot
+controllers or couple model providers to simulator dependencies. API-backed
+models are isolated behind `ModelClient`, while simulator integration remains
+behind `SimAdapter`, `Agent`, `Controller`, and the control-interface
+contracts.

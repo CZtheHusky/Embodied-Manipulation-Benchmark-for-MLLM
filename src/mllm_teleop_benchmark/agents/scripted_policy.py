@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
 
 from mllm_teleop_benchmark.agents.base import Agent, AgentContext
+from mllm_teleop_benchmark.core.types import AgentDecision, AgentTrace
 
 
 class ScriptedPolicy(Agent):
     """Simple reach-target policy for the dummy environment and fixed mapping."""
 
-    def act(self, context: AgentContext) -> Any:
+    def act(self, context: AgentContext) -> AgentDecision:
         state = context.observation.state
         ee = tuple(float(v) for v in state["ee_position"])
         target = tuple(float(v) for v in state["target_position"])
@@ -25,7 +25,7 @@ class ScriptedPolicy(Agent):
                 channels[channel] = 0.0
         if "joystick_6" in channels:
             channels["joystick_6"] = 0.0
-        return channels
+        return AgentDecision(action=channels, trace=AgentTrace(actor_type="scripted"))
 
     def metadata(self) -> dict[str, object]:
         return {"type": "scripted"}

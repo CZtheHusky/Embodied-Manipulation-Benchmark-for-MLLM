@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mllm_teleop_benchmark.action.space import ActionSpace
-from mllm_teleop_benchmark.core.types import Observation, StepTransition
+from mllm_teleop_benchmark.core.types import AgentDecision, Observation, StepTransition
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class AgentContext:
 
 class Agent(ABC):
     @abstractmethod
-    def act(self, context: AgentContext) -> Any:
+    def act(self, context: AgentContext) -> AgentDecision:
         raise NotImplementedError
 
     def metadata(self) -> dict[str, object]:

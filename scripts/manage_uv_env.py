@@ -388,11 +388,6 @@ def smoke_backend(name: str) -> None:
         run_backend(name, list(command))
 
 
-def require_unblocked_backend(name: str, command: str) -> None:
-    reason = backend_config(name).get("blocked_reason")
-    if reason:
-        raise SystemExit(f"{name} uv {command} is blocked: {reason}")
-
 
 def backend_env(name: str) -> dict[str, str]:
     cfg = backend_config(name)

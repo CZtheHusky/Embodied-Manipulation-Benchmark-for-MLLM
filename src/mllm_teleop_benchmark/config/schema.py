@@ -322,14 +322,177 @@ class FrameTransformConfig:
 
 
 @dataclass(frozen=True)
+class ModelConfig:
+    provider: str = "openai_compatible"
+    name: str | None = None
+    name_env: str = "MLLM_TELEOP_MODEL"
+    base_url: str | None = None
+    base_url_env: str = "OPENAI_BASE_URL"
+    api_key_env: str = "OPENAI_API_KEY"
+    require_api_key: bool = True
+    timeout_seconds: float = 60.0
+    max_retries: int = 2
+    retry_backoff_seconds: float = 1.0
+    temperature: float = 0.0
+    max_output_tokens: int = 128
+    response_format: str = "json_object"
+    prompt_cache_key: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ModelConfig":
+        values = dict(data or {})
+        if "api_key" in values:
+            raise ValueError("agent.model.api_key is forbidden; use agent.model.api_key_env")
+        timeout_seconds = float(values.get("timeout_seconds", 60.0))
+        max_retries = int(values.get("max_retries", 2))
+        retry_backoff_seconds = float(values.get("retry_backoff_seconds", 1.0))
+        max_output_tokens = int(values.get("max_output_tokens", 128))
+        response_format = str(values.get("response_format", "json_object"))
+        if timeout_seconds <= 0:
+            raise ValueError("agent.model.timeout_seconds must be positive")
+        if max_retries < 0:
+            raise ValueError("agent.model.max_retries must be non-negative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("agent.model.retry_backoff_seconds must be non-negative")
+        if max_output_tokens <= 0:
+            raise ValueError("agent.model.max_output_tokens must be positive")
+        if response_format not in {"json_object", "none"}:
+            raise ValueError("agent.model.response_format must be one of: json_object, none")
+        name = values.get("name")
+        base_url = values.get("base_url")
+        prompt_cache_key = values.get("prompt_cache_key")
+        return cls(
+            provider=str(values.get("provider", "openai_compatible")),
+            name=str(name) if name is not None else None,
+            name_env=str(values.get("name_env", "MLLM_TELEOP_MODEL")),
+            base_url=str(base_url) if base_url is not None else None,
+            base_url_env=str(values.get("base_url_env", "OPENAI_BASE_URL")),
+            api_key_env=str(values.get("api_key_env", "OPENAI_API_KEY")),
+            require_api_key=bool(values.get("require_api_key", True)),
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            retry_backoff_seconds=retry_backoff_seconds,
+            temperature=float(values.get("temperature", 0.0)),
+            max_output_tokens=max_output_tokens,
+            response_format=response_format,
+            prompt_cache_key=str(prompt_cache_key) if prompt_cache_key is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class AgentObservationConfig:
+    cameras: tuple[str, ...] = ()
+    image_max_side: int = 512
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "AgentObservationConfig":
+        values = dict(data or {})
+        image_max_side = int(values.get("image_max_side", 512))
+        if image_max_side <= 0:
+            raise ValueError("agent.observation.image_max_side must be positive")
+        return cls(
+            cameras=tuple(str(name) for name in values.get("cameras", ())),
+            image_max_side=image_max_side,
+        )
+
+
+HistoryWindow = int | str
+
+
+def _history_window(value: Any, field_name: str, default: HistoryWindow) -> HistoryWindow:
+    parsed = default if value is None else value
+    if isinstance(parsed, str):
+        if parsed != "all":
+            raise ValueError(f"{field_name} must be a non-negative integer or 'all'")
+        return parsed
+    if not isinstance(parsed, int) or isinstance(parsed, bool) or parsed < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer or 'all'")
+    return parsed
+
+
+@dataclass(frozen=True)
+class AgentHistoryConfig:
+    action_window: HistoryWindow = "all"
+    image_window: HistoryWindow = 2
+    max_images_per_request: int = 128
+    max_request_bytes: int = 67_108_864
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "AgentHistoryConfig":
+        values = dict(data or {})
+        max_images = int(values.get("max_images_per_request", 128))
+        max_request_bytes = int(values.get("max_request_bytes", 67_108_864))
+        if max_images <= 0:
+            raise ValueError("agent.history.max_images_per_request must be positive")
+        if max_request_bytes <= 0:
+            raise ValueError("agent.history.max_request_bytes must be positive")
+        return cls(
+            action_window=_history_window(values.get("action_window"), "agent.history.action_window", "all"),
+            image_window=_history_window(values.get("image_window"), "agent.history.image_window", 2),
+            max_images_per_request=max_images,
+            max_request_bytes=max_request_bytes,
+        )
+
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     type: str
     invalid_action_recovery: str = "noop"
     history_window: int = 5
+    model: ModelConfig | None = None
+    observation: AgentObservationConfig = field(default_factory=AgentObservationConfig)
+    history: AgentHistoryConfig = field(default_factory=AgentHistoryConfig)
+    max_consecutive_errors: int = 3
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AgentConfig":
-        return cls(type=str(_require(data, "type")), invalid_action_recovery=str(data.get("invalid_action_recovery", "noop")), history_window=int(data.get("history_window", 5)))
+        agent_type = str(_require(data, "type"))
+        invalid_action_recovery = str(data.get("invalid_action_recovery", "noop"))
+        history_window = int(data.get("history_window", 5))
+        max_consecutive_errors = int(data.get("max_consecutive_errors", 3))
+        if invalid_action_recovery != "noop":
+            raise ValueError("agent.invalid_action_recovery currently supports only: noop")
+        if history_window < 0:
+            raise ValueError("agent.history_window must be non-negative")
+        if max_consecutive_errors <= 0:
+            raise ValueError("agent.max_consecutive_errors must be positive")
+        return cls(
+            type=agent_type,
+            invalid_action_recovery=invalid_action_recovery,
+            history_window=history_window,
+            model=ModelConfig.from_dict(data.get("model")) if agent_type == "mllm" else None,
+            observation=AgentObservationConfig.from_dict(data.get("observation")),
+            history=AgentHistoryConfig.from_dict(data.get("history")),
+            max_consecutive_errors=max_consecutive_errors,
+        )
+
+
+@dataclass(frozen=True)
+class VideoConfig:
+    fps: int = 2
+    step_hold_seconds: float = 1.0
+    terminal_hold_seconds: float = 2.0
+    include_evaluator_debug: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "VideoConfig":
+        values = dict(data or {})
+        fps = int(values.get("fps", 2))
+        step_hold_seconds = float(values.get("step_hold_seconds", 1.0))
+        terminal_hold_seconds = float(values.get("terminal_hold_seconds", 2.0))
+        if fps <= 0:
+            raise ValueError("logging.video.fps must be positive")
+        if step_hold_seconds <= 0:
+            raise ValueError("logging.video.step_hold_seconds must be positive")
+        if terminal_hold_seconds <= 0:
+            raise ValueError("logging.video.terminal_hold_seconds must be positive")
+        return cls(
+            fps=fps,
+            step_hold_seconds=step_hold_seconds,
+            terminal_hold_seconds=terminal_hold_seconds,
+            include_evaluator_debug=bool(values.get("include_evaluator_debug", False)),
+        )
 
 
 @dataclass(frozen=True)
@@ -339,15 +502,23 @@ class LoggingConfig:
     save_video: bool = False
     save_trajectory: bool = True
     save_config_snapshot: bool = True
+    video: VideoConfig = field(default_factory=VideoConfig)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LoggingConfig":
+        save_video = bool(data.get("save_video", False))
+        video = VideoConfig.from_dict(data.get("video"))
+        if video.include_evaluator_debug and not save_video:
+            raise ValueError(
+                "logging.video.include_evaluator_debug=true requires logging.save_video=true"
+            )
         return cls(
             output_dir=Path(str(_require(data, "output_dir"))),
             save_images=bool(data.get("save_images", True)),
-            save_video=bool(data.get("save_video", False)),
+            save_video=save_video,
             save_trajectory=bool(data.get("save_trajectory", True)),
             save_config_snapshot=bool(data.get("save_config_snapshot", True)),
+            video=video,
         )
 
 
@@ -419,6 +590,10 @@ class BenchmarkConfig:
         control_interface = ControlInterfaceConfig.from_dict(control_interface_data)
         action_space = control_interface.to_action_space_config()
         mapping = control_interface.to_mapping_config()
+        agent = AgentConfig.from_dict(_require(data, "agent"))
+        logging = LoggingConfig.from_dict(_require(data, "logging"))
+        if logging.save_video and agent.type != "mllm":
+            raise ValueError("logging.save_video currently supports only agent.type=mllm")
         return cls(
             benchmark=BenchmarkSection.from_dict(_require(data, "benchmark")),
             simulator=SimulatorConfig.from_dict(_require(data, "simulator")),
@@ -434,8 +609,8 @@ class BenchmarkConfig:
                     "params": control_interface.params.get("frame_transform", {}),
                 }
             ),
-            agent=AgentConfig.from_dict(_require(data, "agent")),
-            logging=LoggingConfig.from_dict(_require(data, "logging")),
+            agent=agent,
+            logging=logging,
             ui=UIConfig.from_dict(data.get("ui", {})),
             control_interface=control_interface,
             raw=data,

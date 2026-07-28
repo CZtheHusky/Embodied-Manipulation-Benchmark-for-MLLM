@@ -95,7 +95,7 @@ class PygameHumanPlayer:
             screen = pygame.display.set_mode((self.width, self.height))
             pygame.display.set_caption(self.config.benchmark.name)
             frame_debug.record_frame(frame, step_id=observation.step_id, prefix="initial")
-            self._draw(screen, font, frame, steps, None, last_action, panel_lines, success)
+            self._draw(screen, font, frame, steps, last_action, panel_lines, success)
             pygame.display.flip()
 
             running = True
@@ -139,7 +139,7 @@ class PygameHumanPlayer:
                             steps = 0
                             success = False
                             last_action = key_mapper.action_from_pressed(set())
-                            self._draw(screen, font, frame, steps, None, last_action, panel_lines, success)
+                            self._draw(screen, font, frame, steps, last_action, panel_lines, success)
                             pygame.display.flip()
                         else:
                             raw_action = key_mapper.action_from_key(key_name)
@@ -165,7 +165,6 @@ class PygameHumanPlayer:
                             )
                             control_debug.record(control_record)
                             success = task.is_success(next_observation, next_observation.state)
-                            dist = self._display_distance(next_observation.state)
                             truncated = steps >= self.max_steps and not success
                             step_result = result.step_result or StepResult(
                                 observation=next_observation,
@@ -189,7 +188,7 @@ class PygameHumanPlayer:
                             metrics.update(transition)
                             history.append(transition)
                             observation = next_observation
-                            self._draw(screen, font, frame, steps, dist, last_action, panel_lines, success)
+                            self._draw(screen, font, frame, steps, last_action, panel_lines, success)
                             pygame.display.flip()
                             if transition.terminated or transition.truncated:
                                 running = False
@@ -208,6 +207,7 @@ class PygameHumanPlayer:
             steps=len(history),
             metrics=final_metrics,
             log_dir=str(logger.episode_dir),
+            termination_reason="success" if success else ("max_steps" if steps >= self.max_steps else "user_exit"),
         )
         logger.finish(result)
         return result
@@ -232,21 +232,21 @@ class PygameHumanPlayer:
     def _noop_joystick_action(self, action_space: Any) -> JoystickAction:
         return JoystickAction({name: 0.0 for name in action_space.channels})
 
-    def _draw(self, screen: Any, font: Any, frame: Any, steps: int, distance: Any, action: dict[str, float] | None = None, panel_lines: tuple[str, ...] = (), success: bool = False) -> None:
+    def _draw(self, screen: Any, font: Any, frame: Any, steps: int, action: dict[str, float] | None = None, panel_lines: tuple[str, ...] = (), success: bool = False) -> None:
         import pygame
 
         screen.fill((18, 20, 24))
-        self._draw_panel(screen, font, steps, distance, action, panel_lines, success)
+        self._draw_panel(screen, font, steps, action, panel_lines, success)
         arr = self._rgb_array(frame)
         surface = pygame.image.frombuffer(arr.tobytes(), (arr.shape[1], arr.shape[0]), "RGB").convert()
         if surface.get_size() != (self.width, self.image_height):
             surface = pygame.transform.scale(surface, (self.width, self.image_height))
         screen.blit(surface, (0, self.panel_height))
 
-    def _draw_panel(self, screen: Any, font: Any, steps: int, distance: Any, action: dict[str, float] | None, panel_lines: tuple[str, ...], success: bool) -> None:
-        lines = [self.config.benchmark.name, f"step {steps}", f"success {success}"]
-        if distance is not None:
-            lines.append(f"distance {float(distance):.4f}")
+    def _draw_panel(self, screen: Any, font: Any, steps: int, action: dict[str, float] | None, panel_lines: tuple[str, ...], success: bool) -> None:
+        lines = [self.config.benchmark.name, f"step {steps}"]
+        if success:
+            lines.append("success true")
         lines.extend(panel_lines)
         lines.append(f"keys: {self._key_help(action)}  R reset  Esc quit")
         if action is not None:
@@ -276,12 +276,6 @@ class PygameHumanPlayer:
             return None
         channels = self.config.control_interface.channel_names()
         return channels[-1] if channels else None
-
-    def _display_distance(self, state: dict[str, Any]) -> Any:
-        for key in ("distance_to_target", "goal_distance", "object_goal_distance"):
-            if key in state:
-                return state[key]
-        return None
 
     def _configure_canvas_from_frame(self, frame: Any) -> None:
         size = self._frame_size(frame)

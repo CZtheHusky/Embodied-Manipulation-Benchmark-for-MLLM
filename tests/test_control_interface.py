@@ -153,3 +153,25 @@ def test_episode_agent_context_controller_metadata_is_public_only():
     assert "mapping_strategy" not in text
     assert "frame_transform" not in text
     assert "rotation_matrix" not in text
+
+
+def test_prompt_builder_exposes_camera_names_but_not_observation_metadata():
+    config = load_config("configs/reacher_delta_eef.yaml")
+    action_space = build_action_space(config)
+    context = AgentContext(
+        observation=Observation(
+            step_id=0,
+            images={"front": object()},
+            state={},
+            metadata={"camera_azimuth": "PRIVATE_CAMERA_RANDOMIZATION"},
+        ),
+        task_instruction="Move to the target.",
+        action_space=action_space,
+        action_schema=action_space.schema(),
+        metadata={"control_interface": control_interface_metadata(config)},
+    )
+
+    payload = PromptBuilder().build(context)
+
+    assert payload.camera_names == ("front",)
+    assert "PRIVATE_CAMERA_RANDOMIZATION" not in str(payload)

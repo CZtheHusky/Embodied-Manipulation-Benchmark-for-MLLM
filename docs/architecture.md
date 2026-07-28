@@ -21,7 +21,7 @@ The action boundary is split into three layers:
 
 Frame transforms are cross-environment control-layer components. `rotation_2d` rotates `dx/dy` around z; `rotation_3d` rotates `dx/dy/dz` and small delta-rotation vectors with roll/pitch/yaw. `random_rotation_2d` samples uniformly on SO(2), and `random_rotation_3d` samples uniformly on SO(3) by default. Random variants use the episode seed so benchmark and human-play behavior is reproducible.
 
-Agents consume `AgentContext`, which contains observation, task instruction, action schema, visible metadata, and recent history. `MLLMPolicy` is currently a placeholder; future API-backed policies should use `PromptBuilder` and keep prompt/action schema versions in logs.
+Agents consume `AgentContext` and return `AgentDecision`, which carries a raw action, `AgentTrace`, and optional artifacts. `MLLMPolicy` projects that broad internal context into a strict public request containing only task text, public RGB, public controls/schema, and the model's normalized action history. `ModelClient` receives the projected request and never receives simulator state. The legacy text prompt helper exposes camera names rather than raw observation metadata.
 
 `ControlInstructionBuilder` is the shared source for MLLM control instructions and human-play UI panel lines. Human evaluators should see the same control mode, joystick count, scale summary, visible fixed mapping, and complexity-presence flags that an MLLM would receive at episode start. Exact permutation, sign flips, and frame rotation parameters are not disclosed for hidden or complex control settings.
 
@@ -32,10 +32,29 @@ Episode logging writes:
 - `config.yaml`
 - `summary.json`
 - `trajectory.jsonl`
+- `model_calls/step_NNNN/{request,response,error}.json` for API agents
+- `model_calls/images/step_NNNN/<camera>.png` for exact model inputs
+- `review/model_view.mp4` and `review/manifest.json` when automated MLLM
+  review video is enabled
+- `review/evaluator_debug.mp4` only when evaluator debug video is explicitly
+  enabled
 
 Benchmark runs are grouped under `logging.output_dir/<run_id>/episode_XXXX/` so repeated runs do not overwrite earlier artifacts.
 
-The dummy simulator stores a small kinematic state and renders metadata dictionaries instead of image arrays. Real image and video persistence can be added later through `ObservationProvider` and `EpisodeLogger`.
+Review videos are derived after the episode finishes. `model_view.mp4` reads the
+exact model-visible PNG artifacts and their hashes rather than re-rendering the
+simulator. Its panel receives a public-only projection of task, control, action,
+and API trace fields. The optional evaluator video uses a separate whitelist
+projection for reward, distance, success, target/EEF position, and translated
+simulator action and is permanently labeled `EVALUATOR ONLY`. Video generation
+failure is recorded without changing the episode result.
+
+The final post-action public observation is encoded with the same deterministic
+RGB-to-PNG utility as model inputs and stored under `review/terminal/`. Raw PNG,
+request/response, trajectory, and hashes remain authoritative; MP4 files are
+review conveniences and do not participate in scoring.
+
+The dummy simulator stores a small kinematic state and renders metadata dictionaries rather than public RGB arrays. It remains useful for non-visual pipeline tests; API-controlled visual episodes require an RGB-producing observation provider. Model input PNGs are persisted independently of `logging.save_images`; review videos are controlled by `logging.save_video`.
 
 ## Environment Integration Constraints
 

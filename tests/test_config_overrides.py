@@ -48,3 +48,80 @@ def test_legacy_action_space_mapping_without_control_interface_is_rejected():
     }
     with pytest.raises(ValueError, match="control_interface"):
         BenchmarkConfig.from_dict(legacy)
+
+
+def test_mllm_config_uses_full_action_history_and_two_prior_images_by_default():
+    config = load_config("configs/reacher_delta_eef_mllm.yaml")
+
+    assert config.agent.type == "mllm"
+    assert config.agent.history.action_window == "all"
+    assert config.agent.history.image_window == 2
+    assert config.agent.history.max_images_per_request == 128
+    assert config.agent.history.max_request_bytes == 67_108_864
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        ("agent.history.image_window=0", 0),
+        ("agent.history.image_window=7", 7),
+        ("agent.history.image_window=all", "all"),
+    ],
+)
+def test_mllm_image_history_override_accepts_zero_integer_or_all(override, expected):
+    config = load_config("configs/reacher_delta_eef_mllm.yaml", (override,))
+
+    assert config.agent.history.image_window == expected
+
+
+@pytest.mark.parametrize("value", ["-1", "1.5", "true", "recent"])
+def test_mllm_image_history_rejects_ambiguous_or_negative_values(value):
+    with pytest.raises(ValueError, match="non-negative integer or 'all'"):
+        load_config(
+            "configs/reacher_delta_eef_mllm.yaml",
+            (f"agent.history.image_window={value}",),
+        )
+
+
+def test_mllm_config_rejects_inline_api_key():
+    with pytest.raises(ValueError, match="api_key is forbidden"):
+        load_config(
+            "configs/reacher_delta_eef_mllm.yaml",
+            ("agent.model.api_key=DO_NOT_PERSIST",),
+        )
+
+
+def test_review_video_is_disabled_by_default():
+    config = load_config("configs/reacher_delta_eef_mllm.yaml")
+
+    assert not config.logging.save_video
+    assert config.logging.video.fps == 2
+    assert config.logging.video.step_hold_seconds == 1.0
+    assert config.logging.video.terminal_hold_seconds == 2.0
+    assert not config.logging.video.include_evaluator_debug
+
+
+def test_evaluator_debug_video_requires_video_logging():
+    with pytest.raises(ValueError, match="requires logging.save_video=true"):
+        load_config(
+            "configs/reacher_delta_eef_mllm.yaml",
+            ("logging.video.include_evaluator_debug=true",),
+        )
+
+
+def test_review_video_rejects_non_mllm_agent():
+    with pytest.raises(ValueError, match="supports only agent.type=mllm"):
+        load_config("configs/dummy_reach.yaml", ("logging.save_video=true",))
+
+
+@pytest.mark.parametrize(
+    "override",
+    (
+        "logging.video.fps=0",
+        "logging.video.step_hold_seconds=0",
+        "logging.video.terminal_hold_seconds=-1",
+    ),
+)
+def test_review_video_rejects_non_positive_timing(override):
+    with pytest.raises(ValueError, match="must be positive"):
+        load_config("configs/reacher_delta_eef_mllm.yaml", (override,))

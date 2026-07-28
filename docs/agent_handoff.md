@@ -159,8 +159,8 @@ prove task-solving ability.
 
 ## Known Risks And Gaps
 
-- `MLLMPolicy` is still a placeholder. There is no real API-backed MLLM policy
-  implementation in this handoff scope.
+- This historical handoff predates the API-backed MLLM policy. The current
+  implementation and smoke procedure are documented in `docs/model_api_control.md`.
 - The targeted tests prove core control-interface/mapping/frame-transform
   behavior, not every optional simulator backend.
 - DMControl free-camera orbit randomization is still unsupported and fails

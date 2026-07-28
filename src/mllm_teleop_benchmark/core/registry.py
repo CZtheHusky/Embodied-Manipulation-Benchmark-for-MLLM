@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from mllm_teleop_benchmark.agents.base import Agent
+from mllm_teleop_benchmark.agents.mllm_policy import MLLMPolicy
+from mllm_teleop_benchmark.agents.model_client import OpenAICompatibleClient
 from mllm_teleop_benchmark.agents.random_policy import RandomPolicy
 from mllm_teleop_benchmark.agents.scripted_policy import ScriptedPolicy
 from mllm_teleop_benchmark.action.space import ActionSpace
@@ -137,7 +140,28 @@ def build_agent(config: BenchmarkConfig, seed: int) -> Agent:
     if config.agent.type == "scripted":
         return ScriptedPolicy()
     if config.agent.type == "mllm":
-        raise ValueError("agent.type=mllm is not implemented yet; configure random or scripted until an API-backed MLLM policy exists")
+        model_config = config.agent.model
+        if model_config is None:
+            raise ValueError("agent.type=mllm requires agent.model configuration")
+        if model_config.provider != "openai_compatible":
+            raise ValueError(f"Unsupported model provider: {model_config.provider}")
+        model_name = model_config.name or os.environ.get(model_config.name_env)
+        base_url = model_config.base_url or os.environ.get(model_config.base_url_env)
+        api_key = os.environ.get(model_config.api_key_env)
+        if not model_name:
+            raise ValueError(f"Model name is required via agent.model.name or {model_config.name_env}")
+        if not base_url:
+            raise ValueError(f"Model base URL is required via agent.model.base_url or {model_config.base_url_env}")
+        if model_config.require_api_key and not api_key:
+            raise ValueError(f"Model API key is required via {model_config.api_key_env}")
+        client = OpenAICompatibleClient(
+            base_url=base_url,
+            api_key=api_key,
+            timeout_seconds=model_config.timeout_seconds,
+            max_retries=model_config.max_retries,
+            retry_backoff_seconds=model_config.retry_backoff_seconds,
+        )
+        return MLLMPolicy(config.agent, client, model_name)
     raise ValueError(f"Unsupported agent type: {config.agent.type}")
 
 

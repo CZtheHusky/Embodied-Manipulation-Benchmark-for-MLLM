@@ -109,6 +109,41 @@ class ValidationResult:
 
 
 @dataclass(frozen=True)
+class AgentTrace:
+    actor_type: str
+    status: str = "ok"
+    provider: str | None = None
+    model: str | None = None
+    request_id: str | None = None
+    latency_ms: float | None = None
+    attempts: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    cache_hit_ratio: float | None = None
+    cache_metrics_status: str = "unavailable"
+    common_prefix_bytes: int = 0
+    request_bytes: int = 0
+    image_count: int = 0
+    error: str | None = None
+    prompt_version: str | None = None
+    artifact_dir: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentArtifact:
+    relative_path: str
+    content: bytes
+
+
+@dataclass(frozen=True)
+class AgentDecision:
+    action: Any
+    trace: AgentTrace
+    artifacts: tuple[AgentArtifact, ...] = ()
+
+
+@dataclass(frozen=True)
 class StepTransition:
     step_id: int
     observation: Observation
@@ -120,6 +155,7 @@ class StepTransition:
     terminated: bool
     truncated: bool
     info: dict[str, Any] = field(default_factory=dict)
+    agent_trace: AgentTrace | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +166,7 @@ class EpisodeResult:
     steps: int
     metrics: dict[str, Any]
     log_dir: str | None = None
+    termination_reason: str = "completed"
 
 
 @dataclass(frozen=True)

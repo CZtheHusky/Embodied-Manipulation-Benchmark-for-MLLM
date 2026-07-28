@@ -55,3 +55,30 @@ def test_pygame_backend_invalid_action_recovers_to_noop():
 
     assert not validation.is_valid
     assert parsed.as_dict() == {"joystick_0": 0.0, "joystick_1": 0.0}
+
+
+def test_human_panel_hides_live_oracle_distance_and_nonterminal_success():
+    config = load_config("configs/reacher_delta_eef.yaml")
+    app = PygameHumanPlayer(config, SimAdapterWorkerRuntime(config))
+    rendered = []
+
+    class Font:
+        def render(self, line, _antialias, _color):
+            rendered.append(line)
+            return line
+
+    class Screen:
+        def blit(self, _surface, _position):
+            return None
+
+    app._draw_panel(
+        Screen(),
+        Font(),
+        steps=2,
+        action={"joystick_0": 0.0, "joystick_1": 0.0},
+        panel_lines=(),
+        success=False,
+    )
+
+    assert not any("distance" in line for line in rendered)
+    assert not any("success" in line for line in rendered)

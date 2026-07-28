@@ -8,7 +8,7 @@ from mllm_teleop_benchmark.agents.base import Agent, AgentContext
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.core.registry import control_interface_metadata
-from mllm_teleop_benchmark.core.types import EpisodeResult, SimAction, StepTransition, ValidationResult
+from mllm_teleop_benchmark.core.types import EpisodeResult, StepTransition, ValidationResult
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
@@ -75,6 +75,8 @@ class EpisodeManager:
         )
 
         success = self.task.is_success(observation, self.sim.get_state())
+        termination_reason = "success" if success else "max_steps"
+        consecutive_agent_errors = 0
         while not success and len(history) < self.config.task.max_steps:
             context = AgentContext(
                 observation=observation,
@@ -85,19 +87,40 @@ class EpisodeManager:
                     "controller": self._public_controller_metadata(),
                     "control_interface": control_interface_metadata(self.config, seed),
                 },
-                history=tuple(history[-self.config.agent.history_window :]),
+                history=self._agent_history(history),
             )
-            raw_action = self.agent.act(context)
-            parsed_action, validation = self._parse_and_validate(raw_action)
-            sim_action = self.controller.translate(parsed_action if validation.is_valid else self._noop_joystick_action())
+            decision = self.agent.act(context)
+            logger.record_agent_artifacts(decision.artifacts)
+            metrics.update_agent_trace(decision.trace)
+
+            if decision.trace.status == "fatal":
+                termination_reason = "agent_error"
+                break
+
+            if decision.trace.status == "error":
+                consecutive_agent_errors += 1
+                parsed_action = self._noop_joystick_action()
+                validation = ValidationResult(False, (decision.trace.error or "Model API request failed",))
+            else:
+                consecutive_agent_errors = 0
+                parsed_action, validation = self._parse_and_validate(decision.action)
+
+            sim_action = self.controller.translate(
+                parsed_action if validation.is_valid else self._noop_joystick_action()
+            )
             step_result = self.sim.step(sim_action)
             next_observation = self.observation_provider.get_observation(self.sim)
             success = self.task.is_success(next_observation, self.sim.get_state())
-            truncated = len(history) + 1 >= self.config.task.max_steps and not success
+            agent_error_termination = (
+                decision.trace.status == "error"
+                and consecutive_agent_errors >= self.config.agent.max_consecutive_errors
+            )
+            reached_max_steps = len(history) + 1 >= self.config.task.max_steps
+            truncated = (reached_max_steps and not success) or agent_error_termination
             transition = StepTransition(
                 step_id=observation.step_id,
                 observation=observation,
-                raw_action=raw_action,
+                raw_action=decision.action,
                 parsed_action=parsed_action.as_dict() if validation.is_valid else None,
                 validation=validation,
                 sim_action=sim_action,
@@ -105,11 +128,24 @@ class EpisodeManager:
                 terminated=success or step_result.terminated,
                 truncated=truncated or step_result.truncated,
                 info=step_result.info,
+                agent_trace=decision.trace,
             )
             logger.record_step(transition)
             metrics.update(transition)
             history.append(transition)
             observation = next_observation
+
+            if success:
+                termination_reason = "success"
+            elif agent_error_termination:
+                termination_reason = "agent_error"
+            elif step_result.terminated:
+                termination_reason = "simulator_terminated"
+            elif step_result.truncated:
+                termination_reason = "simulator_truncated"
+            elif reached_max_steps:
+                termination_reason = "max_steps"
+
             if transition.terminated or transition.truncated:
                 break
 
@@ -121,9 +157,20 @@ class EpisodeManager:
             steps=len(history),
             metrics=final_metrics,
             log_dir=str(logger.episode_dir),
+            termination_reason=termination_reason,
         )
-        logger.finish(result)
+        logger.finish(
+            result,
+            transitions=tuple(history),
+            terminal_observation=observation,
+        )
         return result
+
+    def _agent_history(self, history: list[StepTransition]) -> tuple[StepTransition, ...]:
+        if self.config.agent.type == "mllm":
+            return tuple(history)
+        window = self.config.agent.history_window
+        return tuple(history[-window:]) if window > 0 else ()
 
     def _parse_and_validate(self, raw_action: object) -> tuple[JoystickAction, ValidationResult]:
         try:
@@ -137,9 +184,6 @@ class EpisodeManager:
 
     def _noop_joystick_action(self) -> JoystickAction:
         return JoystickAction({name: 0.0 for name in self.action_space.channels})
-
-    def _noop_action(self) -> SimAction:
-        return SimAction(delta_position=(0.0, 0.0, 0.0), delta_rotation_rpy=(0.0, 0.0, 0.0), gripper=0.0)
 
     def _public_controller_metadata(self) -> dict[str, object]:
         return {

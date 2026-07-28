@@ -1,6 +1,19 @@
 from mllm_teleop_benchmark.agents.base import Agent, AgentContext
 from mllm_teleop_benchmark.agents.mllm_policy import MLLMPolicy
+from mllm_teleop_benchmark.agents.model_client import ModelClient, ModelRequest, ModelResponse
 from mllm_teleop_benchmark.agents.random_policy import RandomPolicy
 from mllm_teleop_benchmark.agents.scripted_policy import ScriptedPolicy
+from mllm_teleop_benchmark.core.types import AgentDecision, AgentTrace
 
-__all__ = ["Agent", "AgentContext", "MLLMPolicy", "RandomPolicy", "ScriptedPolicy"]
+__all__ = [
+    "Agent",
+    "AgentContext",
+    "AgentDecision",
+    "AgentTrace",
+    "MLLMPolicy",
+    "ModelClient",
+    "ModelRequest",
+    "ModelResponse",
+    "RandomPolicy",
+    "ScriptedPolicy",
+]

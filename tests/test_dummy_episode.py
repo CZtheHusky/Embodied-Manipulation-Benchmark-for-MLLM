@@ -20,7 +20,7 @@ def test_scripted_policy_succeeds_in_dummy_episode(tmp_path):
     assert Path(result.episodes[0].log_dir).exists()
 
 
-def test_mllm_placeholder_fails_before_simulator_construction(monkeypatch, tmp_path):
+def test_mllm_missing_model_config_fails_before_simulator_construction(monkeypatch, tmp_path):
     config = load_config("configs/dummy_reach.yaml")
     patched = config.__class__(
         **{
@@ -32,9 +32,9 @@ def test_mllm_placeholder_fails_before_simulator_construction(monkeypatch, tmp_p
     )
 
     def fail_if_called(_config):
-        raise AssertionError("simulator should not be constructed before unsupported mllm agent is rejected")
+        raise AssertionError("simulator should not be constructed before invalid mllm config is rejected")
 
     monkeypatch.setattr("mllm_teleop_benchmark.benchmark.build_sim", fail_if_called)
 
-    with pytest.raises(ValueError, match="agent.type=mllm is not implemented"):
+    with pytest.raises(ValueError, match="agent.type=mllm requires agent.model"):
         BenchmarkRunner(patched).run()
