@@ -279,7 +279,13 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
         "axis-angle rotation-vector commands use this moving base frame, "
         "normalized native +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign "
         "compensation, and the robot0_agentview cameras are base-attached rather "
-        "than fixed in world"
+        "than fixed in world. In both agentview cameras, base +y projects "
+        "approximately toward image left, base +z toward image up, and base +x "
+        "mainly along viewing depth with an upward image component; base +x is "
+        "slightly image-left in agentview_left and slightly image-right in "
+        "agentview_right. These base-relative projections remain stable as the "
+        "mobile base moves. eye_in_hand moves with the wrist, so it has no fixed "
+        "base-axis projection"
     )
     assert interface.params == {
         "scale_mode": "robocasa_normalized_pandaomron_osc_base_delta",
@@ -319,6 +325,10 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in prompt
     assert "with no sign compensation" in prompt
     assert "robot0_agentview cameras are base-attached rather than fixed in world" in prompt
+    assert "base +y projects approximately toward image left" in prompt
+    assert "base +z toward image up" in prompt
+    assert "base +x mainly along viewing depth with an upward image component" in prompt
+    assert "eye_in_hand moves with the wrist" in prompt
 
     assert tuple(action_schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
@@ -694,6 +704,13 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in request_text
     assert "with no sign compensation" in request_text
     assert "base-attached rather than fixed in world" in request_text
+    assert "base +y projects approximately toward image left" in request_text
+    assert "base +z toward image up" in request_text
+    assert (
+        "base +x mainly along viewing depth with an upward image component"
+        in request_text
+    )
+    assert "eye_in_hand moves with the wrist" in request_text
     assert "binary control" in request_text
     assert "0 means open, 1 means closed" in request_text
     assert "means hold" not in request_text

@@ -185,7 +185,11 @@ conditions, and no joystick gripper channel is added.
 Episode variation selection is deterministic. When a config does not provide
 an explicit variation, the adapter selects `episode_seed % variation_count`
 and calls RLBench `set_variation()` before reset. The selected variation stays
-in evaluator state and is excluded from model input.
+in evaluator state and is excluded from model input. `ReachTarget` also returns
+official public language descriptions such as `reach the red target`. The MLLM
+task projects the first such description into the public task instruction after
+reset so the RGB-only agent can distinguish the target sphere from the two
+colored distractors; it does not expose the variation index or target pose.
 
 Neither pinned RLBench `TaskEnvironment` exposes a public success-query method,
 and PyRep has no task-level success oracle. Both pinned RLBench implementations
@@ -208,8 +212,8 @@ benchmark seed, simulator config, and task config. Deterministic stub tests
 prove that same-seed resets produce the same variation, descriptions, native
 low-dimensional state, gripper pose, and reset success. Optional real-runtime
 tests assert the same pairing, including the front RGB frame; they skip when
-the pinned simulator runtime is unavailable. Those runtime pairing tests were
-not executed while preparing this change.
+the pinned simulator runtime is unavailable. The display-backed pairing test
+passes on this host.
 
 RLBench planning can reject an otherwise valid bounded command when no path is
 available. The adapter treats RLBench `InvalidActionError` as a rejected
@@ -263,10 +267,12 @@ Colosseum RLBench pin, and falls back to the legacy
 
 ## MLLM Evaluation
 
-Both MLLM configs use the same public task text:
+Both MLLM configs use the same public instruction source. After reset, the
+configured fallback text is replaced by the first official `ReachTarget`
+description, for example:
 
 ```text
-Move the robot end-effector to the visible target.
+reach the red target
 ```
 
 They use `action_with_reflection`, OpenAI-compatible Chat Completions, reasoning
@@ -314,11 +320,13 @@ The first config uses the RLBench `front` RGB camera. Camera names must match RL
 
 The observation provider configures RGB-only RLBench observations before environment launch and extracts camera frames from attributes such as `front_rgb`.
 
-The `front` camera pose belongs to the RLBench TTT scene. The benchmark does not
-currently expose runtime front-camera extrinsics to the model, so neither the
-prompt nor this integration assigns world `+x`, `+y`, or `+z` to image
-left/right/up/down. Such an image-axis claim requires runtime extrinsics rather
-than inference from the camera name or a rendered frame.
+The `front` camera pose belongs to the RLBench TTT scene and is fixed. The
+pinned runtime extrinsics establish that world `+y` projects approximately
+toward image right, world `+z` toward image up, and world `+x` mainly toward the
+camera with a downward image component. These static directional relations are
+included in the public control description. The numeric extrinsic/intrinsic
+matrices remain evaluator verification data and are not serialized into model
+requests.
 
 ## Colosseum Runtime Status
 

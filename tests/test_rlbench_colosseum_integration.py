@@ -24,7 +24,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_task,
     control_interface_metadata,
 )
-from mllm_teleop_benchmark.core.types import RLBenchAction
+from mllm_teleop_benchmark.core.types import Observation, RLBenchAction
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.sim.rlbench.adapter import RLBenchSimAdapter
@@ -190,6 +190,9 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
     assert config.task.params["instruction"] == (
         "Move the robot end-effector to the visible target."
     )
+    assert config.task.params["instruction_from_observation"] is True
+    assert config.task.params["instruction_observation_key"] == "descriptions"
+    assert config.task.params["instruction_description_index"] == 0
     assert config.task.params["reject_initial_success"] is True
     assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
     assert config.control_interface.gripper == "none"
@@ -205,8 +208,11 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
     assert "native absolute world-frame planning pose" in frame_description
     assert "gripper is fixed open and is not controllable" in frame_description
     assert "no joystick gripper channel exists" in frame_description
-    assert "front camera pose comes from the TTT scene" in frame_description
-    assert "does not assign world axes to image directions" in frame_description
+    assert "front camera is fixed in the TTT scene" in frame_description
+    assert "world +y projects approximately toward image right" in frame_description
+    assert "world +z toward image up" in frame_description
+    assert "world +x mainly toward the camera" in frame_description
+    assert "downward image component" in frame_description
     if visible:
         assert "without sign compensation" in frame_description
     else:
@@ -253,6 +259,49 @@ def test_rlbench_mllm_conditions_use_identical_task_text():
     }
 
 
+def test_rlbench_task_projects_public_reset_description_into_instruction():
+    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    task = build_task(config)
+
+    class StubSim:
+        def reset(self, _task_config, _seed):
+            return Observation(
+                step_id=0,
+                images={},
+                state={
+                    "descriptions": [
+                        "reach the red target",
+                        "touch the red ball with the panda gripper",
+                    ],
+                    "success": False,
+                    "private_target_position": [0.1, 0.2, 0.3],
+                },
+            )
+
+        def get_state(self):
+            return {"success": False}
+
+    task.reset(StubSim(), seed=config.benchmark.seed)
+
+    assert task.instruction() == "reach the red target"
+    assert "0.1" not in task.instruction()
+
+
+def test_rlbench_task_rejects_missing_public_reset_description():
+    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    task = build_task(config)
+
+    class StubSim:
+        def reset(self, _task_config, _seed):
+            return Observation(step_id=0, images={}, state={"success": False})
+
+        def get_state(self):
+            return {"success": False}
+
+    with pytest.raises(RuntimeError, match="public task descriptions"):
+        task.reset(StubSim(), seed=config.benchmark.seed)
+
+
 def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     baseline = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
     baseline_prompt = ControlInstructionBuilder().build(
@@ -271,8 +320,10 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "without sign compensation" in baseline_prompt
     assert "gripper is fixed open and is not controllable" in baseline_prompt
     assert "no joystick gripper channel exists" in baseline_prompt
-    assert "front camera pose comes from the TTT scene" in baseline_prompt
-    assert "does not assign world axes to image directions" in baseline_prompt
+    assert "front camera is fixed in the TTT scene" in baseline_prompt
+    assert "world +y projects approximately toward image right" in baseline_prompt
+    assert "world +z toward image up" in baseline_prompt
+    assert "world +x mainly toward the camera" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_1 -> dy" in baseline_prompt
     assert "joystick_2 -> dz" in baseline_prompt
@@ -299,8 +350,10 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "native absolute world-frame planning pose" in perturbed_prompt
     assert "gripper is fixed open and is not controllable" in perturbed_prompt
     assert "no joystick gripper channel exists" in perturbed_prompt
-    assert "front camera pose comes from the TTT scene" in perturbed_prompt
-    assert "does not assign world axes to image directions" in perturbed_prompt
+    assert "front camera is fixed in the TTT scene" in perturbed_prompt
+    assert "world +y projects approximately toward image right" in perturbed_prompt
+    assert "world +z toward image up" in perturbed_prompt
+    assert "world +x mainly toward the camera" in perturbed_prompt
     assert (
         "Infer the hidden controls from visual observations and your own action "
         "history"
@@ -851,7 +904,8 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
 
     request_text = _request_text(client.requests[-1])
     assert "Prompt version: mllm_joystick_reflection_v2" in request_text
-    assert "Task: Move the robot end-effector to the visible target." in request_text
+    assert "Task: reach the " in request_text
+    assert " target Control:" in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "RLBench world Cartesian x, y, and z axes" in request_text

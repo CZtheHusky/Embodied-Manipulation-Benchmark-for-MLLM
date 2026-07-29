@@ -6,6 +6,7 @@ from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.core.types import CalvinAction
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import JoystickMapping
+from mllm_teleop_benchmark.utils.math import fit_vector_to_component_limit
 
 
 class CalvinDeltaEEFController(Controller):
@@ -52,7 +53,7 @@ class CalvinDeltaEEFController(Controller):
         values_by_dim = {dim: command.get(dim) * self.scales.get(dim, 1.0) for dim in self.dimensions if dim != "gripper"}
 
         if self.frame_transform is not None and any(dim in values_by_dim for dim in ("dx", "dy", "dz")):
-            transformed = _fit_normalized_vector(
+            transformed = fit_vector_to_component_limit(
                 self.frame_transform.transform_delta_position(
                     (
                         values_by_dim.get("dx", 0.0),
@@ -95,6 +96,7 @@ class CalvinDeltaEEFController(Controller):
                 "dimensions": self.dimensions,
                 "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
                 "transform_rotation": self.transform_rotation,
+                "translation_bound_policy": "uniform_component_fit",
             },
         )
 
@@ -106,6 +108,7 @@ class CalvinDeltaEEFController(Controller):
             "mapping": self.mapping.metadata(),
             "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
             "transform_rotation": self.transform_rotation,
+            "translation_bound_policy": "uniform_component_fit",
             "gripper_open_value": self.gripper_open_value,
             "gripper_closed_value": self.gripper_closed_value,
         }
@@ -113,12 +116,3 @@ class CalvinDeltaEEFController(Controller):
     def _map_gripper(self, value: float) -> float:
         clipped = min(max(float(value), 0.0), 1.0)
         return self.gripper_open_value if clipped >= 0.5 else self.gripper_closed_value
-
-
-def _fit_normalized_vector(
-    values: tuple[float, float, float],
-) -> tuple[float, float, float]:
-    max_abs = max(abs(float(value)) for value in values)
-    if max_abs <= 1.0:
-        return tuple(float(value) for value in values)
-    return tuple(float(value) / max_abs for value in values)

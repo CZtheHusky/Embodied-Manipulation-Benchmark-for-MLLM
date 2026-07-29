@@ -112,7 +112,7 @@ class RobosuiteSimAdapter(SimAdapter):
             "robot_proprio": obs.get("robot0_proprio-state"),
             "eef_pos": obs.get("robot0_eef_pos"),
             "eef_quat": obs.get("robot0_eef_quat"),
-            "is_success": self._env._check_success(),
+            "is_success": bool(self._env._check_success()),
             "reward": self._last_reward,
             "info": self._last_info,
             "camera_randomization": self._camera_randomization_sample,

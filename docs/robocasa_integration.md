@@ -67,8 +67,13 @@ The model input projection includes only:
 
 The two `robot0_agentview` cameras are attached to the mobile robot base. Their
 image directions therefore move with the base and must not be described as
-fixed MuJoCo world directions. The MLLM prompts state this explicitly instead
-of supplying a world-frame image basis.
+fixed MuJoCo world directions. Their pinned camera quaternions do provide stable
+base-relative directions: base `+y` projects approximately image-left, base
+`+z` image-up, and base `+x` mainly along viewing depth with an upward image
+component. The left and right views give base `+x` a small image-left and
+image-right component, respectively. `robot0_eye_in_hand` moves with the wrist
+and therefore has no fixed base-axis projection. The prompt publishes these
+static control facts without exposing a dynamic camera or robot pose.
 
 It excludes observation state, reward, success, distances, object or end-effector poses, native simulator actions, seeds, camera randomization, and concrete permutation, sign, or SO(3) samples. In the perturbed condition the prompt says that hidden controls exist and remain fixed for the episode, but does not reveal their values.
 

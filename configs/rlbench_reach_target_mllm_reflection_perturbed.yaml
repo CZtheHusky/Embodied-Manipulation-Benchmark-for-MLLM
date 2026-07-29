@@ -22,6 +22,9 @@ task:
   success_threshold: 1.0
   params:
     instruction: Move the robot end-effector to the visible target.
+    instruction_from_observation: true
+    instruction_observation_key: descriptions
+    instruction_description_index: 0
     success_key: success
     reject_initial_success: true
 
@@ -56,8 +59,9 @@ control_interface:
     compensation, clamps the target to the configured workspace bounds, and
     sends a native absolute world-frame planning pose. The gripper is fixed open
     and is not controllable; no joystick gripper channel exists. The front
-    camera pose comes from the TTT scene; without runtime extrinsics, this
-    control contract does not assign world axes to image directions
+    camera is fixed in the TTT scene: world +y projects approximately toward
+    image right, world +z toward image up, and world +x mainly toward the camera
+    with a downward image component
   params:
     scale_mode: rlbench_absolute_pose_target_from_delta_eef
 

@@ -197,14 +197,17 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert "control origin at the TCP, not the tool frame" in frame_description
     assert "axis-angle rotation vectors both use robot-base axes" in frame_description
     assert "rotation is pre-multiplied about the TCP origin" in frame_description
-    assert "robot-base transform is identity" in frame_description
-    assert "robot-base and world frames coincide" in frame_description
+    assert "fixed 180-degree yaw" in frame_description
+    assert "base +x is world -x" in frame_description
+    assert "base +y is world -y" in frame_description
+    assert "base +z is world +z" in frame_description
     assert "normalize_action is false" in frame_description
     assert "scaled to 0.05 meters and 0.1 radians respectively" in frame_description
-    assert "base_camera is fixed" in frame_description
-    assert "base +y is approximately image right" in frame_description
+    assert "base_camera is world-fixed" in frame_description
+    assert "base +y is approximately image left" in frame_description
     assert "base +z is image up" in frame_description
-    assert "base +x is mainly image depth/down" in frame_description
+    assert "base +x moves mainly deeper into the scene" in frame_description
+    assert "upward image component" in frame_description
     assert "overhead_camera is robot-mounted" in frame_description
     assert "no fixed world-to-image direction is claimed" in frame_description
     if visible:
@@ -213,6 +216,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
         assert "no additional sign compensation is applied" in frame_description
     assert control["gripper_open_command"] == 0
     assert control["gripper_closed_command"] == 1
+    assert control["gripper_hold_command"] == 0.5
     assert control["params"]["rotation_representation"] == "axis_angle"
     assert config.controller.frame == "ee_align"
     assert config.controller.scales == {
@@ -266,21 +270,25 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "control origin at the TCP, not the tool frame" in baseline_prompt
     assert "axis-angle rotation vectors both use robot-base axes" in baseline_prompt
     assert "rotation is pre-multiplied about the TCP origin" in baseline_prompt
-    assert "robot-base transform is identity" in baseline_prompt
-    assert "robot-base and world frames coincide" in baseline_prompt
+    assert "fixed 180-degree yaw" in baseline_prompt
+    assert "base +x is world -x" in baseline_prompt
+    assert "base +y is world -y" in baseline_prompt
+    assert "base +z is world +z" in baseline_prompt
     assert "normalize_action is false" in baseline_prompt
     assert "scaled to 0.05 meters and 0.1 radians respectively" in baseline_prompt
     assert "with no sign compensation" in baseline_prompt
-    assert "base_camera is fixed" in baseline_prompt
-    assert "base +y is approximately image right" in baseline_prompt
+    assert "base_camera is world-fixed" in baseline_prompt
+    assert "base +y is approximately image left" in baseline_prompt
     assert "base +z is image up" in baseline_prompt
-    assert "base +x is mainly image depth/down" in baseline_prompt
+    assert "base +x moves mainly deeper into the scene" in baseline_prompt
+    assert "upward image component" in baseline_prompt
     assert "overhead_camera is robot-mounted" in baseline_prompt
     assert "no fixed world-to-image direction is claimed" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_5 -> dyaw" in baseline_prompt
     assert "direct control" in baseline_prompt
     assert "final virtual joystick" in baseline_prompt
+    assert "0.5 means hold" in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
@@ -290,7 +298,10 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "rotation is pre-multiplied about the TCP origin" in perturbed_prompt
     assert "scaled to 0.05 meters and 0.1 radians respectively" in perturbed_prompt
     assert "no additional sign compensation is applied" in perturbed_prompt
-    assert "base_camera is fixed" in perturbed_prompt
+    assert "fixed 180-degree yaw" in perturbed_prompt
+    assert "base_camera is world-fixed" in perturbed_prompt
+    assert "base +y is approximately image left" in perturbed_prompt
+    assert "0.5 means hold" in perturbed_prompt
     assert "overhead_camera is robot-mounted" in perturbed_prompt
     assert "no fixed world-to-image direction is claimed" in perturbed_prompt
     assert (
@@ -418,6 +429,13 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
 
     try:
         sim.reset(config.task, seed=config.benchmark.seed)
+        unwrapped = getattr(sim.env, "unwrapped", sim.env)
+        base_quaternion_wxyz = np.asarray(unwrapped.agent.robot.pose.q)
+        np.testing.assert_allclose(
+            np.abs(base_quaternion_wxyz),
+            [0.0, 0.0, 0.0, 1.0],
+            atol=1e-7,
+        )
         observation = provider.get_observation(sim)
         assert set(PUBLIC_CAMERAS).issubset(observation.images)
         for camera in PUBLIC_CAMERAS:

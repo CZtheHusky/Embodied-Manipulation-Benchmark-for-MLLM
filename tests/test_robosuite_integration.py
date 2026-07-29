@@ -1,6 +1,7 @@
 import base64
 import inspect
 import io
+import itertools
 import json
 import os
 from pathlib import Path
@@ -160,7 +161,10 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
         "translation-only commands are normalized world-frame inputs with "
         "native +/-1 mapping to +/-0.05 m, and in upright agentview image "
         "right is approximately +world y while image up is approximately "
-        "-0.706 world x +0.708 world z"
+        "-0.706 world x +0.708 world z. If a transformed translation "
+        "component would exceed native magnitude 1, all three translation "
+        "components are uniformly rescaled by the largest absolute component; "
+        "this preserves direction but can reduce step length"
     )
     assert config.control_interface.params == {
         "scale_mode": "normalized_robosuite_1_4_1_osc_input_native_0_05m",
@@ -259,6 +263,46 @@ def test_robosuite_perturbation_only_changes_motion_channels():
         "type": "random_rotation_3d",
         "visible_to_agent": False,
     }
+    assert controller.metadata()["translation_bound_policy"] == (
+        "uniform_component_fit"
+    )
+
+
+def test_robosuite_hidden_rotation_preserves_all_legal_translation_directions():
+    config = load_config("configs/robosuite_lift_mllm_reflection_perturbed.yaml")
+    mapping = build_mapping(config, config.benchmark.seed)
+    controller = build_controller(config, mapping, config.benchmark.seed)
+    exceeded_before_fit = 0
+
+    for values in itertools.product((-1.0, 0.0, 1.0), repeat=3):
+        action = JoystickAction(
+            {
+                "joystick_0": values[0],
+                "joystick_1": values[1],
+                "joystick_2": values[2],
+                "joystick_3": 0.0,
+            }
+        )
+        mapped = mapping.map_action(action)
+        transformed = np.asarray(
+            controller.frame_transform.transform_delta_position(
+                tuple(mapped.get(axis, 0.0) for axis in ("dx", "dy", "dz"))
+            )
+        )
+        if float(np.max(np.abs(transformed))) > 1.0:
+            exceeded_before_fit += 1
+
+        actual = np.asarray(controller.translate(action).values[:3])
+        assert float(np.max(np.abs(actual))) <= 1.0 + 1e-7
+        if float(np.linalg.norm(transformed)) > 0.0:
+            assert float(np.dot(transformed, actual)) > 0.0
+            np.testing.assert_allclose(
+                np.cross(transformed, actual),
+                np.zeros(3),
+                atol=1e-6,
+            )
+
+    assert exceeded_before_fit > 0
 
 
 def test_robosuite_adapter_init():
@@ -538,6 +582,8 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
     assert "robosuite 1.4.1 OSC MuJoCo world x, y, and z axes" in request_text
     assert "translation-only commands are normalized world-frame inputs" in request_text
     assert "native +/-1 mapping to +/-0.05 m" in request_text
+    assert "uniformly rescaled by the largest absolute component" in request_text
+    assert "preserves direction but can reduce step length" in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
         assert "joystick_1 -> dy" in request_text

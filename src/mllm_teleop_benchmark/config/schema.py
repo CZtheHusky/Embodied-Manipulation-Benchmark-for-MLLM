@@ -339,6 +339,9 @@ class ControlInterfaceConfig:
         }
         if self.control_frame_description:
             visible["control_frame_description"] = self.control_frame_description
+        rotation_representation = self.params.get("rotation_representation")
+        if rotation_representation is not None:
+            visible["rotation_representation"] = str(rotation_representation)
         gripper_commands = {
             name: value
             for name, value in (

@@ -112,6 +112,13 @@ The two conditions differ only in the motion-control complexity:
   the resulting delta into the OSC world axes. The sampled mapping, signs,
   quaternion, and rotation matrix remain private.
 
+After the frame transform, the benchmark checks the normalized OSC component
+bounds. If any translation component exceeds magnitude `1`, it uniformly
+divides all three components by their largest absolute component. This
+preserves the rotated direction while possibly shortening a diagonal step and
+prevents robosuite's native per-component clipping from distorting the intended
+direction. The same public bound policy is configured in both conditions.
+
 ## Cameras
 
 The Lift configs preserve robosuite's upstream `agentview` task camera. A

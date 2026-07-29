@@ -42,7 +42,10 @@ class ControlInstructionBuilder:
 
         if dimensions and visible:
             text_lines.append(f"The active controllable dimensions are: {', '.join(str(v) for v in dimensions)}.")
-            dimension_semantics = _dimension_semantics(dimensions)
+            dimension_semantics = _dimension_semantics(
+                dimensions,
+                str(interface.get("rotation_representation", "")),
+            )
             if dimension_semantics:
                 text_lines.append(dimension_semantics)
             if control_frame_description:
@@ -108,7 +111,10 @@ def _mapping_summary(mapping: object) -> str:
     return "; ".join(parts)
 
 
-def _dimension_semantics(dimensions: list[object]) -> str:
+def _dimension_semantics(
+    dimensions: list[object],
+    rotation_representation: str = "",
+) -> str:
     names = {str(value) for value in dimensions}
     statements: list[str] = []
     translation = [
@@ -138,11 +144,17 @@ def _dimension_semantics(dimensions: list[object]) -> str:
         dimension_names = _join_terms([item[0] for item in rotation])
         axes = _join_terms([item[1] for item in rotation])
         verb = "denotes" if len(rotation) == 1 else "denote"
-        axis_noun = "axis" if len(rotation) == 1 else "axes"
-        statements.append(
-            f"{dimension_names} {verb} end-effector rotation about the "
-            f"control frame's {axes} {axis_noun}"
-        )
+        if rotation_representation == "xyz_euler_parameters":
+            statements.append(
+                f"{dimension_names} {verb} increments of the target pose's "
+                f"{axes} Euler parameters"
+            )
+        else:
+            axis_noun = "axis" if len(rotation) == 1 else "axes"
+            statements.append(
+                f"{dimension_names} {verb} end-effector rotation about the "
+                f"control frame's {axes} {axis_noun}"
+            )
     if not statements:
         return ""
     return (

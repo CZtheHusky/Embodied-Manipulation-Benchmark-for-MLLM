@@ -8,7 +8,7 @@ from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.core.types import RobosuiteAction
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import JoystickMapping
-from mllm_teleop_benchmark.utils.math import clamp
+from mllm_teleop_benchmark.utils.math import clamp, fit_vector_to_component_limit
 
 
 class RobosuiteOSCController(Controller):
@@ -49,7 +49,9 @@ class RobosuiteOSCController(Controller):
         dpitch = command.get("dpitch", 0.0) * self.scales.get("dpitch", 0.1)
         dyaw = command.get("dyaw", 0.0) * self.scales.get("dyaw", 0.1)
 
-        delta_pos = self.frame_transform.transform_delta_position((dx, dy, dz))
+        delta_pos = fit_vector_to_component_limit(
+            self.frame_transform.transform_delta_position((dx, dy, dz))
+        )
         delta_rot = self.frame_transform.transform_delta_rotation((droll, dpitch, dyaw))
 
         gripper_raw = clamp(command.get("gripper", 0.0), 0.0, 1.0)
@@ -73,6 +75,7 @@ class RobosuiteOSCController(Controller):
                 "controller": "robosuite_osc",
                 "dimensions": ("dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"),
                 "frame_transform": self.frame_transform.metadata(),
+                "translation_bound_policy": "uniform_component_fit",
             },
         )
 
@@ -82,4 +85,5 @@ class RobosuiteOSCController(Controller):
             "scales": dict(self.scales),
             "mapping": self.mapping.metadata(),
             "frame_transform": self.frame_transform.metadata(),
+            "translation_bound_policy": "uniform_component_fit",
         }

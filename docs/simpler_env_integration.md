@@ -101,8 +101,10 @@ values as delta XYZ, the next three as an axis-angle rotation vector, and the
 last value as the gripper command. The active upstream controller uses an
 `ee_align` frame. Its origin is the current TCP, but both the translation
 components and rotation-vector axes are expressed in the robot-base frame, not
-the tool frame. The current task uses an identity robot-base transform, so the
-robot-base and world frames coincide.
+the tool frame. Pinned upstream initializes the Google Robot base with the
+scalar-first quaternion `[0, 0, 0, 1]`, a 180-degree yaw. Therefore base
+`+x/+y/+z` correspond to world `-x/-y/+z`; the robot-base and world frames do
+not coincide.
 
 For a current TCP pose `(p_tcp, R_tcp)`, the upstream composition is:
 
@@ -120,7 +122,9 @@ condition, the hidden mapping and episode-fixed frame transform are applied
 before the native action is emitted, with no additional backend sign
 compensation. In the public joystick schema, `joystick_6=0` means open and
 `joystick_6=1` means closed; the benchmark controller maps those values to
-upstream `-1` and `1`.
+upstream `-1` and `1`. The mapping is continuous, so `joystick_6=0.5` emits
+native zero; the pinned target-delta gripper controller keeps its previous
+target for that command.
 
 ## Observation
 
@@ -147,10 +151,10 @@ contain simulator state, reward, success, distance, object or end-effector
 pose, native simulator action, seed, or sampled mapping/frame-transform
 parameters.
 
-For this task, `base_camera` is fixed. Its approximate projection is base `+y`
-toward image right, base `+z` toward image up, and base `+x` mainly along image
-depth with a downward image component. These are approximate image relations,
-not a claim that all three base axes lie in the image plane.
+For this task, `base_camera` is world-fixed. Its approximate projection is base
+`+y` toward image left, base `+z` toward image up, and base `+x` deeper into
+the scene with an upward image component. These are approximate image
+relations, not a claim that all three base axes lie in the image plane.
 `overhead_camera` is attached to the robot's `link_camera`; it is
 robot-mounted, so the integration does not claim a fixed world-axis-to-image
 direction for that view. `camera.manager: fixed` means the benchmark selects a

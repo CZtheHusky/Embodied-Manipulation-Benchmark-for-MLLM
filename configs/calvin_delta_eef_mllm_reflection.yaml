@@ -58,11 +58,13 @@ control_interface:
     magnitude 1 changes that parameter by 0.05 rad, and are not an axis-angle
     vector; in the fixed static camera, +x projects roughly toward image right,
     +y toward image upper-right, and +z toward image upper-left, while the
-    gripper camera moves with the wrist
+    gripper camera moves with the wrist. Continuous gripper values at or above
+    0.5 map to open; values below 0.5 map to closed
   gripper_open_command: 1
   gripper_closed_command: 0
   params:
     scale_mode: calvin_cartesian_relative_delta
+    rotation_representation: xyz_euler_parameters
 
 controller:
   type: calvin_delta_eef

@@ -87,13 +87,18 @@ The hidden 3D frame transform is applied only to `dx/dy/dz`. CALVIN's
 `droll/dpitch/dyaw` are Euler-coordinate increments, so rotating that triple as
 if it were an axis-angle vector would be mathematically invalid. The three Euler
 channels still participate in the episode-fixed permutation and sign flips.
-This transform scope is public; the sampled permutation, signs, and rotation
-remain private.
+If the rotated translation would place any normalized component outside
+`[-1, 1]`, the controller uniformly divides all three components by their
+largest absolute component. This keeps the transformed direction and native
+component bounds, but can shorten a diagonal step. This transform and bound
+policy are public; the sampled permutation, signs, and rotation remain private.
 
 The public prompt explains world-frame translation, XYZ Euler-parameter
 increments, native step magnitudes, approximate fixed-static-camera projections,
-the moving wrist-camera caveat, positive/negative motion, and virtual gripper
-endpoints. For the perturbed condition, it states that hidden mapping and frame
+the moving wrist-camera caveat, positive/negative motion, and the `0.5` virtual
+gripper threshold. The shared dimension text identifies `droll/dpitch/dyaw` as
+XYZ Euler-parameter increments rather than fixed-axis rotation-vector
+components. For the perturbed condition, it states that hidden mapping and frame
 rules remain fixed for the whole episode and must be inferred from visual/action
 history. It does not reveal the sampled permutation, signs, rotation matrix,
 quaternion, simulator state, reward, success oracle, object or EEF poses,

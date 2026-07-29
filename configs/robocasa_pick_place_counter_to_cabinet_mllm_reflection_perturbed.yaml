@@ -58,7 +58,13 @@ control_interface:
     frame and moves with the mobile base; translation and axis-angle
     rotation-vector commands use this moving base frame, normalized native +/-1
     maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and the
-    robot0_agentview cameras are base-attached rather than fixed in world
+    robot0_agentview cameras are base-attached rather than fixed in world. In
+    both agentview cameras, base +y projects approximately toward image left,
+    base +z toward image up, and base +x mainly along viewing depth with an
+    upward image component; base +x is slightly image-left in agentview_left and
+    slightly image-right in agentview_right. These base-relative projections
+    remain stable as the mobile base moves. eye_in_hand moves with the wrist, so
+    it has no fixed base-axis projection
   gripper_open_command: 0
   gripper_closed_command: 1
   params:

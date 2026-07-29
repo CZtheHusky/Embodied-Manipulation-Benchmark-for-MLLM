@@ -257,8 +257,16 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert "native magnitude 1 changes that parameter by 0.05 rad" in control_description
     assert "not an axis-angle vector" in control_description
     assert "gripper camera moves with the wrist" in control_description
+    assert "values at or above 0.5 map to open" in control_description
+    assert "values below 0.5 map to closed" in control_description
     if frame_transform == "random_rotation_3d":
         assert "hidden 3D frame transform applies only to translation" in control_description
+        assert "uniformly rescaled by the largest absolute component" in control_description
+        assert "preserves direction but can reduce step length" in control_description
+    assert (
+        config.control_interface.params["rotation_representation"]
+        == "xyz_euler_parameters"
+    )
     assert config.controller.scales == {
         "dx": 1.0,
         "dy": 1.0,
@@ -480,7 +488,10 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
         in prompt
     )
     assert "dx, dy, and dz denote end-effector translation" in prompt
-    assert "droll, dpitch, and dyaw denote end-effector rotation" in prompt
+    assert (
+        "droll, dpitch, and dyaw denote increments of the target pose's "
+        "x, y, and z Euler parameters"
+    ) in prompt
     assert "positive mapped value commands the positive direction" in prompt
     assert "CALVIN's PyBullet world frame" in prompt
     assert "PyBullet XYZ Euler parameters" in prompt
@@ -490,6 +501,7 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
     assert "joystick_5 -> dyaw" in prompt
     assert "joystick_6 -> gripper" in prompt
     assert "1 means open, 0 means closed" in prompt
+    assert "values at or above 0.5 map to open" in prompt
     assert "No additional control-frame rotation is applied" in prompt
 
     perturbed = load_config(
@@ -512,6 +524,8 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
         "history"
     ) in prompt
     assert "no worked example or sampled hidden-control value is provided" in prompt
+    assert "uniformly rescaled by the largest absolute component" in prompt
+    assert "preserves direction but can reduce step length" in prompt
     assert "joystick_0 ->" not in prompt
     assert "mapping" not in metadata
     assert "mapping_strategy" not in metadata
@@ -1092,12 +1106,16 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
         in request_text
     )
     assert "dx, dy, and dz denote end-effector translation" in request_text
-    assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
+    assert (
+        "droll, dpitch, and dyaw denote increments of the target pose's "
+        "x, y, and z Euler parameters"
+    ) in request_text
     assert "CALVIN's PyBullet world frame" in request_text
     assert "PyBullet XYZ Euler parameters" in request_text
     assert "not an axis-angle vector" in request_text
     assert "native magnitude 1 advances the target by 0.02 m" in request_text
     assert "1 means open, 0 means closed" in request_text
+    assert "values at or above 0.5 map to open" in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
         assert "joystick_5 -> dyaw" in request_text
@@ -1109,6 +1127,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
             "hidden joystick mapping and control-frame transform remain fixed "
             "for the entire episode"
         ) in request_text
+        assert "uniformly rescaled by the largest absolute component" in request_text
 
     encoded_requests = "\n".join(
         request.encoded_body().decode("utf-8") for request in client.requests

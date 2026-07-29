@@ -45,15 +45,19 @@ control_interface:
     the Google Robot robot-base Cartesian frame with its control origin at the
     TCP, not the tool frame. Translation deltas and axis-angle rotation vectors
     both use robot-base axes; rotation is pre-multiplied about the TCP origin.
-    For this task the robot-base transform is identity, so the robot-base and
-    world frames coincide. normalize_action is false: mapped magnitude-1
-    translation and rotation commands are scaled to 0.05 meters and 0.1 radians
-    respectively, with no sign compensation. base_camera is fixed: base +y is
-    approximately image right, base +z is image up, and base +x is mainly image
-    depth/down. overhead_camera is robot-mounted, so no fixed world-to-image
-    direction is claimed
+    Upstream gives the robot base a fixed 180-degree yaw in the world frame, so
+    base +x is world -x, base +y is world -y, and base +z is world +z.
+    normalize_action is false: mapped magnitude-1 translation and rotation
+    commands are scaled to 0.05 meters and 0.1 radians respectively, with no
+    sign compensation. base_camera is world-fixed: base +y is approximately
+    image left, base +x moves mainly deeper into the scene with an upward image
+    component, and base +z is image up. overhead_camera is robot-mounted, so no
+    fixed world-to-image direction is claimed. The continuous gripper command
+    maps linearly from 0 open to 1 closed; 0.5 emits native zero and holds the
+    previous gripper target
   gripper_open_command: 0
   gripper_closed_command: 1
+  gripper_hold_command: 0.5
   params:
     scale_mode: simpler_env_google_robot_ee_align_axis_angle
     rotation_representation: axis_angle
