@@ -1,0 +1,127 @@
+benchmark:
+  name: colosseum_close_box_mllm_reflection_v0
+  num_episodes: 1
+  seed: 11
+
+simulator:
+  type: colosseum
+  env_id: close_box
+  control_dt: 0.1
+  workspace_bounds:
+    low: [-0.6, -0.6, 0.75]
+    high: [0.6, 0.6, 1.35]
+  params:
+    task_name: close_box
+    spreadsheet_idx: 2
+    perturbation: manip_obj_color
+    action_mode: move_arm_then_gripper_end_effector_pose_via_planning_discrete
+    headless: false
+    static_positions: false
+
+task:
+  type: rlbench_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: Close the visible box lid.
+    success_key: success
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: front
+      type: rlbench_rgb
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz]
+  gripper: none
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  control_frame_description: >-
+    the Colosseum/RLBench world Cartesian x, y, and z axes, with translation
+    as the only active motion and the gripper held open. A mapped magnitude-1
+    command is a 0.02-meter world-frame delta. The benchmark adds that delta
+    without sign compensation to the position from the latest observed
+    absolute gripper pose, clamps the target to the configured workspace
+    bounds, and sends a native absolute world-frame planning pose. The front
+    camera pose comes from the official task scene; without runtime
+    extrinsics, this control contract does not assign world axes to image
+    directions
+  params:
+    scale_mode: rlbench_absolute_pose_target_from_delta_eef
+
+controller:
+  type: rlbench_delta_eef
+  frame: controller
+  scales:
+    dx: 0.02
+    dy: 0.02
+    dz: 0.02
+  params:
+    dimensions: [dx, dy, dz]
+    default_gripper: 1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [front]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/colosseum_close_box_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: front
+  window_width: 720
+  window_height: 540
+  info_panel_height: 190
+  fps: 20
+  max_steps: 100
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true

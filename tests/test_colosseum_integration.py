@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import os
 from pathlib import Path
 import sys
@@ -9,7 +10,9 @@ from types import ModuleType
 
 import numpy as np
 import pytest
+from PIL import Image
 
+from mllm_teleop_benchmark import BenchmarkRunner
 from mllm_teleop_benchmark.agents.base import AgentContext
 from mllm_teleop_benchmark.agents.model_client import (
     ModelClient,
@@ -48,6 +51,20 @@ from mllm_teleop_benchmark.sim.rlbench.observation import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = "configs/colosseum_close_box_manip_obj_color_smoke.yaml"
+MLLM_CONFIGS = (
+    (
+        "configs/colosseum_close_box_mllm_reflection.yaml",
+        "fixed",
+        "identity",
+        True,
+    ),
+    (
+        "configs/colosseum_close_box_mllm_reflection_perturbed.yaml",
+        "permuted_sign_flipped",
+        "random_rotation_3d",
+        False,
+    ),
+)
 COLOSSEUM_COMMIT = "098a910ae1d490524adb49b8d50735b00a1a62de"
 RLBENCH_COMMIT = "7c3f425f4a0b6b5ce001ba7246354eb3c70555be"
 PYREP_COMMIT = "076ca15c57f2495a4194da03565891ab1aaa317e"
@@ -69,6 +86,38 @@ class RecordingClient(ModelClient):
             model="fake-colosseum-model",
             usage=ModelUsage(input_tokens=32, output_tokens=8),
             raw={"id": "colosseum-privacy"},
+            latency_ms=1.0,
+            attempts=1,
+            request_bytes=len(request.encoded_body()),
+        )
+
+
+class ColosseumFakeClient(ModelClient):
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+        text = json.dumps(
+            {
+                "channels": {
+                    "joystick_0": 0,
+                    "joystick_1": 0,
+                    "joystick_2": 0,
+                },
+                "Reflection": (
+                    "The translation channels remain unidentified because the "
+                    "last command requested no motion."
+                ),
+            },
+            separators=(",", ":"),
+        )
+        return ModelResponse(
+            text=text,
+            request_id=f"fake-colosseum-{len(self.requests)}",
+            model="fake-colosseum-model",
+            usage=ModelUsage(input_tokens=96, output_tokens=32),
+            raw={"id": f"fake-colosseum-{len(self.requests)}"},
             latency_ms=1.0,
             attempts=1,
             request_bytes=len(request.encoded_body()),
@@ -204,6 +253,45 @@ def test_colosseum_config_builds_shared_rlbench_contract_without_runtime():
     assert isinstance(provider, RLBenchObservationProvider)
 
 
+@pytest.mark.parametrize(
+    ("config_path", "mapping_strategy", "frame_transform", "visible"),
+    MLLM_CONFIGS,
+)
+def test_colosseum_mllm_configs_are_explicit_and_switchable(
+    config_path,
+    mapping_strategy,
+    frame_transform,
+    visible,
+):
+    config = load_config(config_path)
+    action_space = build_action_space(config)
+
+    assert config.simulator.type == "colosseum"
+    assert config.simulator.env_id == "close_box"
+    assert config.simulator.params["spreadsheet_idx"] == 2
+    assert config.simulator.params["perturbation"] == "manip_obj_color"
+    assert config.task.params["instruction"] == "Close the visible box lid."
+    assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
+    assert config.control_interface.gripper == "none"
+    assert config.control_interface.mapping_strategy == mapping_strategy
+    assert config.control_interface.frame_transform == frame_transform
+    assert config.control_interface.mapping_visible_to_agent is visible
+    assert config.control_interface.frame_visible_to_agent is visible
+    assert config.controller.scales == {"dx": 0.02, "dy": 0.02, "dz": 0.02}
+    assert config.agent.action_output_mode == "action_with_reflection"
+    assert config.agent.model is not None
+    assert config.agent.model.api == "chat_completions"
+    assert config.agent.model.reasoning_effort == "low"
+    assert config.agent.history.action_window == "all"
+    assert config.agent.history.image_window == 3
+    assert config.agent.observation.cameras == ("front",)
+    assert tuple(action_space.channels) == (
+        "joystick_0",
+        "joystick_1",
+        "joystick_2",
+    )
+
+
 def test_colosseum_evaluator_metadata_records_official_condition_and_seed():
     config = load_config(CONFIG_PATH)
     adapter = ColosseumSimAdapter(config.simulator)
@@ -324,3 +412,144 @@ def test_colosseum_runtime_reset_step_render_smoke_when_installed():
             pytest.skip(f"Colosseum/CoppeliaSim runtime unavailable: {exc}")
     finally:
         sim.close()
+
+
+@pytest.mark.parametrize(
+    ("config_path", "mapping_strategy", "frame_transform", "visible"),
+    MLLM_CONFIGS,
+)
+def test_colosseum_fake_client_closes_public_rgb_loop(
+    monkeypatch,
+    tmp_path,
+    config_path,
+    mapping_strategy,
+    frame_transform,
+    visible,
+):
+    for module_name in ("colosseum", "rlbench", "pyrep"):
+        _require_runtime_module(module_name)
+
+    client = ColosseumFakeClient()
+    monkeypatch.setenv("MLLM_TELEOP_MODEL", "fake-colosseum-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://fake-colosseum.invalid/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "PRIVATE_COLOSSEUM_API_KEY")
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.core.registry.OpenAICompatibleClient",
+        lambda **_kwargs: client,
+    )
+
+    original_get_state = ColosseumSimAdapter.get_state
+
+    def poisoned_get_state(self):
+        state = original_get_state(self)
+        state["private_target_pose"] = "PRIVATE_COLOSSEUM_TARGET"
+        state["private_native_action"] = "PRIVATE_COLOSSEUM_ACTION"
+        return state
+
+    monkeypatch.setattr(ColosseumSimAdapter, "get_state", poisoned_get_state)
+    config = load_config(
+        config_path,
+        (
+            "task.max_steps=4",
+            f"logging.output_dir={tmp_path}",
+            "logging.save_video=false",
+        ),
+    )
+
+    episode = BenchmarkRunner(config).run((0,)).episodes[0]
+
+    assert episode.steps == 4
+    assert episode.termination_reason == "max_steps"
+    assert len(client.requests) == 4
+    assert [_image_count(request) for request in client.requests] == [1, 2, 3, 4]
+    assert [
+        sum(message["role"] == "assistant" for message in request.messages)
+        for request in client.requests
+    ] == [0, 1, 2, 3]
+
+    request_text = _request_text(client.requests[-1])
+    assert "Prompt version: mllm_joystick_reflection_v2" in request_text
+    assert "Task: Close the visible box lid." in request_text
+    assert "active controllable dimensions are: dx, dy, dz" in request_text
+    assert "Colosseum/RLBench world Cartesian x, y, and z axes" in request_text
+    assert "gripper held open" in request_text
+    if visible:
+        assert "joystick_0 -> dx" in request_text
+        assert "No additional control-frame rotation is applied" in request_text
+    else:
+        assert "exact joystick-to-dimension mapping is not disclosed" in request_text
+        assert "exact physical-frame transform is not disclosed" in request_text
+
+    encoded_requests = "\n".join(
+        request.encoded_body().decode("utf-8") for request in client.requests
+    )
+    for forbidden in (
+        "PRIVATE_COLOSSEUM_TARGET",
+        "PRIVATE_COLOSSEUM_ACTION",
+        "PRIVATE_COLOSSEUM_API_KEY",
+        "manip_obj_color",
+        "spreadsheet_idx",
+        "variation_index",
+        "rotation_matrix",
+        "quaternion_xyzw",
+        "permuted_sign_flipped",
+        "random_rotation_3d",
+    ):
+        assert forbidden not in encoded_requests
+
+    episode_dir = Path(episode.log_dir)
+    trajectory = [
+        json.loads(line)
+        for line in (episode_dir / "trajectory.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(trajectory) == 4
+    assert all(step["validation"]["is_valid"] for step in trajectory)
+    assert all(step["reflection"] for step in trajectory)
+
+    pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))
+    assert len(pngs) == 4
+    for path in pngs:
+        with Image.open(path) as image:
+            pixels = np.asarray(image.convert("RGB"))
+        assert pixels.shape == (240, 320, 3)
+        assert float(pixels.mean()) > 2.0
+        assert float(pixels.std()) > 2.0
+
+    manifest = json.loads(
+        (episode_dir.parent / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["model"]["api"] == "chat_completions"
+    assert manifest["model"]["reasoning_effort"] == "low"
+    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
+    assert manifest["history"]["image_window"] == 3
+    assert manifest["control_interface"]["mapping_strategy"] == mapping_strategy
+    assert manifest["control_interface"]["frame_transform"] == frame_transform
+    assert manifest["control_interface"]["mapping_visible_to_agent"] is visible
+    assert manifest["control_interface"]["frame_visible_to_agent"] is visible
+
+
+def _image_count(request: ModelRequest) -> int:
+    return sum(
+        1
+        for message in request.messages
+        if isinstance(message.get("content"), list)
+        for item in message["content"]
+        if isinstance(item, dict) and item.get("type") == "image_url"
+    )
+
+
+def _request_text(request: ModelRequest) -> str:
+    values: list[str] = []
+    for message in request.messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            values.append(content)
+        elif isinstance(content, list):
+            values.extend(
+                str(item["text"])
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            )
+    return "\n".join(values)

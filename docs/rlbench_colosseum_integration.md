@@ -19,6 +19,8 @@ Implemented in this repository:
 - MLLM configs:
   - `configs/rlbench_reach_target_mllm_reflection.yaml`
   - `configs/rlbench_reach_target_mllm_reflection_perturbed.yaml`
+  - `configs/colosseum_close_box_mllm_reflection.yaml`
+  - `configs/colosseum_close_box_mllm_reflection_perturbed.yaml`
 - Miniconda fallback backends: `rlbench`, `colosseum`
 
 The Colosseum route uses official `EnvironmentExt`, task `close_box`, and
@@ -39,10 +41,12 @@ The RLBench smoke result was:
 - `configs/rlbench_reach_target_delta_eef_smoke.yaml`: one benchmark episode, `average_steps=1.0`, `success_rate=0.0`
 - `scripts/play_benchmark.py --config configs/rlbench_reach_target_delta_eef_smoke.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts RLBench, extracts the `front` camera frame, and exits cleanly.
 
-The Colosseum core integration tests are verified without external simulator
-dependencies. A real Colosseum/CoppeliaSim launch was not run while adding this
-route, so runtime readiness is not claimed until `smoke colosseum` passes in the
-new environment.
+The independent Colosseum environment was runtime verified on 2026-07-30 with
+display-backed CoppeliaSim. The forced smoke launched official
+`EnvironmentExt`, reset `close_box` with `manip_obj_color`, checked a non-black
+`320x240` front RGB frame, executed one end-effector action, and shut down
+cleanly. `MLLM_TELEOP_REQUIRE_COLOSSEUM=1` was set, so runtime failures could
+not be converted to skips.
 
 ## External Prerequisites
 
@@ -210,6 +214,16 @@ not serialize observation state or observation metadata; they receive only the
 public task instruction, public control-interface description, action schema,
 selected RGB images, and permitted action history.
 
+The two Colosseum MLLM configs keep the official task and visual perturbation
+identical while changing only the benchmark control condition. The baseline
+publishes a fixed joystick mapping and identity frame. The perturbed config
+uses an episode-fixed hidden permutation/sign mapping and hidden SO(3) control
+rotation. Both expose only `front` RGB, the task text `Close the visible box
+lid.`, three historical image turns, and the model's own textual action
+history. The official perturbation name/index, RLBench variation, seed,
+simulator state, reward, native action, and sampled hidden control transform
+remain evaluator-only.
+
 The shared invalid-action handler first imports
 `rlbench.backend.exceptions.InvalidActionError`, as required by the official
 Colosseum RLBench pin, and falls back to the legacy
@@ -272,7 +286,7 @@ than inference from the camera name or a rendered frame.
 ## Colosseum Runtime Status
 
 The source pins, independent environment, adapter, official perturbation config,
-registry route, evaluator metadata checks, and optional
-`reset -> render -> step -> close` test are present. The remaining verification
-step is to create `mllm-teleop-colosseum` on a host with CoppeliaSim 4.1 and run
-`python3 scripts/manage_conda_env.py smoke colosseum`.
+registry route, evaluator metadata checks, and forced
+`reset -> non-black render -> step -> close` test are verified on this host.
+The two MLLM conditions still require their real API batches and final artifact
+audits before model-evaluation readiness is claimed.
