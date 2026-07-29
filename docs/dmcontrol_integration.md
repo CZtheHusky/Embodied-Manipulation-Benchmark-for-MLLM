@@ -4,10 +4,11 @@ This backend integrates the [DeepMind Control Suite (DMControl)](https://github.
 
 ## Verification Status
 
-Verified on 2026-06-23 with the `dmcontrol` uv environment:
+Verified on 2026-07-29 with the `dmcontrol` uv environment:
 
 - `pytest` runs a short real `manipulator/bring_ball` episode and validates action shape/bounds handling.
 - A `sim_adapter_worker` smoke produced an RGB frame and stepped once with clipped out-of-bounds action input.
+- The MLLM integration tests run both control configurations for four real environment steps with an in-process fake Chat Completions client. They verify two non-black RGB camera streams, five-dimensional simulator actions, three-frame image history, complete action history, prompt privacy, and run-manifest control labels without making a network request.
 - `scripts/run_benchmark.py --config configs/dmcontrol_example.yaml` completed one 250-step random-policy episode. The random policy did not solve the task, so the observed `success_rate` was `0.0`.
 
 ## Architecture
@@ -60,6 +61,21 @@ controller:
     dimensions: [dx, dy, dz, droll, gripper]
 ```
 
+### MLLM configurations
+
+The `manipulator/bring_ball` MLLM setup has two standalone configurations:
+
+| Configuration | Mapping | Control frame | Model-visible rule |
+| --- | --- | --- | --- |
+| `configs/dmcontrol_manipulator_bring_ball_mllm.yaml` | `fixed` | `identity` | Fixed joystick mapping is public. |
+| `configs/dmcontrol_manipulator_bring_ball_mllm_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_3d` | Complexity is disclosed, but the sampled permutation, signs, and rotation are hidden. |
+
+Both configurations use Chat Completions with `action_with_reflection`, `image_window=3`, `action_window=all`, and the `fixed` and `hand` RGB cameras. The benchmark controller emits the environment's five-element native action vector in the configured order `dx`, `dy`, `dz`, `droll`, and final direct gripper channel. Because the configured translational control subspace is three-dimensional, the perturbed configuration uses `random_rotation_3d`.
+
+The model request contains only the task instruction, public control-interface text, action schema, camera names, RGB images, step ids, and permitted action/reflection history. DMControl observation state, reward, target/object positions, distance, simulator actions, seeds, and sampled mapping/frame values remain available for evaluation or logging but are never added to the model request. The perturbed config sets both `mapping_visible_to_agent` and `frame_visible_to_agent` to `false`; changing those flags alone does not make shared public metadata reveal hidden randomized values.
+
+At commit `981ff05`, the shared `ControlInstructionBuilder` explicitly states the joystick values, active dimensions, fixed mapping, and the nondisclosure rule for complex mapping/frame transforms. It represents the baseline identity frame as the absence of frame complexity rather than literally saying `identity` in the model-facing text. If an explicit identity-frame sentence is required, that belongs in the shared prompt builder and its shared tests; the DMControl integration intentionally does not override or duplicate the common prompt.
+
 ## Environment Management
 
 Use the dedicated uv environment for DMControl:
@@ -74,6 +90,21 @@ python3 scripts/manage_uv_env.py create dmcontrol
 
 ```bash
 python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.py --config configs/dmcontrol_example.yaml
+```
+
+### MLLM benchmark
+
+Select the baseline or perturbed YAML directly:
+
+```bash
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.py --config configs/dmcontrol_manipulator_bring_ball_mllm.yaml
+python3 scripts/manage_uv_env.py run dmcontrol -- python scripts/run_benchmark.py --config configs/dmcontrol_manipulator_bring_ball_mllm_perturbed.yaml
+```
+
+These commands require the model endpoint variables named in the YAML. The local fake-client verification does not read model API env files or make an API request:
+
+```bash
+PYTHONPATH=src .venvs/dmcontrol/bin/python -m pytest tests/test_dmcontrol_integration.py -q
 ```
 
 ### Manual Play
