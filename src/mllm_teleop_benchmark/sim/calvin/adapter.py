@@ -237,13 +237,31 @@ class CalvinSimAdapter(SimAdapter):
         try:
             reset_result = self.env.reset(seed=seed)
         except TypeError:
-            if hasattr(self.env, "seed"):
-                self.env.seed(seed)
+            self._seed_legacy_env(seed)
             reset_result = self.env.reset()
         if isinstance(reset_result, tuple) and len(reset_result) == 2:
             return reset_result[0], self._jsonable_mapping(reset_result[1])
         info = self.env.get_info() if hasattr(self.env, "get_info") else {}
         return reset_result, self._jsonable_mapping(info)
+
+    def _seed_legacy_env(self, seed: int) -> None:
+        unwrapped = getattr(self.env, "unwrapped", self.env)
+        seed_target = self.env if callable(getattr(self.env, "seed", None)) else unwrapped
+        seed_method = getattr(seed_target, "seed", None)
+        if not callable(seed_method):
+            raise RuntimeError("CALVIN environment does not expose a seed() fallback")
+
+        seed_method(seed)
+        np_random = getattr(seed_target, "np_random", None)
+        if np_random is None:
+            np_random = getattr(unwrapped, "np_random", None)
+        scene = getattr(unwrapped, "scene", None)
+        if np_random is None or scene is None:
+            return
+
+        scene.np_random = np_random
+        for movable_object in getattr(scene, "movable_objects", ()):
+            movable_object.np_random = np_random
 
     def _normalize_step_result(self, step_result: Any) -> tuple[Any, float | None, bool, bool, dict[str, Any]]:
         if not isinstance(step_result, tuple):

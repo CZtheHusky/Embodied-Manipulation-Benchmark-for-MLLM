@@ -21,9 +21,10 @@ from mllm_teleop_benchmark.core.registry import (
     build_mapping,
     build_observation_provider,
     build_sim,
+    build_task,
     control_interface_metadata,
 )
-from mllm_teleop_benchmark.core.types import CalvinAction
+from mllm_teleop_benchmark.core.types import CalvinAction, Observation
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.sim.calvin.adapter import CalvinSimAdapter
@@ -98,11 +99,110 @@ class CalvinFakeClient:
         )
 
 
+class _StaticResetSim:
+    def __init__(self, state):
+        self.state = state
+
+    def reset(self, _task_config, _seed):
+        return Observation(step_id=0, images={}, state=self.state, metadata={})
+
+
+class _RecordingTasks:
+    def __init__(self, tasks):
+        self.tasks = tasks
+        self.filters = []
+
+    def get_task_info_for_set(self, start_info, end_info, task_filter):
+        self.filters.append(set(task_filter))
+        return self.tasks.get_task_info_for_set(start_info, end_info, task_filter)
+
+
+class _LegacyMovableObject:
+    def __init__(self, np_random):
+        self.np_random = np_random
+
+
+class _LegacyScene:
+    def __init__(self):
+        self.np_random = np.random.default_rng(999)
+        self.movable_objects = [
+            _LegacyMovableObject(self.np_random),
+            _LegacyMovableObject(self.np_random),
+        ]
+
+
+class _LegacySeedEnv:
+    def __init__(self):
+        self.np_random = np.random.default_rng(0)
+        self.scene = _LegacyScene()
+        self.layout = []
+
+    @property
+    def unwrapped(self):
+        return self
+
+    def seed(self, seed):
+        self.np_random = np.random.default_rng(seed)
+
+    def reset(self):
+        self.layout = [
+            movable_object.np_random.uniform(size=3).tolist()
+            for movable_object in self.scene.movable_objects
+        ]
+        return {"scene_obs": self.layout}
+
+    def get_info(self):
+        return {"layout": self.layout}
+
+
+def _contact(other_uid, other_link=-1):
+    values = [0] * 5
+    values[2] = other_uid
+    values[4] = other_link
+    return tuple(values)
+
+
+def _oracle_info(*, red_position, red_contacts, robot_contacts):
+    return {
+        "robot_info": {
+            "uid": 99,
+            "contacts": list(robot_contacts),
+        },
+        "scene_info": {
+            "fixed_objects": {
+                "table": {
+                    "uid": 1,
+                    "links": {
+                        "base_link": 0,
+                        "plank_link": 1,
+                        "drawer_link": 2,
+                    },
+                }
+            },
+            "movable_objects": {
+                "block_red": {
+                    "uid": 10,
+                    "current_pos": list(red_position),
+                    "current_orn": [0.0, 0.0, 0.0, 1.0],
+                    "current_lin_vel": [0.0, 0.0, 0.0],
+                    "current_ang_vel": [0.0, 0.0, 0.0],
+                    "contacts": list(red_contacts),
+                }
+            },
+        },
+    }
+
+
 def test_calvin_config_load():
     """Verify that the CALVIN config can be loaded even if calvin-env is missing."""
     config = load_config("configs/calvin_delta_eef.yaml")
     assert config.simulator.type == "calvin"
     assert config.task.type == "calvin_generic"
+    assert config.task.params["target_block_color"] == "red"
+    assert config.task.params["instruction"] == (
+        "Open the drawer, pick up the red block, and place the red block "
+        "inside the drawer."
+    )
     assert config.controller.type == "calvin_delta_eef"
 
 
@@ -119,8 +219,10 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     config = load_config(config_path)
     schema = build_action_space(config).schema()
 
+    assert config.task.params["target_block_color"] == "red"
     assert config.task.params["instruction"] == (
-        "Pick up the object and place it in the drawer."
+        "Open the drawer, pick up the red block, and place the red block "
+        "inside the drawer."
     )
     assert config.control_interface.active_dimensions == (
         "dx",
@@ -181,6 +283,72 @@ def test_calvin_mllm_task_instruction_is_identical_across_control_conditions():
     )
 
     assert baseline.task.params["instruction"] == perturbed.task.params["instruction"]
+
+
+def test_calvin_task_uses_official_strict_two_stage_oracle():
+    pytest.importorskip("calvin_env")
+    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    task = build_task(config)
+    reset_info = _oracle_info(
+        red_position=(0.1, -0.1, 0.46),
+        red_contacts=(_contact(1, 0),),
+        robot_contacts=(),
+    )
+    held_info = _oracle_info(
+        red_position=(0.1, -0.1, 0.53),
+        red_contacts=(_contact(99),),
+        robot_contacts=(_contact(10),),
+    )
+    placed_info = _oracle_info(
+        red_position=(0.1, 0.0, 0.4),
+        red_contacts=(_contact(1, 2),),
+        robot_contacts=(),
+    )
+
+    observation = task.reset(_StaticResetSim(reset_info), seed=42)
+    recording_tasks = _RecordingTasks(task._task_oracle)
+    task._task_oracle = recording_tasks
+
+    assert task.instruction() == (
+        "Open the drawer, pick up the red block, and place the red block "
+        "inside the drawer."
+    )
+    assert not task.is_success(observation, placed_info)
+    assert not task.is_success(observation, held_info)
+
+    held_info["robot_info"]["contacts"].clear()
+    held_info["scene_info"]["movable_objects"]["block_red"]["contacts"].clear()
+    assert task.is_success(observation, placed_info)
+    assert task.is_success(observation, {})
+    assert recording_tasks.filters == [
+        {"lift_red_block_table", "lift_red_block_slider"},
+        {"lift_red_block_table", "lift_red_block_slider"},
+        {"place_in_drawer"},
+    ]
+    assert all("push_into_drawer" not in task_filter for task_filter in recording_tasks.filters)
+
+
+def test_calvin_legacy_seed_fallback_syncs_scene_and_object_rngs():
+    config = load_config("configs/calvin_delta_eef.yaml")
+    sim = CalvinSimAdapter(config.simulator)
+    env = _LegacySeedEnv()
+    sim.env = env
+
+    sim._reset_native(42)
+    first = np.asarray(env.layout)
+    assert env.scene.np_random is env.np_random
+    assert all(
+        movable_object.np_random is env.np_random
+        for movable_object in env.scene.movable_objects
+    )
+
+    sim._reset_native(42)
+    repeated = np.asarray(env.layout)
+    sim._reset_native(43)
+    different = np.asarray(env.layout)
+
+    assert np.array_equal(first, repeated)
+    assert not np.array_equal(first, different)
 
 
 def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
@@ -376,6 +544,37 @@ def test_calvin_sim_adapter_reset_step_smoke():
     finally:
         sim.close()
 
+
+def test_calvin_real_seeded_resets_are_reproducible_and_distinct():
+    pytest.importorskip("calvin_env")
+    config = load_config("configs/calvin_delta_eef.yaml")
+    sim = build_sim(config)
+
+    def movable_positions(seed):
+        state = sim.reset(config.task, seed=seed).state
+        return {
+            name: np.asarray(value["current_pos"], dtype=float)
+            for name, value in state["scene_info"]["movable_objects"].items()
+        }
+
+    try:
+        first = movable_positions(42)
+        repeated = movable_positions(42)
+        different = movable_positions(43)
+    finally:
+        sim.close()
+
+    assert first.keys() == repeated.keys() == different.keys()
+    assert all(
+        np.allclose(first[name], repeated[name], rtol=0.0, atol=1e-3)
+        for name in first
+    )
+    assert any(
+        not np.allclose(first[name], different[name], rtol=0.0, atol=1e-2)
+        for name in first
+    )
+
+
 def test_calvin_randomized_camera_manager():
     """Verify that RandomizedCalvinCameraManager samples positions."""
     from mllm_teleop_benchmark.config.schema import CameraConfig, CameraSpec
@@ -532,7 +731,11 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
 
     request_text = _request_text(client.requests[-1])
     assert "Prompt version: mllm_joystick_reflection_v2" in request_text
-    assert "Pick up the object and place it in the drawer." in request_text
+    assert (
+        "Open the drawer, pick up the red block, and place the red block "
+        "inside the drawer."
+        in request_text
+    )
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
     assert "CALVIN Cartesian-relative controller's PyBullet world" in request_text

@@ -22,7 +22,8 @@ task:
   max_steps: 100
   success_threshold: 1.0
   params:
-    instruction: Pick up the object and place it in the drawer.
+    target_block_color: red
+    instruction: Open the drawer, pick up the red block, and place the red block inside the drawer.
 
 camera:
   manager: fixed

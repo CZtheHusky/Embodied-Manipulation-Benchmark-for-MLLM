@@ -24,6 +24,8 @@ Verified again on 2026-07-29 with the pinned `.venvs/calvin` environment:
 - Every parsed action was valid and translated to a finite seven-value native action with six bounded relative pose commands and a native gripper command in `{-1, 1}`.
 - The run manifest records Chat Completions, `action_with_reflection`, reasoning `low`, image history `3`, all action history, and prompt version `mllm_joystick_reflection_v2`.
 - Sentinel state, reward, success, distance, object/EEF pose, simulator action, seed, and sampled hidden-control values did not enter the model request.
+- Task success uses the pinned CALVIN `Tasks.get_task_info_for_set()` API. It first requires the configured target block to satisfy its table/slider lift task, saves a deep copy of that held state, and then requires `place_in_drawer`. Success remains sticky and never uses `push_into_drawer`.
+- Legacy `PlayTableSimEnv.seed(seed)` resets now propagate its new RNG to the scene and every movable object. Real resets reproduce the same layout for the same seed and sample different layouts for different seeds.
 
 The validation command was:
 
@@ -31,7 +33,7 @@ The validation command was:
 PYTHONPATH=src .venvs/calvin/bin/python -m pytest tests/test_calvin_integration.py -q
 ```
 
-It completed with `13 passed`, no skips, and four upstream Hydra compatibility warnings. No real model API or network access was used.
+It completed with `16 passed`, no skips, and five upstream Hydra/CALVIN compatibility warnings. No real model API or network access was used.
 
 ## Design
 
@@ -74,13 +76,13 @@ workspace for visual control.
 
 The public prompt explains translation and rotation axes, positive/negative motion, the Cartesian-relative controller frame, and the virtual gripper endpoints. For the perturbed condition, it states that hidden mapping and frame rules remain fixed for the whole episode and must be inferred from visual/action history. It does not reveal the sampled permutation, signs, rotation matrix, quaternion, simulator state, reward, success oracle, object or EEF poses, simulator action, or seed.
 
-The task instruction is identical in both conditions:
+The task instruction is identical in human play and both MLLM conditions:
 
 ```text
-Pick up the object and place it in the drawer.
+Open the drawer, pick up the red block, and place the red block inside the drawer.
 ```
 
-It contains task intent only; control semantics come from the shared public-control prompt.
+It contains task intent only; control semantics come from the shared public-control prompt. Oracle inputs, including object coordinates, contacts, simulator state, and the seed, remain private.
 
 ## Human Play
 
@@ -119,9 +121,9 @@ The verified `PlayTableSimEnv` uses the old `gym` API:
 
 `CalvinSimAdapter` normalizes these into the benchmark reset/step/render interfaces. It also supports newer Gymnasium-style `(obs, info)` reset and 5-value step results for compatibility with wrappers.
 
-Task success is not directly produced by the basic play-table smoke run. `CalvinTask` checks `success`, `is_success`, and `task_success` by default; real language-task evaluators may need a stricter task oracle if CALVIN's task annotations are connected later.
+The plain play-table environment does not emit a language-task success key, so `CalvinTask` evaluates the pinned official task definitions directly. For the configured red target, phase one filters only `lift_red_block_table` and `lift_red_block_slider` against the reset info. Phase two filters only `place_in_drawer` against the deep-copied held info. Moving or pushing a block into the drawer without first satisfying the target lift cannot complete the task.
 
-This remains the main evaluation-validity limitation for the new MLLM configurations. The RGB-to-model-to-action-to-simulator loop is ready, but the plain `PlayTableSimEnv` does not expose a language-task success key in the verified run. Meaningful CALVIN success rates require connecting the benchmark's task annotation/oracle layer; without it, episodes can run and be reviewed but normally terminate at `max_steps`.
+Pinned CALVIN uses the old Gym fallback: `env.seed(seed)` replaces `env.np_random`, while the already-created scene and movable objects retain their previous RNG references. `CalvinSimAdapter` synchronizes those references before `reset()`. PyBullet can introduce sub-millimeter post-reset settling differences, so the real-environment regression checks same-seed layout reproducibility at a 1 mm tolerance while requiring different seeds to differ by more than 1 cm for at least one block.
 
 ## Camera Randomization
 
