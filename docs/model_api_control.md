@@ -202,6 +202,20 @@ When the endpoint reports cached tokens, traces record 'cached_input_tokens',
 'unavailable'. 'common_prefix_bytes' is only a client-structure diagnostic; it
 is not evidence of a server cache hit.
 
+Audit a completed run before counting it as a benchmark result:
+
+~~~bash
+python3 scripts/manage_uv_env.py run core -- \
+  python scripts/audit_mllm_run.py <run-directory>
+~~~
+
+The audit checks requested versus summarized episodes, step validation and
+agent trace status, retries, request/response presence, model-input PNG hashes
+and black frames, prompt privacy, credential/base64 leaks, and the required
+H.264 1280x720 2 FPS no-audio review videos. It prints one JSON report and exits
+nonzero for `fail`, `incomplete`, or `unavailable`. Retries are reported but do
+not by themselves fail an otherwise valid run.
+
 ## Human review video
 
 Automated MLLM episodes can generate an offline review video:
