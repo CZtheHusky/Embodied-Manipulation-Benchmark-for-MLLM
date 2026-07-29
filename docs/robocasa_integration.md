@@ -25,6 +25,33 @@ RoboCasa's Gym wrapper action space is a `Dict`, not the robosuite 7D OSC array.
 
 The base-motion channels are intentionally fixed at zero for the first pass. Add mobile-base joystick dimensions only after validating the upstream controller semantics for the selected robot.
 
+## MLLM Evaluation
+
+The PickPlaceCounterToCabinet task has two switchable Chat Completions configs:
+
+- `configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection.yaml`: `fixed + identity`.
+- `configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection_perturbed.yaml`: hidden `permuted_sign_flipped + random_rotation_3d`.
+
+Both use `action_with_reflection`, reasoning effort `low`, three historical image steps, all action history, and prompt contract `mllm_joystick_reflection_v2`. The task instruction is identical in both conditions: `Pick the object from the counter and place it in the cabinet.`
+
+The public joystick has six discrete motion channels followed by one binary gripper channel:
+
+- `dx`, `dy`, and `dz` are delta translations along the PandaOmron robot-base axes.
+- `droll`, `dpitch`, and `dyaw` are axis-angle delta rotations about those same axes.
+- Motion commands use the official normalized `[-1, 1]` OSC input. Upstream robosuite maps the endpoints to approximately `0.05 m` translation and `0.5 rad` rotation, so the benchmark controller scales are `1.0`; using `0.05` or `0.1` here would apply a second unintended scale.
+- The virtual gripper is binary: `0` means open and `1` means close. The pinned RoboCasa wrapper internally maps values below `0.5` to native `-1` and values at or above `0.5` to native `1`; there is no distinct `0.5` hold command.
+
+After a hidden 3D rotation, a multi-axis discrete command can have an individual component outside the upstream normalized Box even though its Euclidean norm is unchanged. `RoboCasaOSCController` therefore rescales each transformed translation or rotation vector by its infinity norm only when necessary. This preserves direction while enforcing the official native action bound.
+
+The model input projection includes only:
+
+- The static benchmark task instruction.
+- Public control semantics and action schema.
+- RGB from `robot0_agentview_left`, `robot0_agentview_right`, and `robot0_eye_in_hand`.
+- The model's own normalized action and reflection history.
+
+It excludes observation state, reward, success, distances, object or end-effector poses, native simulator actions, seeds, camera randomization, and concrete permutation, sign, or SO(3) samples. In the perturbed condition the prompt says that hidden controls exist and remain fixed for the episode, but does not reveal their values.
+
 ## Environment
 
 Use the isolated uv backend:
@@ -48,11 +75,11 @@ RoboCasa v1.0's built wheel omits `robocasa/scripts`, but `robocasa/utils/env_ut
 
 ## Current Setup Status
 
-As of 2026-06-24:
+As of 2026-07-29:
 
 - `python3 scripts/manage_uv_env.py lock robocasa` completes and writes `envs/uv/locks/robocasa.lock.txt`.
 - `python3 scripts/manage_uv_env.py create robocasa` completes, including the fixed RoboCasa and robosuite editable source installs.
-- `MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa` passes with the fixed assets installed: `3 passed, 2 warnings`.
+- The pinned RoboCasa environment passes the complete backend and MLLM suite: `11 passed, 0 skipped`. Six warning instances come from Gymnasium reporting that reset/step observations do not match the upstream declared observation space; the returned RGB and actions are valid.
 - `python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml` completes one random-agent episode: `average_steps=100.0`, `success_rate=0.0`.
 - `python3 scripts/manage_uv_env.py run robocasa -- python scripts/play_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml --set ui.max_steps=0` starts the shared Pygame worker runtime, resets RoboCasa, extracts the configured camera frame, and exits cleanly.
 
@@ -112,10 +139,12 @@ Run tests that do not require assets:
 python3 -m pytest -q tests/test_robocasa_integration.py -rs
 ```
 
-Run the actual backend smoke only after resolving the robosuite source blocker and installing assets:
+Run the actual backend and four-step Fake Client checks only after installing the pinned source and assets:
 
 ```bash
-python3 scripts/manage_uv_env.py smoke robocasa
+MLLM_TELEOP_REQUIRE_ROBOCASA=1 python3 scripts/manage_uv_env.py smoke robocasa
 python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml
 python3 scripts/manage_uv_env.py run robocasa -- python scripts/play_benchmark.py --config configs/robocasa_pick_place_counter_to_cabinet.yaml --set ui.max_steps=0
 ```
+
+The Fake Client tests run both MLLM configs against the real simulator without reading `.env.model-api.local` or making a network request. They verify request history counts, prompt v2, private-state exclusion, native Dict shapes and bounds, all three RGB streams, non-black PNG artifacts, trajectory reflections, and the run manifest.

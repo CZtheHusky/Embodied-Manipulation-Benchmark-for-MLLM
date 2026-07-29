@@ -53,8 +53,12 @@ class RoboCasaOSCController(Controller):
         dpitch = command.get("dpitch", 0.0) * self.scales.get("dpitch", 0.1)
         dyaw = command.get("dyaw", 0.0) * self.scales.get("dyaw", 0.1)
 
-        delta_pos = self.frame_transform.transform_delta_position((dx, dy, dz))
-        delta_rot = self.frame_transform.transform_delta_rotation((droll, dpitch, dyaw))
+        delta_pos = _fit_normalized_vector(
+            self.frame_transform.transform_delta_position((dx, dy, dz))
+        )
+        delta_rot = _fit_normalized_vector(
+            self.frame_transform.transform_delta_rotation((droll, dpitch, dyaw))
+        )
         gripper_close = clamp(command.get("gripper", 0.0), 0.0, 1.0)
 
         values = {
@@ -91,3 +95,13 @@ class RoboCasaOSCController(Controller):
             "mapping": self.mapping.metadata(),
             "frame_transform": self.frame_transform.metadata(),
         }
+
+
+def _fit_normalized_vector(
+    values: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    vector = np.asarray(values, dtype=np.float64)
+    max_abs = float(np.max(np.abs(vector)))
+    if max_abs > 1.0:
+        vector = vector / max_abs
+    return tuple(float(value) for value in vector)

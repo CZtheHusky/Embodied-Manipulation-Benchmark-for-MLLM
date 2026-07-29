@@ -1,0 +1,126 @@
+benchmark:
+  name: robocasa_pick_place_counter_to_cabinet_mllm_reflection_perturbed_v0
+  num_episodes: 1
+  seed: 42
+
+simulator:
+  type: robocasa
+  env_id: robocasa/PickPlaceCounterToCabinet
+  env_kwargs:
+    split: pretrain
+    camera_widths: 256
+    camera_heights: 256
+    randomize_cameras: false
+
+task:
+  type: robocasa_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: Pick the object from the counter and place it in the cabinet.
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: robot0_agentview_left
+      width: 256
+      height: 256
+    - name: robot0_agentview_right
+      width: 256
+      height: 256
+    - name: robot0_eye_in_hand
+      width: 256
+      height: 256
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: binary
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: permuted_sign_flipped
+  visible_metadata: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_3d
+  frame_visible_to_agent: false
+  control_frame_description: >-
+    the PandaOmron operational-space controller's robot-base x, y, and z axes;
+    translation and axis-angle rotation commands are deltas in this same base frame
+  gripper_open_command: 0
+  gripper_closed_command: 1
+  params:
+    scale_mode: robocasa_normalized_pandaomron_osc_base_delta
+
+controller:
+  type: robocasa_osc
+  scales:
+    dx: 1.0
+    dy: 1.0
+    dz: 1.0
+    droll: 1.0
+    dpitch: 1.0
+    dyaw: 1.0
+    gripper: 1.0
+  params:
+    control_mode: 1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras:
+      - robot0_agentview_left
+      - robot0_agentview_right
+      - robot0_eye_in_hand
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/robocasa_pick_place_counter_to_cabinet_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: robot0_agentview_left
+  window_width: 720
+  window_height: 540
+  info_panel_height: 190
+  fps: 20
+  max_steps: 500
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true
+  mujoco_gl: egl
