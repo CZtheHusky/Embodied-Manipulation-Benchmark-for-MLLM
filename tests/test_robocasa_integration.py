@@ -194,6 +194,28 @@ def test_robocasa_task_fails_when_required_public_instruction_is_missing():
         task.reset(StubSim(), seed=42)
 
 
+def test_robocasa_mllm_task_rejects_successful_reset_before_model_call():
+    config = load_config(MLLM_CONFIGS[0][0])
+    task = RoboCasaGenericTask(config.task)
+
+    class StubSim:
+        def reset(self, _task_config, _seed):
+            return Observation(
+                step_id=0,
+                images={},
+                state={
+                    "annotation.human.task_description": (
+                        "Pick the cucumber from the counter and place it in "
+                        "the cabinet."
+                    ),
+                    "is_success": True,
+                },
+            )
+
+    with pytest.raises(RuntimeError, match="already successful immediately after reset"):
+        task.reset(StubSim(), seed=42)
+
+
 def test_robocasa_config_uses_worker_play_runtime():
     config = load_config(CONFIG_PATH)
 
@@ -224,6 +246,7 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
         config.task.params["instruction_observation_key"]
         == "annotation.human.task_description"
     )
+    assert config.task.params["reject_initial_success"] is True
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"

@@ -27,6 +27,7 @@ task:
     task_order_index: 0
     init_state_strategy: seed_modulo
     language_instruction: pick up the black bowl between the plate and the ramekin and place it on the plate
+    reject_initial_success: true
     no_language_baseline: false
     random_baseline: false
     benchmark_validity:

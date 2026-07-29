@@ -24,7 +24,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_task,
     control_interface_metadata,
 )
-from mllm_teleop_benchmark.core.types import LiberoAction
+from mllm_teleop_benchmark.core.types import LiberoAction, Observation
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
@@ -253,6 +253,26 @@ def test_libero_mllm_initial_state_is_deterministic_and_seed_diverse(config_path
     )
 
 
+def test_libero_mllm_task_rejects_successful_reset_before_model_call():
+    config = load_config(MLLM_CONFIGS[0][0])
+    task = build_task(config)
+
+    class StubSim:
+        def reset(self, _task_config, seed):
+            return Observation(
+                step_id=0,
+                images={},
+                state={"is_success": seed == 8},
+            )
+
+    with pytest.raises(RuntimeError, match="already successful immediately after reset"):
+        task.reset(StubSim(), seed=8)
+
+    observation = task.reset(StubSim(), seed=7)
+
+    assert observation.state["is_success"] is False
+
+
 def test_libero_human_play_config_keeps_explicit_fixed_initial_state():
     config = load_config("configs/libero_spatial_task0.yaml")
     adapter = LiberoSimAdapter(config.simulator)
@@ -352,6 +372,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
 
     assert config.task.params["language_instruction"] == TASK_TEXT
     assert config.task.params["random_baseline"] is False
+    assert config.task.params["reject_initial_success"] is True
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"

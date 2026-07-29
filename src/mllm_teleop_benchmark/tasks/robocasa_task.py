@@ -29,6 +29,14 @@ class RoboCasaGenericTask(Task):
             self._instruction = value.strip()
         else:
             self._instruction = _configured_instruction(self.config)
+        if (
+            self.config.params.get("reject_initial_success", False)
+            and _success_from_state(observation.state)
+        ):
+            raise RuntimeError(
+                "RoboCasa task is already successful immediately after reset "
+                f"for seed {seed}; choose an explicit nontrivial seed"
+            )
         return observation
 
     def instruction(self) -> str:
