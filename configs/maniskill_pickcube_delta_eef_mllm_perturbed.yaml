@@ -1,7 +1,7 @@
 benchmark:
   name: maniskill_pickcube_delta_eef_mllm_permuted_sign_flipped_random_rotation_3d_v0
   num_episodes: 1
-  seed: 7
+  seed: 9
 
 simulator:
   type: maniskill
@@ -24,6 +24,7 @@ task:
     instruction: >-
       Pick up the visible cube and move it to the visible goal marker.
     success_key: success
+    reject_initial_success: true
 
 camera:
   manager: fixed

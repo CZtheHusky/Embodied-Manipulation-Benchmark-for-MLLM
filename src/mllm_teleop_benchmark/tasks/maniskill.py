@@ -7,7 +7,15 @@ from mllm_teleop_benchmark.tasks.base import Task
 
 class ManiSkillTask(Task):
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
-        return sim.reset(self.config, seed)
+        observation = sim.reset(self.config, seed)
+        if self.config.params.get("reject_initial_success", False):
+            success_key = str(self.config.params.get("success_key", "success"))
+            if bool(observation.state.get(success_key, False)):
+                raise RuntimeError(
+                    "ManiSkill task is already successful immediately after reset "
+                    f"for seed {seed}; choose an explicit nontrivial seed"
+                )
+        return observation
 
     def instruction(self) -> str:
         return str(self.config.params.get("instruction", "Complete the ManiSkill manipulation task."))

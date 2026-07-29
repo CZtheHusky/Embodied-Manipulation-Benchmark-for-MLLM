@@ -39,7 +39,7 @@ PYTHONPATH=src .venvs/maniskill-cpu/bin/python -m pytest tests/test_maniskill_ba
 
 The smoke runs both MLLM configurations for five real PickCube steps, checks
 the `1, 2, 3, 4, 4` image-window progression, retains all prior actions,
-decodes a non-black `320x240` RGB request image, and checks the request privacy
+decodes a non-black `512x512` RGB request image, and checks the request privacy
 boundary.
 
 ## Control
@@ -78,6 +78,13 @@ Both use the OpenAI-compatible Chat Completions API,
 send the official `render_camera` RGB stream. ManiSkill sensor observations
 intentionally hide the green PickCube goal site, so the benchmark uses the
 human render camera where both the red cube and green goal marker are public.
+Both MLLM configs use base seed `9`; the ten-episode run therefore covers
+seeds `9` through `18`, which are verified to be non-successful immediately
+after reset. `task.params.reject_initial_success: true` fails before the first
+model request if a future seed is already successful instead of counting a
+zero-step episode as model success. The discarded seed-7 batch is preserved
+under `outputs/maniskill_pickcube_delta_eef_mllm_fixed/invalid/initial-success/`
+because its seed-8 episode started with the cube already placed.
 Select either YAML directly:
 
 ```bash
@@ -123,3 +130,5 @@ Camera randomization is episode-level only. `maniskill_randomized` samples camer
 - ManiSkill is not installed in the core uv environment.
 - Runtime camera mutation is intentionally out of scope.
 - Task success defaults to the `success` key in ManiSkill info and can be changed with `task.params.success_key`.
+- MLLM evaluation rejects initial-success states; it does not silently resample
+  them, so changing the episode range requires an explicit seed-range check.

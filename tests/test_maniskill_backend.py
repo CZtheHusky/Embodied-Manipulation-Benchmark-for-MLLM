@@ -20,6 +20,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_camera_manager,
     build_controller,
     build_mapping,
+    build_task,
     control_interface_metadata,
 )
 from mllm_teleop_benchmark.core.types import (
@@ -102,6 +103,8 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     )
 
     assert config.agent.type == "mllm"
+    assert config.benchmark.seed == 9
+    assert config.task.params["reject_initial_success"] is True
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
@@ -282,6 +285,26 @@ def test_pygame_maniskill_player_builds_without_starting_env():
     assert player.max_steps == 100
 
 
+def test_maniskill_mllm_task_rejects_successful_reset_before_model_call():
+    config = load_config(MLLM_CONFIGS[0])
+    task = build_task(config)
+
+    class StubSim:
+        def reset(self, _task_config, seed):
+            return Observation(
+                step_id=0,
+                images={},
+                state={"success": seed == 8},
+            )
+
+    with pytest.raises(RuntimeError, match="already successful immediately after reset"):
+        task.reset(StubSim(), seed=8)
+
+    observation = task.reset(StubSim(), seed=9)
+
+    assert observation.state["success"] is False
+
+
 def test_maniskill_delta_eef_controller_maps_pose_and_gripper():
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
     controller = ManiSkillDeltaEEFController.from_config(config.controller, build_mapping(config, config.benchmark.seed))
@@ -458,6 +481,19 @@ def test_maniskill_pickcube_cpu_rgb_and_fake_client_smoke(
         "random_rotation_3d",
     ):
         assert forbidden not in request_text
+
+
+def test_maniskill_mllm_seed_range_has_no_initial_success_when_installed():
+    pytest.importorskip("mani_skill")
+    config = load_config(MLLM_CONFIGS[0])
+    sim = ManiSkillSimAdapter(config.simulator)
+    task = build_task(config)
+    try:
+        for seed in range(config.benchmark.seed, config.benchmark.seed + 10):
+            observation = task.reset(sim, seed)
+            assert not task.is_success(observation, sim.get_state())
+    finally:
+        sim.close()
 
 
 def test_sim_adapter_worker_maniskill_reset_step_shutdown_when_installed():
