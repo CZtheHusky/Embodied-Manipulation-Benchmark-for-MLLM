@@ -1,0 +1,116 @@
+benchmark:
+  name: robosuite_lift_mllm_reflection_v0
+  num_episodes: 1
+  seed: 42
+
+simulator:
+  type: robosuite
+
+task:
+  type: robosuite_lift
+  max_steps: 100
+  success_threshold: 0.02
+  params:
+    env_name: Lift
+    robots: ["Panda"]
+    camera_names: ["agentview", "robot0_eye_in_hand"]
+    camera_width: 320
+    camera_height: 240
+    camera_randomization:
+      agentview:
+        pos: [1.0, 0.0, 1.5]
+        fovy: 45
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: agentview
+      width: 320
+      height: 240
+    - name: robot0_eye_in_hand
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  params:
+    scale_mode: robosuite_osc_world_xyz
+
+controller:
+  type: robosuite_osc
+  frame: world_xyz
+  scales:
+    dx: 0.05
+    dy: 0.05
+    dz: 0.05
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+    gripper: 1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [agentview, robot0_eye_in_hand]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/robosuite_lift_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: agentview
+  window_width: 720
+  window_height: 540
+  info_panel_height: 190
+  fps: 20
+  max_steps: 500
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true
+  mujoco_gl: egl

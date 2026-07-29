@@ -106,6 +106,7 @@ class RobosuiteSimAdapter(SimAdapter):
     def get_state(self) -> dict[str, Any]:
         obs = self._env._get_observations()
         return {
+            "step_id": self._step_id,
             "robot_proprio": obs.get("robot0_proprio-state"),
             "eef_pos": obs.get("robot0_eef_pos"),
             "eef_quat": obs.get("robot0_eef_quat"),
