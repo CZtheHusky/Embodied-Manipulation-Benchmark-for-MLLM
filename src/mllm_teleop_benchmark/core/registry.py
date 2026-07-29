@@ -285,6 +285,10 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         from mllm_teleop_benchmark.control.dmcontrol_controller import DMControlController
 
         return DMControlController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "dmcontrol_planar_eef":
+        from mllm_teleop_benchmark.control.dmcontrol_controller import DMControlPlanarEEFController
+
+        return DMControlPlanarEEFController.from_config(config.controller, mapping, frame_transform)
     if config.controller.type == "calvin_delta_eef":
         from mllm_teleop_benchmark.control.calvin_controller import CalvinDeltaEEFController
 

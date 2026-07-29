@@ -95,6 +95,13 @@ class DMControlAction(SimulatorAction):
 
 
 @dataclass(frozen=True)
+class DMControlPlanarEEFAction(SimulatorAction):
+    delta_xy: tuple[float, float]
+    gripper: float
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class StepResult:
     observation: Observation
     terminated: bool
