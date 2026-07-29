@@ -374,9 +374,13 @@ when every sampled reset gives a visible displacement above the configured
 threshold and the primary image direction is stable. Numeric matrices and EEF
 positions are not copied into the report.
 
-The CloseBox scripted-success gate uses only the official Colosseum
-`TaskEnvironment.get_demos(live_demos=True)` waypoint executor and verifies the
-official native `Task.success()` result:
+The CloseBox scripted-success gate does not call the official live-demo
+executor. That executor can use waypoint orientation, extension strings, and
+gripper actions that are absent from the benchmark control surface. Instead,
+the gate treats only
+`Task.get_waypoints() -> Waypoint.get_waypoint_object().get_position()` as
+privileged navigation targets. It does not write those coordinates into the
+report.
 
 ```bash
 python3 scripts/manage_conda_env.py run colosseum -- \
@@ -385,6 +389,19 @@ python3 scripts/manage_conda_env.py run colosseum -- \
   --output outputs/preflight/colosseum_close_box_scripted_success.json
 ```
 
-If official waypoints, live-demo execution, or the native success oracle are
-missing or fail, the command exits nonzero and states that no guessed pose
-script was executed.
+Every actual motion is sent through `sim.step(RLBenchAction)`. Before launch,
+the command requires the baseline config to expose exactly discrete
+`[dx, dy, dz]`, no gripper channel, fixed mapping, identity frame transform,
+equal `0.02`-meter controller scales, and `default_gripper: 1.0`. Each emitted
+translation component is therefore one of `-0.02`, `0`, or `0.02`;
+`delta_rotation_rpy` is always zero and the gripper is always open. The default
+action budget is `task.max_steps` (100 for the current config), and an explicit
+`--max-actions` override cannot exceed it.
+
+After each action, the gate compares adapter success with the official native
+`Task.success()` result and records planning rejection counts and rates. It
+exits nonzero if waypoint position access is unavailable, a position is
+invalid, all waypoint positions are reached without native success, the
+control contract differs, or the action budget is exhausted. It never calls
+`TaskEnvironment.get_demos`, executes waypoint extensions, follows waypoint
+orientation, or substitutes a guessed pose script.

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import inspect
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -27,6 +26,15 @@ DEFAULT_MIN_PIXEL_DISPLACEMENT = 2.0
 
 class PreflightFailure(RuntimeError):
     """A preflight capability or validation failure that must be reported."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        report: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.report = report
 
 
 def project_world_point(
@@ -477,112 +485,393 @@ def summarize_projection_probes(
 
 def run_close_box_scripted_success_canary(
     sim: Any,
-    task_config: Any,
+    benchmark_config: Any,
     *,
     seed: int,
+    max_actions: int | None = None,
 ) -> dict[str, object]:
-    """Execute only the official CloseBox live-demo waypoint mechanism."""
-    config = getattr(sim, "config", None)
-    if getattr(config, "type", None) != "colosseum":
-        raise PreflightFailure(
-            "CloseBox scripted-success canary requires simulator.type=colosseum"
-        )
-    if getattr(sim, "task_name", None) != "close_box":
-        raise PreflightFailure(
-            "CloseBox scripted-success canary supports only official close_box"
-        )
-
-    sim.reset(task_config, int(seed))
-    state = sim.get_state()
-    if not isinstance(state, Mapping) or "success" not in state:
-        raise PreflightFailure(
-            "CloseBox adapter state does not expose native reset success"
-        )
-    initial_success = bool(state["success"])
-    if initial_success:
-        raise PreflightFailure(
-            f"CloseBox seed {seed} is already successful immediately after reset"
-        )
-    task_environment = getattr(sim, "task", None)
-    native_task = getattr(task_environment, "_task", None)
-    get_waypoints = getattr(native_task, "get_waypoints", None)
-    get_demos = getattr(task_environment, "get_demos", None)
-    native_success = getattr(native_task, "success", None)
-    missing = [
-        name
-        for name, capability in (
-            ("Task.get_waypoints", get_waypoints),
-            ("TaskEnvironment.get_demos", get_demos),
-            ("Task.success", native_success),
-        )
-        if not callable(capability)
-    ]
-    if missing:
-        raise PreflightFailure(
-            "Cannot safely execute CloseBox scripted success: the pinned "
-            "runtime lacks official capabilities "
-            + ", ".join(missing)
-            + ". No guessed pose script was executed."
-        )
-
-    waypoints = get_waypoints()
-    if not isinstance(waypoints, Sequence) or len(waypoints) == 0:
-        raise PreflightFailure(
-            "Cannot safely execute CloseBox scripted success: official task "
-            "exposes no waypoints. No guessed pose script was executed."
-        )
-    signature = inspect.signature(get_demos)
-    if "live_demos" not in signature.parameters:
-        raise PreflightFailure(
-            "Cannot safely execute CloseBox scripted success: official "
-            "TaskEnvironment.get_demos lacks live_demos support. No guessed "
-            "pose script was executed."
-        )
-
-    kwargs: dict[str, object] = {"live_demos": True}
-    if "max_attempts" in signature.parameters:
-        kwargs["max_attempts"] = 1
-    numpy_random_state = np.random.get_state()
-    try:
-        np.random.seed(int(seed))
-        demos = get_demos(1, **kwargs)
-    except Exception as exc:
-        raise PreflightFailure(
-            "Official CloseBox live-demo waypoint execution failed; no "
-            f"fallback pose script was attempted: {type(exc).__name__}: {exc}"
-        ) from exc
-    finally:
-        np.random.set_state(numpy_random_state)
-
-    if not isinstance(demos, Sequence) or len(demos) != 1:
-        raise PreflightFailure(
-            "Official CloseBox live-demo did not return exactly one demo"
-        )
-    result = native_success()
-    if not isinstance(result, tuple) or len(result) != 2:
-        raise PreflightFailure(
-            "Official CloseBox Task.success() did not return (success, terminate)"
-        )
-    if not bool(result[0]):
-        raise PreflightFailure(
-            "Official CloseBox live-demo completed without native success"
-        )
-    return {
+    """Navigate privileged waypoint positions through the benchmark action surface."""
+    scale, action_budget = _closebox_control_contract(
+        benchmark_config,
+        max_actions=max_actions,
+    )
+    report: dict[str, object] = {
         "report_version": REPORT_VERSION,
         "kind": "closebox_scripted_success",
-        "status": "pass",
+        "status": "fail",
         "model_api_called": False,
         "artifact_scope": "preflight_report_only",
         "seed": int(seed),
-        "method": "official_task_environment_live_demo_waypoints",
-        "waypoint_count": len(waypoints),
-        "demo_observation_count": len(demos[0]),
-        "initial_native_success": initial_success,
-        "final_native_success": True,
-        "final_native_terminate": bool(result[1]),
+        "method": "official_waypoint_positions_via_rlbench_action",
+        "action_contract": {
+            "active_dimensions": ["dx", "dy", "dz"],
+            "component_scale": scale,
+            "allowed_delta_components": [-scale, 0.0, scale],
+            "delta_rotation_rpy": [0.0, 0.0, 0.0],
+            "gripper": 1.0,
+            "action_budget": action_budget,
+        },
+        "waypoint_count": 0,
+        "waypoints_reached": 0,
+        "actions_attempted": 0,
+        "planning_rejections": 0,
+        "planning_rejection_rate": None,
+        "adapter_native_success_checks": 0,
+        "initial_native_success": None,
+        "final_native_success": False,
+        "official_live_demo_called": False,
+        "waypoint_extensions_executed": False,
+        "waypoint_coordinates_recorded": False,
         "guessed_pose_script_executed": False,
         "failures": [],
     }
+
+    config = getattr(sim, "config", None)
+    if getattr(config, "type", None) != "colosseum":
+        _fail_closebox(
+            report,
+            "CloseBox scripted-success canary requires simulator.type=colosseum",
+        )
+    if getattr(sim, "task_name", None) != "close_box":
+        _fail_closebox(
+            report,
+            "CloseBox scripted-success canary supports only official close_box",
+        )
+
+    try:
+        sim.reset(benchmark_config.task, int(seed))
+    except Exception as exc:
+        _fail_closebox(
+            report,
+            f"CloseBox reset failed: {type(exc).__name__}: {exc}",
+        )
+    initial_success = _closebox_success(sim, report)
+    report["initial_native_success"] = initial_success
+    if initial_success:
+        _fail_closebox(
+            report,
+            f"CloseBox seed {seed} is already successful immediately after reset",
+        )
+
+    task_environment = getattr(sim, "task", None)
+    native_task = getattr(task_environment, "_task", None)
+    get_waypoints = getattr(native_task, "get_waypoints", None)
+    if not callable(get_waypoints):
+        _fail_closebox(
+            report,
+            "Cannot safely execute CloseBox scripted success: the pinned "
+            "runtime lacks official Task.get_waypoints(). No guessed pose "
+            "script was executed.",
+        )
+
+    try:
+        waypoints = get_waypoints()
+    except Exception as exc:
+        _fail_closebox(
+            report,
+            "Cannot read official CloseBox waypoints: "
+            f"{type(exc).__name__}: {exc}",
+        )
+    if not isinstance(waypoints, Sequence) or not waypoints:
+        _fail_closebox(
+            report,
+            "Cannot safely execute CloseBox scripted success: official task "
+            "exposes no waypoints. No guessed pose script was executed.",
+        )
+    report["waypoint_count"] = len(waypoints)
+    waypoint_positions = [
+        _waypoint_position(waypoint, index, report)
+        for index, waypoint in enumerate(waypoints)
+    ]
+    tolerance = scale * 0.5 + 1e-9
+    waypoint_index = 0
+
+    while int(report["actions_attempted"]) < action_budget:
+        if _closebox_success(sim, report):
+            report["status"] = "pass"
+            report["final_native_success"] = True
+            _update_rejection_rate(report)
+            return report
+
+        current_position = _current_eef_position(sim, report)
+        while waypoint_index < len(waypoint_positions):
+            error = waypoint_positions[waypoint_index] - current_position
+            if np.all(np.abs(error) <= tolerance):
+                waypoint_index += 1
+                report["waypoints_reached"] = waypoint_index
+                continue
+            break
+        if waypoint_index >= len(waypoint_positions):
+            _fail_closebox(
+                report,
+                "All official waypoint positions were reached through the "
+                "restricted translation surface, but native CloseBox success "
+                "remains false. Orientation, gripper, and waypoint extensions "
+                "were not executed.",
+            )
+
+        error = waypoint_positions[waypoint_index] - current_position
+        delta = tuple(
+            scale * float(np.sign(value)) if abs(value) > tolerance else 0.0
+            for value in error
+        )
+        action = RLBenchAction(
+            delta_position=delta,
+            delta_rotation_rpy=(0.0, 0.0, 0.0),
+            gripper=1.0,
+        )
+        _assert_restricted_action(action, scale, report)
+        try:
+            step_result = sim.step(action)
+        except Exception as exc:
+            _fail_closebox(
+                report,
+                "Restricted CloseBox action failed: "
+                f"{type(exc).__name__}: {exc}",
+            )
+        report["actions_attempted"] = int(report["actions_attempted"]) + 1
+        if not isinstance(step_result.info, Mapping):
+            _fail_closebox(
+                report,
+                "Adapter step result does not expose mapping info",
+            )
+        rejected = step_result.info.get("action_rejected")
+        if rejected is None:
+            rejected = getattr(sim, "last_action_rejected", None)
+        if rejected is None:
+            _fail_closebox(
+                report,
+                "Adapter did not report action_rejected for a restricted action",
+            )
+        report["planning_rejections"] = int(
+            report["planning_rejections"]
+        ) + int(bool(rejected))
+        _update_rejection_rate(report)
+        if _closebox_success(sim, report):
+            report["status"] = "pass"
+            report["final_native_success"] = True
+            return report
+
+    _fail_closebox(
+        report,
+        f"Restricted CloseBox action budget exhausted after {action_budget} "
+        "actions without native success",
+    )
+    raise AssertionError("unreachable")
+
+
+def _closebox_control_contract(
+    config: Any,
+    *,
+    max_actions: int | None,
+) -> tuple[float, int]:
+    control = getattr(config, "control_interface", None)
+    controller = getattr(config, "controller", None)
+    task = getattr(config, "task", None)
+    failures: list[str] = []
+    if tuple(getattr(control, "active_dimensions", ())) != ("dx", "dy", "dz"):
+        failures.append("active_dimensions must be exactly [dx, dy, dz]")
+    if getattr(control, "gripper", None) != "none":
+        failures.append("control_interface.gripper must be none")
+    if getattr(control, "channel_kind", None) != "discrete":
+        failures.append("control_interface.channel_kind must be discrete")
+    channel_values = tuple(
+        float(value) for value in getattr(control, "channel_values", ())
+    )
+    if len(channel_values) != 3 or set(channel_values) != {-1.0, 0.0, 1.0}:
+        failures.append("discrete channel values must be exactly {-1, 0, 1}")
+    if getattr(control, "mapping_strategy", None) != "fixed":
+        failures.append("control_interface.mapping_strategy must be fixed")
+    if getattr(control, "frame_transform", None) != "identity":
+        failures.append("control_interface.frame_transform must be identity")
+    if getattr(controller, "type", None) != "rlbench_delta_eef":
+        failures.append("controller.type must be rlbench_delta_eef")
+
+    scales = getattr(controller, "scales", {})
+    scale_values = [
+        float(scales[axis])
+        for axis in ("dx", "dy", "dz")
+        if axis in scales
+    ]
+    if set(scales) != {"dx", "dy", "dz"} or len(scale_values) != 3:
+        failures.append("controller scales must contain only dx, dy, and dz")
+        scale = 0.0
+    else:
+        scale = scale_values[0]
+        if (
+            not all(np.isfinite(value) and value > 0.0 for value in scale_values)
+            or not all(
+                np.isclose(value, scale, rtol=0.0, atol=1e-12)
+                for value in scale_values
+            )
+        ):
+            failures.append(
+                "controller dx/dy/dz scales must be equal positive values"
+            )
+        elif not np.isclose(scale, 0.02, rtol=0.0, atol=1e-12):
+            failures.append(
+                "controller dx/dy/dz scales must equal the 0.02-meter "
+                "benchmark control step"
+            )
+    default_gripper = getattr(controller, "params", {}).get("default_gripper")
+    if default_gripper is None or not np.isclose(
+        float(default_gripper), 1.0, rtol=0.0, atol=1e-12
+    ):
+        failures.append("controller default_gripper must be fixed open at 1.0")
+
+    configured_budget = int(getattr(task, "max_steps", 0))
+    action_budget = (
+        configured_budget if max_actions is None else int(max_actions)
+    )
+    if configured_budget <= 0:
+        failures.append("task.max_steps must be positive")
+    if action_budget <= 0:
+        failures.append("action budget must be positive")
+    if configured_budget > 0 and action_budget > configured_budget:
+        failures.append("action budget cannot exceed task.max_steps")
+    if failures:
+        raise PreflightFailure(
+            "CloseBox restricted control contract mismatch: "
+            + "; ".join(failures)
+        )
+    return scale, action_budget
+
+
+def _waypoint_position(
+    waypoint: Any,
+    index: int,
+    report: dict[str, object],
+) -> np.ndarray:
+    get_waypoint_object = getattr(waypoint, "get_waypoint_object", None)
+    if not callable(get_waypoint_object):
+        _fail_closebox(
+            report,
+            f"Official waypoint {index} lacks get_waypoint_object()",
+        )
+    try:
+        waypoint_object = get_waypoint_object()
+    except Exception as exc:
+        _fail_closebox(
+            report,
+            f"Official waypoint {index} object access failed: "
+            f"{type(exc).__name__}: {exc}",
+        )
+    get_position = getattr(waypoint_object, "get_position", None)
+    if not callable(get_position):
+        _fail_closebox(
+            report,
+            f"Official waypoint {index} object lacks get_position()",
+        )
+    try:
+        position = np.asarray(get_position(), dtype=np.float64)
+    except Exception as exc:
+        _fail_closebox(
+            report,
+            f"Official waypoint {index} position failed: "
+            f"{type(exc).__name__}: {exc}",
+        )
+    if position.shape != (3,) or not np.all(np.isfinite(position)):
+        _fail_closebox(
+            report,
+            f"Official waypoint {index} position must contain three finite values",
+        )
+    return position
+
+
+def _current_eef_position(sim: Any, report: dict[str, object]) -> np.ndarray:
+    pose = np.asarray(
+        _native_value(getattr(sim, "last_native_obs", None), "gripper_pose"),
+        dtype=np.float64,
+    )
+    if pose.ndim != 1 or pose.size < 3 or not np.all(np.isfinite(pose[:3])):
+        _fail_closebox(
+            report,
+            "Native observation lacks a finite gripper_pose for waypoint navigation",
+        )
+    return pose[:3]
+
+
+def _closebox_success(sim: Any, report: dict[str, object]) -> bool:
+    try:
+        state = sim.get_state()
+    except Exception as exc:
+        _fail_closebox(
+            report,
+            f"CloseBox adapter success query failed: {type(exc).__name__}: {exc}",
+        )
+    if not isinstance(state, Mapping) or "success" not in state:
+        _fail_closebox(
+            report,
+            "CloseBox adapter state does not expose native reset/step success",
+        )
+    adapter_success = bool(state["success"])
+    native_task = getattr(getattr(sim, "task", None), "_task", None)
+    native_success = getattr(native_task, "success", None)
+    if not callable(native_success):
+        _fail_closebox(
+            report,
+            "Pinned CloseBox task does not expose official Task.success()",
+        )
+    try:
+        result = native_success()
+    except Exception as exc:
+        _fail_closebox(
+            report,
+            f"Official CloseBox success query failed: "
+            f"{type(exc).__name__}: {exc}",
+        )
+    if not isinstance(result, tuple) or len(result) != 2:
+        _fail_closebox(
+            report,
+            "Official CloseBox Task.success() must return (success, terminate)",
+        )
+    if adapter_success != bool(result[0]):
+        _fail_closebox(
+            report,
+            "Adapter and official native CloseBox success disagree",
+        )
+    report["adapter_native_success_checks"] = int(
+        report["adapter_native_success_checks"]
+    ) + 1
+    return adapter_success
+
+
+def _assert_restricted_action(
+    action: RLBenchAction,
+    scale: float,
+    report: dict[str, object],
+) -> None:
+    allowed = (-scale, 0.0, scale)
+    if not all(
+        any(np.isclose(value, candidate, rtol=0.0, atol=1e-12) for candidate in allowed)
+        for value in action.delta_position
+    ):
+        _fail_closebox(
+            report,
+            "Generated translation escaped the configured discrete action set",
+        )
+    if action.delta_rotation_rpy != (0.0, 0.0, 0.0):
+        _fail_closebox(report, "Generated action attempted rotation")
+    if not np.isclose(action.gripper, 1.0, rtol=0.0, atol=1e-12):
+        _fail_closebox(report, "Generated action changed the fixed-open gripper")
+
+
+def _update_rejection_rate(report: dict[str, object]) -> None:
+    attempts = int(report["actions_attempted"])
+    report["planning_rejection_rate"] = (
+        float(int(report["planning_rejections"]) / attempts)
+        if attempts
+        else None
+    )
+
+
+def _fail_closebox(report: dict[str, object], message: str) -> None:
+    report["status"] = "fail"
+    failures = report["failures"]
+    if isinstance(failures, list):
+        failures.append(message)
+    _update_rejection_rate(report)
+    raise PreflightFailure(message, report=report)
 
 
 def _primary_image_direction(displacement: np.ndarray) -> str:
@@ -644,10 +933,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     closebox_parser = subparsers.add_parser(
         "closebox-scripted-success",
-        help="Run the official Colosseum CloseBox live-demo waypoints.",
+        help=(
+            "Navigate official CloseBox waypoint positions through restricted "
+            "benchmark actions."
+        ),
     )
     closebox_parser.add_argument("--config", required=True)
     closebox_parser.add_argument("--seed", type=int)
+    closebox_parser.add_argument(
+        "--max-actions",
+        type=int,
+        help="Override the default task.max_steps action budget.",
+    )
     closebox_parser.add_argument("--output")
     return parser
 
@@ -697,21 +994,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             report = run_close_box_scripted_success_canary(
                 sim,
-                config.task,
+                config,
                 seed=seed,
+                max_actions=args.max_actions,
             )
         report["config"] = str(Path(args.config).resolve())
         report["simulator"] = config.simulator.type
     except Exception as exc:
-        report = {
-            "report_version": REPORT_VERSION,
-            "kind": args.command.replace("-", "_"),
-            "status": "fail",
-            "model_api_called": False,
-            "artifact_scope": "preflight_report_only",
-            "config": str(Path(args.config).resolve()),
-            "failures": [f"{type(exc).__name__}: {exc}"],
-        }
+        if isinstance(exc, PreflightFailure) and exc.report is not None:
+            report = exc.report
+            report["config"] = str(Path(args.config).resolve())
+            if "config" in locals():
+                report["simulator"] = config.simulator.type
+        else:
+            report = {
+                "report_version": REPORT_VERSION,
+                "kind": args.command.replace("-", "_"),
+                "status": "fail",
+                "model_api_called": False,
+                "artifact_scope": "preflight_report_only",
+                "config": str(Path(args.config).resolve()),
+                "failures": [f"{type(exc).__name__}: {exc}"],
+            }
     finally:
         if sim is not None:
             try:
