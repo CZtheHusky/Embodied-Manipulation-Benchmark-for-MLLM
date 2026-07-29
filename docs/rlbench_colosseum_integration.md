@@ -112,13 +112,29 @@ The benchmark control path remains:
 JoystickAction -> JoystickMapping -> ControlFrameTransform -> RLBenchDeltaEEFController -> RLBenchSimAdapter -> task.step()
 ```
 
-`RLBenchDeltaEEFController` emits an internal `RLBenchAction` containing delta end-effector position, optional delta RPY rotation, and a gripper scalar. `RLBenchSimAdapter` is the only layer that reads `obs.gripper_pose` and converts that delta command into RLBench's native absolute pose action:
+`RLBenchDeltaEEFController` emits an internal `RLBenchAction` containing delta end-effector position, optional delta RPY rotation, and a gripper scalar. `RLBenchSimAdapter` is the only layer that reads the latest `obs.gripper_pose` and converts that delta command into RLBench's native absolute world-frame planning action:
 
 ```text
 [x, y, z, qx, qy, qz, qw, gripper]
 ```
 
-For `ReachTarget`, the initial config exposes only `dx`, `dy`, and `dz` virtual joysticks. The gripper is held open with `controller.params.default_gripper: 1.0` because the fixed RLBench action mode still expects a gripper value.
+For the MLLM `ReachTarget` configs, translation is the only active motion:
+
+```text
+delta_scaled = 0.02 m * mapped_translation
+delta_world = episode_frame_transform(delta_scaled)
+position_target = workspace_clamp(latest_observed_gripper_position + delta_world)
+```
+
+The adapter sends `position_target` with the latest observed quaternion as an
+absolute world-frame pose to `EndEffectorPoseViaPlanning`. It applies no sign
+compensation. `episode_frame_transform` is identity in the baseline, so `+1` on
+`dx` adds `+0.02 m` to world x. In the perturbed condition, the episode-fixed
+hidden mapping and frame rotation produce `delta_world`; the adapter still adds
+that result directly, without another sign change, before workspace clamping.
+Rotation stays inactive, and the gripper is held open with
+`controller.params.default_gripper: 1.0` because the native action mode still
+expects a gripper value.
 
 ## MLLM Evaluation
 
@@ -132,8 +148,8 @@ They use `action_with_reflection`, OpenAI-compatible Chat Completions, reasoning
 effort `low`, three historical image turns, all textual action history, and the
 public `front` RGB camera. The public control surface contains only `dx`, `dy`,
 and `dz`; it does not expose rotation or gripper channels because `ReachTarget`
-does not need them. Each nonzero mapped translation command has magnitude
-`0.02 m`.
+does not need them. A magnitude-1 mapped translation is `0.02 m` before the
+optional hidden frame rotation.
 
 The baseline exposes the fixed joystick mapping and identity frame. The
 perturbed condition uses an episode-fixed hidden `permuted_sign_flipped`
@@ -148,6 +164,8 @@ condition and verifies:
 
 - the `front` camera is non-black `320x240` RGB
 - native actions are finite absolute poses inside configured workspace bounds
+- a no-simulator canary verifies direct `0.02 m` scaling, accumulation from the
+  latest observed absolute gripper pose, and workspace clamping
 - quaternion and gripper fields satisfy the RLBench action contract
 - prompt v2, reflection history, and three-image-turn behavior
 - hidden state and API-key sentinels do not enter requests or artifacts
@@ -165,6 +183,12 @@ The first config uses the RLBench `front` RGB camera. Camera names must match RL
 - `overhead`
 
 The observation provider configures RGB-only RLBench observations before environment launch and extracts camera frames from attributes such as `front_rgb`.
+
+The `front` camera pose belongs to the RLBench TTT scene. The benchmark does not
+currently expose runtime front-camera extrinsics to the model, so neither the
+prompt nor this integration assigns world `+x`, `+y`, or `+z` to image
+left/right/up/down. Such an image-axis claim requires runtime extrinsics rather
+than inference from the camera name or a rendered frame.
 
 ## Colosseum Plan
 

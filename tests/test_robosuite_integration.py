@@ -1,8 +1,10 @@
 import base64
+import inspect
 import io
 import json
 import os
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
@@ -10,10 +12,16 @@ from PIL import Image
 
 from mllm_teleop_benchmark import BenchmarkRunner
 from mllm_teleop_benchmark.action.joystick import JoystickAction
+from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.agents.model_client import ModelResponse, ModelUsage
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.control.robosuite_controller import RobosuiteOSCController
-from mllm_teleop_benchmark.core.registry import build_action_space, build_controller, build_mapping
+from mllm_teleop_benchmark.core.registry import (
+    build_action_space,
+    build_controller,
+    build_mapping,
+    control_interface_metadata,
+)
 from mllm_teleop_benchmark.core.types import RobosuiteAction
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import (
@@ -148,11 +156,51 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.control_frame_description == (
-        "the robosuite OSC world x, y, and z axes"
+        "the robosuite 1.4.1 OSC MuJoCo world x, y, and z axes; "
+        "translation-only commands are normalized world-frame inputs with "
+        "native +/-1 mapping to +/-0.05 m, and in upright agentview image "
+        "right is approximately +world y while image up is approximately "
+        "-0.706 world x +0.708 world z"
     )
+    assert config.control_interface.params == {
+        "scale_mode": "normalized_robosuite_1_4_1_osc_input_native_0_05m",
+        "native_translation_gain_m": 0.05,
+    }
     assert config.control_interface.gripper_open_command == 0.0
     assert config.control_interface.gripper_closed_command == 1.0
     assert config.control_interface.gripper_hold_command == 0.5
+    assert config.controller.frame == "world_xyz"
+    assert config.controller.scales == {
+        "dx": 1.0,
+        "dy": 1.0,
+        "dz": 1.0,
+        "droll": 0.1,
+        "dpitch": 0.1,
+        "dyaw": 0.1,
+        "gripper": 1.0,
+    }
+
+    agentview = next(
+        camera for camera in config.camera.cameras if camera.name == "agentview"
+    )
+    assert agentview.params["basis_frame"] == "mujoco_world"
+    assert agentview.params["basis_approximate"] is True
+    image_right = np.asarray(agentview.params["image_right_in_world"])
+    image_up = np.asarray(agentview.params["image_up_in_world"])
+    np.testing.assert_allclose(image_right, [0.0, 1.0, 0.0])
+    np.testing.assert_allclose(image_up, [-0.706, 0.0, 0.708])
+    np.testing.assert_allclose(np.linalg.norm(image_right), 1.0, atol=2e-3)
+    np.testing.assert_allclose(np.linalg.norm(image_up), 1.0, atol=2e-3)
+    np.testing.assert_allclose(np.dot(image_right, image_up), 0.0, atol=2e-3)
+
+    prompt = ControlInstructionBuilder().build(
+        control_interface_metadata(config, config.benchmark.seed),
+        action_schema,
+    ).text
+    assert "translation-only commands are normalized world-frame inputs" in prompt
+    assert "native +/-1 mapping to +/-0.05 m" in prompt
+    assert "image right is approximately +world y" in prompt
+    assert "image up is approximately -0.706 world x +0.708 world z" in prompt
     assert tuple(action_schema) == (
         "joystick_0",
         "joystick_1",
@@ -297,7 +345,7 @@ def test_robosuite_camera_randomization_sampling_is_seeded():
     assert 40.0 <= first["agentview"]["fovy"] <= 50.0
 
 
-def test_robosuite_controller_translation():
+def test_robosuite_controller_translation_and_mllm_native_gain():
     mapping = FixedJoystickMapping(
         channels={"joystick_0": "dx", "joystick_1": "dy", "joystick_2": "dz", "joystick_3": "gripper"},
         signs={"joystick_0": 1.0, "joystick_1": 1.0, "joystick_2": 1.0, "joystick_3": 1.0}
@@ -327,6 +375,66 @@ def test_robosuite_controller_translation():
     action_close = JoystickAction(channels={"joystick_0": 0.0, "joystick_1": 0.0, "joystick_2": 0.0, "joystick_3": 1.0})
     sim_action_close = controller.translate(action_close)
     assert sim_action_close.values[6] == 1.0
+
+    mllm_config = load_config("configs/robosuite_lift_mllm_reflection.yaml")
+    mllm_controller = build_controller(
+        mllm_config,
+        build_mapping(mllm_config, mllm_config.benchmark.seed),
+        mllm_config.benchmark.seed,
+    )
+    normalized_action = mllm_controller.translate(
+        JoystickAction(
+            channels={
+                "joystick_0": 1.0,
+                "joystick_1": 0.0,
+                "joystick_2": 0.0,
+                "joystick_3": 0.5,
+            }
+        )
+    )
+
+    # Physical scaling belongs to upstream OSC_POSE, so the benchmark emits 1.0.
+    normalized_translation = np.asarray(normalized_action.values[:3])
+    np.testing.assert_allclose(normalized_translation, [1.0, 0.0, 0.0])
+    np.testing.assert_allclose(
+        normalized_translation
+        * mllm_config.control_interface.params["native_translation_gain_m"],
+        [0.05, 0.0, 0.0],
+    )
+
+
+def test_robosuite_pinned_osc_and_agentview_source_match_public_contract():
+    robosuite = pytest.importorskip("robosuite")
+    from robosuite.controllers.osc import OperationalSpaceController
+    from robosuite.utils.transform_utils import quat2mat
+
+    parameters = inspect.signature(OperationalSpaceController.__init__).parameters
+    assert parameters["input_min"].default == -1
+    assert parameters["input_max"].default == 1
+    assert parameters["output_min"].default[:3] == (-0.05, -0.05, -0.05)
+    assert parameters["output_max"].default[:3] == (0.05, 0.05, 0.05)
+
+    arena = ET.parse(
+        Path(robosuite.__file__).resolve().parent
+        / "models"
+        / "assets"
+        / "arenas"
+        / "table_arena.xml"
+    ).getroot()
+    camera = next(
+        element
+        for element in arena.iter("camera")
+        if element.attrib.get("name") == "agentview"
+    )
+    quat_wxyz = np.fromstring(camera.attrib["quat"], sep=" ")
+    rotation = quat2mat(quat_wxyz[[1, 2, 3, 0]])
+
+    np.testing.assert_allclose(rotation[:, 0], [0.0, 1.0, 0.0], atol=2e-3)
+    np.testing.assert_allclose(
+        rotation[:, 1],
+        [-0.706, 0.0, 0.708],
+        atol=2e-3,
+    )
 
 
 @pytest.mark.parametrize(
@@ -398,7 +506,9 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
     assert "direct control" in request_text
     assert "final virtual joystick" in request_text
     assert "0 means open, 1 means closed, 0.5 means hold" in request_text
-    assert "robosuite OSC world x, y, and z axes" in request_text
+    assert "robosuite 1.4.1 OSC MuJoCo world x, y, and z axes" in request_text
+    assert "translation-only commands are normalized world-frame inputs" in request_text
+    assert "native +/-1 mapping to +/-0.05 m" in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
         assert "joystick_1 -> dy" in request_text

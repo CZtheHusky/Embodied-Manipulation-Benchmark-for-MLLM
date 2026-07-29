@@ -61,6 +61,54 @@ def test_simpler_env_delta_eef_controller_maps_pose_and_gripper_to_7d_action():
     assert sim_action.metadata["action_order"] == ("dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper")
 
 
+def test_simpler_env_mllm_control_output_canary_preserves_scaled_signs():
+    config = load_config(
+        "configs/simpler_env_google_robot_pick_coke_can_mllm_reflection.yaml"
+    )
+    controller = build_controller(
+        config,
+        build_mapping(config, config.benchmark.seed),
+        config.benchmark.seed,
+    )
+    sim_action = controller.translate(
+        JoystickAction(
+            {
+                "joystick_0": 1.0,
+                "joystick_1": -1.0,
+                "joystick_2": 1.0,
+                "joystick_3": -1.0,
+                "joystick_4": 1.0,
+                "joystick_5": -1.0,
+                "joystick_6": 0.5,
+            }
+        )
+    )
+
+    np.testing.assert_allclose(
+        sim_action.values,
+        [0.05, -0.05, 0.05, -0.1, 0.1, -0.1, 0.0],
+    )
+
+    adapter = SimplerEnvSimAdapter(config.simulator)
+    adapter.env = type(
+        "FakeEnv",
+        (),
+        {
+            "action_space": type(
+                "FakeBox",
+                (),
+                {"shape": (7,), "low": -np.ones(7), "high": np.ones(7)},
+            )()
+        },
+    )()
+    native, metadata = adapter._native_action(sim_action)
+    np.testing.assert_allclose(
+        native,
+        [0.05, -0.05, 0.05, -0.1, 0.1, -0.1, 0.0],
+    )
+    assert metadata["clipped"] is False
+
+
 def test_simpler_env_delta_eef_controller_applies_frame_rotation():
     config = load_config("configs/simpler_env_google_robot_pick_coke_can.yaml")
     transform = RotationControlFrameTransform.from_config(

@@ -49,7 +49,16 @@ control_interface:
   mapping_visible_to_agent: false
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
-  control_frame_description: the CALVIN Cartesian-relative controller's PyBullet world x, y, and z axes
+  control_frame_description: >-
+    CALVIN's PyBullet world frame: dx, dy, and dz are normalized
+    Cartesian-relative world-coordinate translations, where native magnitude 1
+    advances the target by 0.02 m; droll, dpitch, and dyaw are normalized
+    increments of the target pose's PyBullet XYZ Euler parameters, where native
+    magnitude 1 changes that parameter by 0.05 rad, and are not an axis-angle
+    vector; the hidden 3D frame transform applies only to translation because
+    Euler parameters are not a rotatable vector; in the fixed static camera, +x
+    projects roughly toward image right, +y toward image upper-right, and +z
+    toward image upper-left, while the gripper camera moves with the wrist
   gripper_open_command: 1
   gripper_closed_command: 0
   params:
@@ -59,16 +68,17 @@ controller:
   type: calvin_delta_eef
   frame: controller
   scales:
-    dx: 0.1
-    dy: 0.1
-    dz: 0.1
-    droll: 0.1
-    dpitch: 0.1
-    dyaw: 0.1
+    dx: 1.0
+    dy: 1.0
+    dz: 1.0
+    droll: 1.0
+    dpitch: 1.0
+    dyaw: 1.0
   params:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: 1.0
     gripper_closed_value: -1.0
+    transform_rotation: false
 
 agent:
   type: mllm

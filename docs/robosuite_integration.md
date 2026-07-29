@@ -92,10 +92,11 @@ matching frame perturbation for Lift.
 
 robosuite 1.4.1's `OSC_POSE` controller adds its scaled translation delta to
 the current end-effector position, so its Cartesian action is expressed along
-world x/y/z axes. The benchmark controller first applies its configured
-translation scales and then the benchmark frame transform before calling
-robosuite. The original `0.05` benchmark scales are preserved in both MLLM
-conditions.
+MuJoCo world x/y/z axes. Its input is already normalized: upstream maps native
+`-1` and `1` to approximately `-0.05 m` and `0.05 m`. Both translation-only
+MLLM configs therefore use benchmark `dx/dy/dz` scales of `1.0`. A benchmark
+scale of `0.05` would apply a second scale and reduce a full command to an
+upstream input of `0.05`, or approximately `0.0025 m` after native OSC scaling.
 
 The benchmark gripper value is converted with `2 * value - 1`. Panda therefore
 receives `-1` for public value `0` (open), `0` for public value `0.5` (hold),
@@ -119,6 +120,17 @@ moving the camera pointed it away from the robot workspace; the frames were
 non-black but unsuitable for visual evaluation. Custom camera settings, when
 needed for a new task, must specify and visually validate position and
 orientation together.
+
+For the upright upstream `agentview`, the approximate image-plane basis in the
+MuJoCo world frame is:
+
+- image right: `+world y`, represented by `[0, 1, 0]`
+- image up: `-0.706 world x + 0.708 world z`, represented by
+  `[-0.706, 0, 0.708]`
+
+These vectors are stored as config metadata and covered by numerical norm,
+orthogonality, and component canaries. They describe this fixed Lift camera,
+not a general robosuite camera convention.
 
 The adapter still supports seeded episode-level camera settings through
 robosuite runtime APIs and does not mutate static assets.
@@ -147,9 +159,11 @@ direct-control joystick. It does not serialize simulator state or exact
 perturbation values.
 
 The shared `ControlInstructionBuilder` also identifies the robosuite OSC world
-frame, states that gripper `0` opens, `0.5` holds, and `1` closes, and tells the
-model that hidden mapping/frame samples remain constant within an episode. The
-sampled permutation, signs, quaternion, and matrix remain undisclosed.
+frame, states that the control is normalized translation-only with native
+`+/-1 -> +/-0.05 m`, gives the approximate `agentview` image-plane basis, states
+that gripper `0` opens, `0.5` holds, and `1` closes, and tells the model that
+hidden mapping/frame samples remain constant within an episode. The sampled
+permutation, signs, quaternion, and matrix remain undisclosed.
 
 ## Local verification
 

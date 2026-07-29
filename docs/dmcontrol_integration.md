@@ -29,6 +29,13 @@ dx, dy, gripper
 - gripper `0` applies maximum opening effort, `0.5` applies no gripper effort,
   and `1` applies maximum closing effort.
 
+A mapped motion magnitude of `1` requests a `0.03 m` Cartesian target
+displacement before the Cartesian-impedance conversion. The upstream
+`manipulator.xml` defines the fixed camera with image x aligned to world x and
+image y aligned to world z. The `hand` camera uses MuJoCo `mode="track"` and
+moves with the hand, so the fixed camera's image-axis relation is never claimed
+for that view.
+
 The controller emits `DMControlPlanarEEFAction`, not a five-element native
 motor vector. At the simulator boundary, `DMControlSimAdapter` reads the
 current MuJoCo physics state, computes the x/z translational Jacobian for the
@@ -86,6 +93,8 @@ The tests verify:
 - upstream actuator names and the native action contract;
 - baseline and perturbed configuration contracts;
 - fixed mapping and seeded permutation/sign/2D rotation behavior;
+- pinned camera XML semantics and the distinction between the fixed and
+  hand-tracking views;
 - positive and negative single-axis commands move the real `grasp` site in
   the expected world x/z direction;
 - gripper `0` opens and gripper `1` closes in real physics;

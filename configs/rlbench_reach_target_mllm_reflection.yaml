@@ -45,9 +45,14 @@ control_interface:
   frame_transform: identity
   frame_visible_to_agent: true
   control_frame_description: >-
-    the RLBench world Cartesian x, y, and z axes; each nonzero translation
-    command changes the absolute end-effector pose target by 0.02 meters along
-    the corresponding world axis
+    the RLBench world Cartesian x, y, and z axes, with translation as the only
+    active motion. A mapped magnitude-1 command is a 0.02-meter world-frame
+    delta. The benchmark adds that delta without sign compensation to the
+    position from the latest observed absolute gripper pose, clamps the target
+    to the configured workspace bounds, and sends a native absolute world-frame
+    planning pose. The front camera pose comes from the TTT scene; without
+    runtime extrinsics, this control contract does not assign world axes to
+    image directions
   params:
     scale_mode: rlbench_absolute_pose_target_from_delta_eef
 
@@ -117,4 +122,3 @@ ui:
   simple_blit: true
   debug_frames: true
   debug_control_history: true
-

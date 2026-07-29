@@ -28,9 +28,15 @@ camera:
     - name: robot0_agentview_left
       width: 256
       height: 256
+      params:
+        attached_to: robot0_mobile_base
+        fixed_world_basis: false
     - name: robot0_agentview_right
       width: 256
       height: 256
+      params:
+        attached_to: robot0_mobile_base
+        fixed_world_basis: false
     - name: robot0_eye_in_hand
       width: 256
       height: 256
@@ -47,12 +53,21 @@ control_interface:
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
   control_frame_description: >-
-    the PandaOmron operational-space controller's robot-base x, y, and z axes;
-    translation and axis-angle rotation commands are deltas in this same base frame
+    the PandaOmron OSC robot0_right_center control frame, which is the robot-base
+    frame and moves with the mobile base; translation and axis-angle
+    rotation-vector commands use this moving base frame, normalized native +/-1
+    maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and the
+    robot0_agentview cameras are base-attached rather than fixed in world
   gripper_open_command: 0
   gripper_closed_command: 1
   params:
     scale_mode: robocasa_normalized_pandaomron_osc_base_delta
+    control_site: robot0_right_center
+    control_frame: robot_base
+    frame_moves_with_base: true
+    native_translation_gain_m: 0.05
+    native_rotation_gain_rad: 0.5
+    sign_compensation: false
 
 controller:
   type: robocasa_osc

@@ -237,9 +237,24 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
-    assert config.control_interface.control_frame_description == (
-        "the CALVIN Cartesian-relative controller's PyBullet world x, y, and z axes"
-    )
+    control_description = config.control_interface.control_frame_description or ""
+    assert "CALVIN's PyBullet world frame" in control_description
+    assert "native magnitude 1 advances the target by 0.02 m" in control_description
+    assert "PyBullet XYZ Euler parameters" in control_description
+    assert "native magnitude 1 changes that parameter by 0.05 rad" in control_description
+    assert "not an axis-angle vector" in control_description
+    assert "gripper camera moves with the wrist" in control_description
+    if frame_transform == "random_rotation_3d":
+        assert "hidden 3D frame transform applies only to translation" in control_description
+    assert config.controller.scales == {
+        "dx": 1.0,
+        "dy": 1.0,
+        "dz": 1.0,
+        "droll": 1.0,
+        "dpitch": 1.0,
+        "dyaw": 1.0,
+    }
+    assert config.controller.params["transform_rotation"] is False
     assert config.control_interface.gripper_open_command == 1.0
     assert config.control_interface.gripper_closed_command == 0.0
     assert config.agent.action_output_mode == "action_with_reflection"
@@ -365,7 +380,10 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
     assert "dx, dy, and dz denote end-effector translation" in prompt
     assert "droll, dpitch, and dyaw denote end-effector rotation" in prompt
     assert "positive mapped value commands the positive direction" in prompt
-    assert "CALVIN Cartesian-relative controller's PyBullet world" in prompt
+    assert "CALVIN's PyBullet world frame" in prompt
+    assert "PyBullet XYZ Euler parameters" in prompt
+    assert "not an axis-angle vector" in prompt
+    assert "native magnitude 1 advances the target by 0.02 m" in prompt
     assert "joystick_0 -> dx" in prompt
     assert "joystick_5 -> dyaw" in prompt
     assert "joystick_6 -> gripper" in prompt
@@ -469,6 +487,117 @@ def test_calvin_controller_applies_frame_rotation_to_position_and_rotation():
     assert abs(sim_action.values[3]) < 1e-12
 
 
+def test_calvin_mllm_controller_uses_native_scale_and_does_not_rotate_euler_parameters():
+    config = load_config(
+        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+    )
+    mapping = MagicMock()
+    mapping.map_action.return_value = {
+        "dx": 1.0,
+        "dy": 0.0,
+        "dz": 0.0,
+        "droll": 1.0,
+        "dpitch": 0.0,
+        "dyaw": 0.0,
+        "gripper": 1.0,
+    }
+    mapping.metadata.return_value = {}
+
+    from mllm_teleop_benchmark.control.calvin_controller import CalvinDeltaEEFController
+
+    transform = RotationControlFrameTransform.from_config(
+        FrameTransformConfig(
+            type="rotation_3d",
+            visible_to_agent=False,
+            params={"rpy_degrees": [0, 0, 90]},
+        )
+    )
+    controller = CalvinDeltaEEFController.from_config(
+        config.controller,
+        mapping,
+        transform,
+    )
+    sim_action = controller.translate(
+        JoystickAction(channels={"joystick_0": 1.0})
+    )
+
+    np.testing.assert_allclose(sim_action.values[:3], [0.0, 1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(sim_action.values[3:6], [1.0, 0.0, 0.0], atol=1e-12)
+    assert controller.metadata()["transform_rotation"] is False
+
+
+def test_calvin_mllm_normalized_action_reaches_pinned_native_step_size():
+    pytest.importorskip("calvin_env")
+    from types import SimpleNamespace
+
+    from calvin_env.robot.robot import Robot
+
+    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    controller = build_controller(
+        config,
+        build_mapping(config, config.benchmark.seed),
+        config.benchmark.seed,
+    )
+    sim_action = controller.translate(
+        JoystickAction(
+            channels={
+                "joystick_0": 1.0,
+                "joystick_1": 0.0,
+                "joystick_2": 0.0,
+                "joystick_3": 0.0,
+                "joystick_4": 0.0,
+                "joystick_5": 0.0,
+                "joystick_6": 1.0,
+            }
+        )
+    )
+    robot = SimpleNamespace(
+        max_rel_pos=0.02,
+        max_rel_orn=0.05,
+        magic_scaling_factor_pos=1.0,
+        magic_scaling_factor_orn=1.0,
+        use_target_pose=True,
+        target_pos=np.zeros(3),
+        target_orn=np.zeros(3),
+    )
+
+    target_pos, target_orn, gripper = Robot.relative_to_absolute(
+        robot,
+        np.asarray(sim_action.values, dtype=float),
+    )
+
+    np.testing.assert_allclose(target_pos, [0.02, 0.0, 0.0])
+    np.testing.assert_allclose(target_orn, [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(gripper, [1.0])
+
+
+def test_calvin_static_camera_projection_matches_public_prompt():
+    calvin_env = pytest.importorskip("calvin_env")
+    from omegaconf import OmegaConf
+
+    camera_config = OmegaConf.load(
+        Path(calvin_env.__file__).resolve().parents[1]
+        / "conf"
+        / "cameras"
+        / "cameras"
+        / "static.yaml"
+    )
+    eye = np.asarray(camera_config.look_from, dtype=float)
+    target = np.asarray(camera_config.look_at, dtype=float)
+    configured_up = np.asarray(camera_config.up_vector, dtype=float)
+    forward = target - eye
+    forward /= np.linalg.norm(forward)
+    image_right = np.cross(forward, configured_up)
+    image_right /= np.linalg.norm(image_right)
+    image_up = np.cross(image_right, forward)
+    image_up /= np.linalg.norm(image_up)
+
+    # +x is right, +y is upper-right, and +z is upper-left in the pinned view.
+    assert image_right[0] > 0.7 and abs(image_up[0]) < 0.05
+    assert image_right[1] > 0.5 and image_up[1] > 0.6
+    assert image_right[2] < -0.4 and image_up[2] > 0.7
+
+
 def test_calvin_perturbation_only_changes_motion_channels():
     config = load_config(
         "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
@@ -499,6 +628,7 @@ def test_calvin_perturbation_only_changes_motion_channels():
         "type": "random_rotation_3d",
         "visible_to_agent": False,
     }
+    assert controller.metadata()["transform_rotation"] is False
 
 
 def test_calvin_sim_adapter_reset_step_smoke():
@@ -738,7 +868,10 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
-    assert "CALVIN Cartesian-relative controller's PyBullet world" in request_text
+    assert "CALVIN's PyBullet world frame" in request_text
+    assert "PyBullet XYZ Euler parameters" in request_text
+    assert "not an axis-angle vector" in request_text
+    assert "native magnitude 1 advances the target by 0.02 m" in request_text
     assert "1 means open, 0 means closed" in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text

@@ -146,12 +146,36 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     }
 
     control = raw["control_interface"]
-    assert control["control_frame_description"] == (
-        "the Google Robot end-effector origin with axes aligned to the robot base frame"
-    )
+    frame_description = control["control_frame_description"]
+    assert "control origin at the TCP, not the tool frame" in frame_description
+    assert "axis-angle rotation vectors both use robot-base axes" in frame_description
+    assert "rotation is pre-multiplied about the TCP origin" in frame_description
+    assert "robot-base transform is identity" in frame_description
+    assert "robot-base and world frames coincide" in frame_description
+    assert "normalize_action is false" in frame_description
+    assert "scaled to 0.05 meters and 0.1 radians respectively" in frame_description
+    assert "base_camera is fixed" in frame_description
+    assert "base +y is approximately image right" in frame_description
+    assert "base +z is image up" in frame_description
+    assert "base +x is mainly image depth/down" in frame_description
+    assert "overhead_camera is robot-mounted" in frame_description
+    assert "no fixed world-to-image direction is claimed" in frame_description
+    if visible:
+        assert "with no sign compensation" in frame_description
+    else:
+        assert "no additional sign compensation is applied" in frame_description
     assert control["gripper_open_command"] == 0
     assert control["gripper_closed_command"] == 1
     assert control["params"]["rotation_representation"] == "axis_angle"
+    assert config.controller.frame == "ee_align"
+    assert config.controller.scales == {
+        "dx": 0.05,
+        "dy": 0.05,
+        "dz": 0.05,
+        "droll": 0.1,
+        "dpitch": 0.1,
+        "dyaw": 0.1,
+    }
 
     group = make_experiment_group(config)
     assert group is not None
@@ -192,6 +216,20 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
 
     assert "dx, dy, and dz denote end-effector translation" in baseline_prompt
     assert "droll, dpitch, and dyaw denote end-effector rotation" in baseline_prompt
+    assert "control origin at the TCP, not the tool frame" in baseline_prompt
+    assert "axis-angle rotation vectors both use robot-base axes" in baseline_prompt
+    assert "rotation is pre-multiplied about the TCP origin" in baseline_prompt
+    assert "robot-base transform is identity" in baseline_prompt
+    assert "robot-base and world frames coincide" in baseline_prompt
+    assert "normalize_action is false" in baseline_prompt
+    assert "scaled to 0.05 meters and 0.1 radians respectively" in baseline_prompt
+    assert "with no sign compensation" in baseline_prompt
+    assert "base_camera is fixed" in baseline_prompt
+    assert "base +y is approximately image right" in baseline_prompt
+    assert "base +z is image up" in baseline_prompt
+    assert "base +x is mainly image depth/down" in baseline_prompt
+    assert "overhead_camera is robot-mounted" in baseline_prompt
+    assert "no fixed world-to-image direction is claimed" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_5 -> dyaw" in baseline_prompt
     assert "direct control" in baseline_prompt
@@ -200,6 +238,14 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
 
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
+    assert "control origin at the TCP, not the tool frame" in perturbed_prompt
+    assert "axis-angle rotation vectors both use robot-base axes" in perturbed_prompt
+    assert "rotation is pre-multiplied about the TCP origin" in perturbed_prompt
+    assert "scaled to 0.05 meters and 0.1 radians respectively" in perturbed_prompt
+    assert "no additional sign compensation is applied" in perturbed_prompt
+    assert "base_camera is fixed" in perturbed_prompt
+    assert "overhead_camera is robot-mounted" in perturbed_prompt
+    assert "no fixed world-to-image direction is claimed" in perturbed_prompt
     assert (
         "Infer the hidden controls from visual observations and your own action "
         "history"

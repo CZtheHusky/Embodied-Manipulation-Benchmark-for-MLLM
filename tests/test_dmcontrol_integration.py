@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 import multiprocessing as mp
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
@@ -186,6 +187,17 @@ def test_dmcontrol_mllm_config_is_planar_eef_not_native_motor_aliases(
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
+    assert config.control_interface.gripper_open_command == 0.0
+    assert config.control_interface.gripper_hold_command == 0.5
+    assert config.control_interface.gripper_closed_command == 1.0
+    assert config.control_interface.params["scale_mode"] == (
+        "dmcontrol_world_xz_cartesian_impedance_target_0_03m"
+    )
+    assert config.controller.scales == {
+        "dx": 0.03,
+        "dy": 0.03,
+        "gripper": 1.0,
+    }
     assert tuple(schema) == ("joystick_0", "joystick_1", "joystick_2")
     assert schema["joystick_0"]["values"] == [-1.0, 0.0, 1.0]
     assert schema["joystick_1"]["values"] == [-1.0, 0.0, 1.0]
@@ -259,10 +271,14 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
     assert "active controllable dimensions are: dx, dy" in baseline_prompt
     assert "only dx and dy are active and there is no dz or rotation command" in baseline_prompt
     assert "control dy is world z" in baseline_prompt
+    assert "mapped magnitude-1 command requests a 0.03 m" in baseline_prompt
+    assert "hand camera tracks the moving hand" in baseline_prompt
+    assert "must not be applied to the hand view" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_1 -> dy" in baseline_prompt
     assert "joystick_2 -> gripper" in baseline_prompt
     assert "0 means open" in baseline_prompt
+    assert "0.5 means hold" in baseline_prompt
     assert "1 means closed" in baseline_prompt
     for false_dimension in ("dz", "droll", "dpitch", "dyaw"):
         assert f"joystick_2 -> {false_dimension}" not in baseline_prompt
@@ -280,9 +296,32 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
     assert "remain fixed for the entire episode" in perturbed_prompt
+    assert "magnitude 1 requests a 0.03 m" in perturbed_prompt
+    assert "hand camera tracks the moving hand" in perturbed_prompt
     assert "joystick_0 ->" not in perturbed_prompt
     assert "mapping" not in perturbed_metadata
     assert "rotation_matrix" not in str(perturbed_metadata)
+
+
+def test_dmcontrol_pinned_camera_xml_matches_public_fixed_view_contract():
+    dm_control = pytest.importorskip("dm_control")
+    xml_root = ET.parse(
+        Path(dm_control.__file__).resolve().parent / "suite" / "manipulator.xml"
+    ).getroot()
+    cameras = {
+        camera.attrib["name"]: camera
+        for camera in xml_root.iter("camera")
+        if "name" in camera.attrib
+    }
+
+    assert cameras["fixed"].attrib["xyaxes"] == "1 0 0 0 0 1"
+    assert cameras["fixed"].attrib.get("mode") is None
+    assert cameras["hand"].attrib["xyaxes"] == "1 0 0 0 0 1"
+    assert cameras["hand"].attrib["mode"] == "track"
+    hand_body = next(
+        body for body in xml_root.iter("body") if body.attrib.get("name") == "hand"
+    )
+    assert hand_body.find(".//camera[@name='hand']") is cameras["hand"]
 
 
 @pytest.mark.parametrize(

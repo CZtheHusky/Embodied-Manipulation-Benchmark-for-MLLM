@@ -153,9 +153,18 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
-    assert "RLBench world Cartesian x, y, and z axes" in (
-        config.control_interface.control_frame_description or ""
-    )
+    frame_description = config.control_interface.control_frame_description or ""
+    assert "RLBench world Cartesian x, y, and z axes" in frame_description
+    assert "translation as the only active motion" in frame_description
+    assert "latest observed absolute gripper pose" in frame_description
+    assert "configured workspace bounds" in frame_description
+    assert "native absolute world-frame planning pose" in frame_description
+    assert "front camera pose comes from the TTT scene" in frame_description
+    assert "does not assign world axes to image directions" in frame_description
+    if visible:
+        assert "without sign compensation" in frame_description
+    else:
+        assert "without additional sign compensation" in frame_description
     assert config.controller.scales == {"dx": 0.02, "dy": 0.02, "dz": 0.02}
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
@@ -205,11 +214,18 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "active controllable dimensions are: dx, dy, dz" in baseline_prompt
     assert "dx, dy, and dz denote end-effector translation" in baseline_prompt
     assert "RLBench world Cartesian x, y, and z axes" in baseline_prompt
-    assert "0.02 meters" in baseline_prompt
+    assert "translation as the only active motion" in baseline_prompt
+    assert "0.02-meter world-frame delta" in baseline_prompt
+    assert "latest observed absolute gripper pose" in baseline_prompt
+    assert "clamps the target to the configured workspace bounds" in baseline_prompt
+    assert "native absolute world-frame planning pose" in baseline_prompt
+    assert "without sign compensation" in baseline_prompt
+    assert "front camera pose comes from the TTT scene" in baseline_prompt
+    assert "does not assign world axes to image directions" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_1 -> dy" in baseline_prompt
     assert "joystick_2 -> dz" in baseline_prompt
-    assert "gripper" not in baseline_prompt
+    assert "A gripper channel is available" not in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     perturbed = load_config(
@@ -224,6 +240,12 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "active controllable dimensions are: dx, dy, dz" in perturbed_prompt
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
+    assert "scaled to 0.02 meters before the hidden episode-fixed control transform" in perturbed_prompt
+    assert "latest observed absolute gripper pose" in perturbed_prompt
+    assert "without additional sign compensation" in perturbed_prompt
+    assert "native absolute world-frame planning pose" in perturbed_prompt
+    assert "front camera pose comes from the TTT scene" in perturbed_prompt
+    assert "does not assign world axes to image directions" in perturbed_prompt
     assert (
         "Infer the hidden controls from visual observations and your own action "
         "history"
@@ -277,6 +299,53 @@ def test_rlbench_delta_eef_controller_maps_delta_position_and_default_gripper():
     assert sim_action.delta_position == (0.02, -0.02, 0.0)
     assert sim_action.delta_rotation_rpy == (0.0, 0.0, 0.0)
     assert sim_action.gripper == 1.0
+
+
+def test_rlbench_mllm_baseline_control_output_canary_uses_latest_absolute_pose():
+    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    controller = build_controller(
+        config,
+        build_mapping(config, config.benchmark.seed),
+        config.benchmark.seed,
+    )
+    sim_action = controller.translate(
+        JoystickAction(
+            {
+                "joystick_0": 1.0,
+                "joystick_1": -1.0,
+                "joystick_2": 1.0,
+            }
+        )
+    )
+
+    np.testing.assert_allclose(sim_action.delta_position, [0.02, -0.02, 0.02])
+
+    adapter = RLBenchSimAdapter(config.simulator)
+    adapter.last_native_obs = type(
+        "FakeRLBenchObs",
+        (),
+        {
+            "gripper_pose": np.asarray(
+                [0.1, -0.2, 1.0, 0.0, 0.0, 0.0, 1.0],
+                dtype=np.float32,
+            )
+        },
+    )()
+    native = adapter._native_action(sim_action)
+    np.testing.assert_allclose(
+        native,
+        [0.12, -0.22, 1.02, 0.0, 0.0, 0.0, 1.0, 1.0],
+    )
+
+    adapter.last_native_obs.gripper_pose = np.asarray(
+        [0.59, -0.59, 1.34, 0.0, 0.0, 0.0, 1.0],
+        dtype=np.float32,
+    )
+    clamped = adapter._native_action(sim_action)
+    np.testing.assert_allclose(
+        clamped,
+        [0.6, -0.6, 1.35, 0.0, 0.0, 0.0, 1.0, 1.0],
+    )
 
 
 def test_rlbench_delta_eef_controller_applies_frame_rotation():

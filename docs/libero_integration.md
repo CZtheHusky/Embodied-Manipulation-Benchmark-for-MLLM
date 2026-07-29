@@ -65,6 +65,12 @@ the direct `sim.render()` fallback applies the same normalization. Non-symmetric
 pixel canaries cover both paths so model-visible frames cannot silently become
 vertically inverted.
 
+For the resulting upright `agentview`, image right is approximately `+world y`
+(`[0, 1, 0]`) and image up is approximately
+`-0.628 world x + 0.778 world z` (`[-0.628, 0, 0.778]`). The MLLM configs store
+these approximate MuJoCo-world basis vectors, and lightweight tests verify their
+components, norms, and orthogonality.
+
 ## Control
 
 The action path is:
@@ -81,7 +87,13 @@ The native action order is fixed:
 
 The legacy human-play config applies benchmark-side scales of `0.05` for translation and `0.1` for rotation. The MLLM configs instead send normalized `[-1, 1]` pose commands because robosuite's `OSC_POSE` controller performs its own scaling from normalized input to physical deltas: translation output is bounded at `0.05 m` and the axis-angle rotation-vector output at `0.5 rad` per controller command. Applying both scales would make MLLM motion unintentionally small.
 
-The six pose deltas use the MuJoCo world Cartesian frame. This follows robosuite `OSC_POSE`: translation deltas are added to the current world-space end-effector site position, and the axis-angle rotation error is applied to the current world-space orientation. The gripper virtual command is binary: `0` means open and maps to native `-1`; `1` means closed and maps to native `1`.
+The six pose deltas use the MuJoCo world Cartesian frame. This follows
+robosuite `OSC_POSE`: translation deltas are added to the current world-space
+end-effector site position, and rotation is a right-hand axis-angle rotation
+vector applied in the world frame. There is no backend sign compensation.
+Positive normalized components remain positive world-frame components. The
+gripper virtual command is binary: `0` means open and maps to native `-1`; `1`
+means closed and maps to native `1`.
 
 The perturbed MLLM condition applies `permuted_sign_flipped` to the six motion dimensions and one episode-fixed `random_rotation_3d` to both the translation and axis-angle rotation vectors. The gripper remains direct. Rotated motion vectors are rescaled only when needed to preserve their direction while staying within LIBERO's normalized native action range.
 

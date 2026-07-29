@@ -77,17 +77,42 @@ Joystick permutation, sign changes, and coordinate-frame rotation are handled by
 dx, dy, dz, droll, dpitch, dyaw, gripper
 ```
 
-The rotation slots are passed into SimplerEnv's delta rotation action fields. Position and rotation scales are configured in YAML, and the adapter clips the final action against the native environment action space when available.
+The rotation slots are passed into SimplerEnv's delta rotation action fields.
+For the current Google Robot controller, `normalize_action=false`: these are
+physical deltas rather than normalized native commands. The MLLM configs map
+benchmark motion values `-1`, `0`, and `1` to translation deltas of
+`-0.05 m`, `0`, and `+0.05 m`, and rotation-vector components of `-0.1 rad`,
+`0`, and `+0.1 rad`. The benchmark does not compensate any signs after that
+mapping and scaling. The adapter only clips the final 7D action against the
+native environment action space when available.
 
 The gripper is the final virtual joystick. The default mapping is `0.0 -> -1.0` and `1.0 -> 1.0`, configurable through controller params.
 
 For the Google Robot task, upstream defines the first three native action
 values as delta XYZ, the next three as an axis-angle rotation vector, and the
 last value as the gripper command. The active upstream controller uses an
-`ee_align` frame: the control origin is at the end effector and the axes are
-aligned to the robot base. In the benchmark's public joystick schema,
-`joystick_6=0` means open and `joystick_6=1` means closed; the controller maps
-those values to upstream `-1` and `1`.
+`ee_align` frame. Its origin is the current TCP, but both the translation
+components and rotation-vector axes are expressed in the robot-base frame, not
+the tool frame. The current task uses an identity robot-base transform, so the
+robot-base and world frames coincide.
+
+For a current TCP pose `(p_tcp, R_tcp)`, the upstream composition is:
+
+```text
+delta_p_base = 0.05 m * mapped_translation
+delta_theta_base = 0.1 rad * mapped_rotation
+R_delta = Exp(delta_theta_base)
+p_target = p_tcp + delta_p_base
+R_target = R_delta * R_tcp
+```
+
+Thus the axis-angle delta is pre-multiplied in the base frame about the TCP
+origin; it is not a tool-frame post-multiplication. In the perturbed MLLM
+condition, the hidden mapping and episode-fixed frame transform are applied
+before the native action is emitted, with no additional backend sign
+compensation. In the public joystick schema, `joystick_6=0` means open and
+`joystick_6=1` means closed; the benchmark controller maps those values to
+upstream `-1` and `1`.
 
 ## Observation
 
@@ -108,6 +133,15 @@ selected RGB, and the model's own action/reflection history. They do not
 contain simulator state, reward, success, distance, object or end-effector
 pose, native simulator action, seed, or sampled mapping/frame-transform
 parameters.
+
+For this task, `base_camera` is fixed. Its approximate projection is base `+y`
+toward image right, base `+z` toward image up, and base `+x` mainly along image
+depth with a downward image component. These are approximate image relations,
+not a claim that all three base axes lie in the image plane.
+`overhead_camera` is attached to the robot's `link_camera`; it is
+robot-mounted, so the integration does not claim a fixed world-axis-to-image
+direction for that view. `camera.manager: fixed` means the benchmark selects a
+fixed camera set; it does not make a robot-mounted upstream camera world-fixed.
 
 ## MLLM Evaluation
 
@@ -135,8 +169,10 @@ PYTHONPATH=src .venvs/simpler-env/bin/python \
 The tests perform real reset/step/render operations and run both MLLM
 configurations for four steps with an in-process fake model client. They check
 native action shape and bounds, RGB variance, image history, trajectory and
-run manifests, and privileged-information isolation. They do not access a
-model API.
+run manifests, and privileged-information isolation. A no-simulator canary
+also verifies that benchmark `+/-1` commands reach the native 7D action as
+`+/-0.05 m` and `+/-0.1 rad` with their mapped signs unchanged. The tests do
+not access a model API.
 
 ## Current Limitations
 

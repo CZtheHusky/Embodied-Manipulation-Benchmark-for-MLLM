@@ -17,6 +17,7 @@ class CalvinDeltaEEFController(Controller):
         frame_transform: ControlFrameTransform | None = None,
         gripper_open_value: float = 1.0,
         gripper_closed_value: float = -1.0,
+        transform_rotation: bool = True,
     ) -> None:
         self.mapping = mapping
         self.dimensions = dimensions
@@ -24,6 +25,7 @@ class CalvinDeltaEEFController(Controller):
         self.frame_transform = frame_transform
         self.gripper_open_value = float(gripper_open_value)
         self.gripper_closed_value = float(gripper_closed_value)
+        self.transform_rotation = bool(transform_rotation)
 
     @classmethod
     def from_config(
@@ -42,6 +44,7 @@ class CalvinDeltaEEFController(Controller):
             frame_transform=frame_transform,
             gripper_open_value=float(config.params.get("gripper_open_value", 1.0)),
             gripper_closed_value=float(config.params.get("gripper_closed_value", -1.0)),
+            transform_rotation=bool(config.params.get("transform_rotation", True)),
         )
 
     def translate(self, action: JoystickAction) -> CalvinAction:
@@ -60,7 +63,11 @@ class CalvinDeltaEEFController(Controller):
                 if dim in values_by_dim:
                     values_by_dim[dim] = value
 
-        if self.frame_transform is not None and any(dim in values_by_dim for dim in ("droll", "dpitch", "dyaw")):
+        if (
+            self.transform_rotation
+            and self.frame_transform is not None
+            and any(dim in values_by_dim for dim in ("droll", "dpitch", "dyaw"))
+        ):
             transformed = self.frame_transform.transform_delta_rotation(
                 (
                     values_by_dim.get("droll", 0.0),
@@ -85,6 +92,7 @@ class CalvinDeltaEEFController(Controller):
                 "controller": "calvin_delta_eef",
                 "dimensions": self.dimensions,
                 "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
+                "transform_rotation": self.transform_rotation,
             },
         )
 
@@ -95,6 +103,7 @@ class CalvinDeltaEEFController(Controller):
             "scales": self.scales,
             "mapping": self.mapping.metadata(),
             "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
+            "transform_rotation": self.transform_rotation,
             "gripper_open_value": self.gripper_open_value,
             "gripper_closed_value": self.gripper_closed_value,
         }

@@ -8,6 +8,7 @@ from PIL import Image
 
 from mllm_teleop_benchmark import BenchmarkRunner
 from mllm_teleop_benchmark.action.joystick import JoystickAction
+from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.agents.model_client import ModelResponse, ModelUsage
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.control.robocasa_controller import RoboCasaOSCController
@@ -17,6 +18,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_mapping,
     build_sim,
     build_task,
+    control_interface_metadata,
 )
 from mllm_teleop_benchmark.core.types import Observation, RoboCasaAction
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
@@ -247,10 +249,22 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert interface.frame_transform == frame_transform
     assert interface.frame_visible_to_agent is visible
     assert interface.control_frame_description == (
-        "the PandaOmron operational-space controller's robot-base x, y, and z "
-        "axes; translation and axis-angle rotation commands are deltas in this "
-        "same base frame"
+        "the PandaOmron OSC robot0_right_center control frame, which is the "
+        "robot-base frame and moves with the mobile base; translation and "
+        "axis-angle rotation-vector commands use this moving base frame, "
+        "normalized native +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign "
+        "compensation, and the robot0_agentview cameras are base-attached rather "
+        "than fixed in world"
     )
+    assert interface.params == {
+        "scale_mode": "robocasa_normalized_pandaomron_osc_base_delta",
+        "control_site": "robot0_right_center",
+        "control_frame": "robot_base",
+        "frame_moves_with_base": True,
+        "native_translation_gain_m": 0.05,
+        "native_rotation_gain_rad": 0.5,
+        "sign_compensation": False,
+    }
     assert interface.gripper_open_command == 0.0
     assert interface.gripper_hold_command is None
     assert interface.gripper_closed_command == 1.0
@@ -263,6 +277,23 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
         "dyaw": 1.0,
         "gripper": 1.0,
     }
+    cameras = {camera.name: camera for camera in config.camera.cameras}
+    for camera_name in ("robot0_agentview_left", "robot0_agentview_right"):
+        assert cameras[camera_name].params == {
+            "attached_to": "robot0_mobile_base",
+            "fixed_world_basis": False,
+        }
+
+    prompt = ControlInstructionBuilder().build(
+        control_interface_metadata(config, config.benchmark.seed),
+        action_schema,
+    ).text
+    assert "PandaOmron OSC robot0_right_center control frame" in prompt
+    assert "robot-base frame and moves with the mobile base" in prompt
+    assert "axis-angle rotation-vector commands use this moving base frame" in prompt
+    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in prompt
+    assert "with no sign compensation" in prompt
+    assert "robot0_agentview cameras are base-attached rather than fixed in world" in prompt
 
     assert tuple(action_schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
@@ -447,6 +478,16 @@ def test_robocasa_mllm_controller_matches_official_normalized_dict_contract():
         sim_action.values["action.control_mode"],
         [1.0],
     )
+    translation_gain = config.control_interface.params["native_translation_gain_m"]
+    rotation_gain = config.control_interface.params["native_rotation_gain_rad"]
+    np.testing.assert_allclose(
+        sim_action.values["action.end_effector_position"] * translation_gain,
+        [0.05, -0.05, 0.0],
+    )
+    np.testing.assert_allclose(
+        sim_action.values["action.end_effector_rotation"] * rotation_gain,
+        [-0.5, 0.5, 0.0],
+    )
     assert all(
         np.all(np.abs(np.asarray(values, dtype=float)) <= 1.0)
         for values in sim_action.values.values()
@@ -586,8 +627,12 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     assert f"Task: {public_instructions[0]}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
-    assert "PandaOmron operational-space controller's robot-base" in request_text
-    assert "translation and axis-angle rotation commands are deltas" in request_text
+    assert "PandaOmron OSC robot0_right_center control frame" in request_text
+    assert "robot-base frame and moves with the mobile base" in request_text
+    assert "axis-angle rotation-vector commands use this moving base frame" in request_text
+    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in request_text
+    assert "with no sign compensation" in request_text
+    assert "base-attached rather than fixed in world" in request_text
     assert "binary control" in request_text
     assert "0 means open, 1 means closed" in request_text
     assert "means hold" not in request_text

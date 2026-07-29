@@ -52,12 +52,20 @@ The default configuration (`configs/calvin_delta_eef.yaml`) exposes:
 
 The native convention is verified in CALVIN's pinned `Robot.apply_action()` and `Robot.control_gripper()` implementation: native `+1` opens the gripper and native `-1` closes it. The public direct-gripper schema therefore advertises virtual `1` as open and virtual `0` as closed.
 
+Pinned CALVIN treats the first three normalized values as PyBullet-world
+Cartesian-relative target increments and multiplies native magnitude `1` by
+`0.02 m`. The next three values are increments of the target pose's PyBullet
+XYZ Euler parameters, not an axis-angle vector, and native magnitude `1` changes
+the corresponding parameter by `0.05 rad`. MLLM configs therefore use controller
+scales of `1.0`; applying another benchmark-side `0.1` scale would accidentally
+reduce the effective motion to `0.002 m / 0.005 rad`.
+
 ## MLLM Evaluation Configurations
 
 Two configurations exercise the same task and differ only in the control condition:
 
 - `configs/calvin_delta_eef_mllm_reflection.yaml`: fixed joystick mapping and identity control frame.
-- `configs/calvin_delta_eef_mllm_reflection_perturbed.yaml`: episode-fixed `permuted_sign_flipped` mapping and `random_rotation_3d` frame transform.
+- `configs/calvin_delta_eef_mllm_reflection_perturbed.yaml`: episode-fixed `permuted_sign_flipped` mapping and a `random_rotation_3d` frame transform over translation.
 
 Both configurations use:
 
@@ -74,7 +82,21 @@ legacy human-play configuration's broad static-camera randomization can sample
 close-up views of the table that are non-black but do not show enough of the
 workspace for visual control.
 
-The public prompt explains translation and rotation axes, positive/negative motion, the Cartesian-relative controller frame, and the virtual gripper endpoints. For the perturbed condition, it states that hidden mapping and frame rules remain fixed for the whole episode and must be inferred from visual/action history. It does not reveal the sampled permutation, signs, rotation matrix, quaternion, simulator state, reward, success oracle, object or EEF poses, simulator action, or seed.
+The hidden 3D frame transform is applied only to `dx/dy/dz`. CALVIN's
+`droll/dpitch/dyaw` are Euler-coordinate increments, so rotating that triple as
+if it were an axis-angle vector would be mathematically invalid. The three Euler
+channels still participate in the episode-fixed permutation and sign flips.
+This transform scope is public; the sampled permutation, signs, and rotation
+remain private.
+
+The public prompt explains world-frame translation, XYZ Euler-parameter
+increments, native step magnitudes, approximate fixed-static-camera projections,
+the moving wrist-camera caveat, positive/negative motion, and virtual gripper
+endpoints. For the perturbed condition, it states that hidden mapping and frame
+rules remain fixed for the whole episode and must be inferred from visual/action
+history. It does not reveal the sampled permutation, signs, rotation matrix,
+quaternion, simulator state, reward, success oracle, object or EEF poses,
+simulator action, or seed.
 
 The task instruction is identical in human play and both MLLM conditions:
 

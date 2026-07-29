@@ -45,6 +45,11 @@ camera:
       type: libero_rgb
       width: 256
       height: 256
+      params:
+        basis_frame: mujoco_world
+        image_right_in_world: [0.0, 1.0, 0.0]
+        image_up_in_world: [-0.628, 0.0, 0.778]
+        basis_approximate: true
     - name: robot0_eye_in_hand
       type: libero_rgb
       width: 256
@@ -63,12 +68,20 @@ control_interface:
   frame_visible_to_agent: true
   control_frame_description: >-
     the LIBERO MuJoCo world Cartesian x, y, and z axes used by robosuite's
-    OSC_POSE controller; translation deltas and axis-angle rotation-vector
-    commands are applied to the current end-effector pose in this world frame
+    OSC_POSE controller; translation deltas and right-hand axis-angle
+    rotation-vector commands are applied in this world frame, normalized native
+    +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and in
+    upright agentview image right is approximately +world y while image up is
+    approximately -0.628 world x +0.778 world z
   gripper_open_command: 0
   gripper_closed_command: 1
   params:
     scale_mode: normalized_robosuite_osc_pose_input
+    control_frame: mujoco_world
+    rotation_convention: right_hand_axis_angle_rotvec
+    native_translation_gain_m: 0.05
+    native_rotation_gain_rad: 0.5
+    sign_compensation: false
 
 controller:
   type: libero_delta_eef

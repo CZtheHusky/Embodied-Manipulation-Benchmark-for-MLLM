@@ -41,9 +41,18 @@ objects are present. A missing or empty upstream instruction is a runtime error.
 
 The public joystick has six discrete motion channels followed by one binary gripper channel:
 
-- `dx`, `dy`, and `dz` are delta translations along the PandaOmron robot-base axes.
-- `droll`, `dpitch`, and `dyaw` are axis-angle delta rotations about those same axes.
-- Motion commands use the official normalized `[-1, 1]` OSC input. Upstream robosuite maps the endpoints to approximately `0.05 m` translation and `0.5 rad` rotation, so the benchmark controller scales are `1.0`; using `0.05` or `0.1` here would apply a second unintended scale.
+- PandaOmron OSC controls `robot0_right_center` in the robot-base frame. This
+  frame moves with the mobile base; it is not a fixed world frame.
+- `dx`, `dy`, and `dz` are delta translations in that moving base frame.
+- `droll`, `dpitch`, and `dyaw` form an axis-angle rotation vector in the same
+  moving base frame.
+- Motion commands use the official normalized `[-1, 1]` OSC input. Upstream
+  maps the endpoints to approximately `0.05 m` translation and `0.5 rad`
+  rotation, so the benchmark controller scales remain `1.0`; using `0.05` or
+  `0.1` here would apply a second unintended scale.
+- The baseline applies no backend sign compensation. Positive and negative
+  commands are passed with their stated base-frame signs; the perturbed
+  condition's explicit hidden sign flips are benchmark perturbations.
 - The virtual gripper is binary: `0` means open and `1` means close. The pinned RoboCasa wrapper internally maps values below `0.5` to native `-1` and values at or above `0.5` to native `1`; there is no distinct `0.5` hold command.
 
 After a hidden 3D rotation, a multi-axis discrete command can have an individual component outside the upstream normalized Box even though its Euclidean norm is unchanged. `RoboCasaOSCController` therefore rescales each transformed translation or rotation vector by its infinity norm only when necessary. This preserves direction while enforcing the official native action bound.
@@ -55,6 +64,11 @@ The model input projection includes only:
 - Public control semantics and action schema.
 - RGB from `robot0_agentview_left`, `robot0_agentview_right`, and `robot0_eye_in_hand`.
 - The model's own normalized action and reflection history.
+
+The two `robot0_agentview` cameras are attached to the mobile robot base. Their
+image directions therefore move with the base and must not be described as
+fixed MuJoCo world directions. The MLLM prompts state this explicitly instead
+of supplying a world-frame image basis.
 
 It excludes observation state, reward, success, distances, object or end-effector poses, native simulator actions, seeds, camera randomization, and concrete permutation, sign, or SO(3) samples. In the perturbed condition the prompt says that hidden controls exist and remain fixed for the episode, but does not reveal their values.
 

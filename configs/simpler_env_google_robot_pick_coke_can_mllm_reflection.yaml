@@ -40,7 +40,17 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
-  control_frame_description: the Google Robot end-effector origin with axes aligned to the robot base frame
+  control_frame_description: >-
+    the Google Robot robot-base Cartesian frame with its control origin at the
+    TCP, not the tool frame. Translation deltas and axis-angle rotation vectors
+    both use robot-base axes; rotation is pre-multiplied about the TCP origin.
+    For this task the robot-base transform is identity, so the robot-base and
+    world frames coincide. normalize_action is false: mapped magnitude-1
+    translation and rotation commands are scaled to 0.05 meters and 0.1 radians
+    respectively, with no sign compensation. base_camera is fixed: base +y is
+    approximately image right, base +z is image up, and base +x is mainly image
+    depth/down. overhead_camera is robot-mounted, so no fixed world-to-image
+    direction is claimed
   gripper_open_command: 0
   gripper_closed_command: 1
   params:
