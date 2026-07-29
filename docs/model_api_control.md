@@ -183,16 +183,17 @@ Each MLLM benchmark invocation uses:
 
 ~~~text
 <logging.output_dir>/
-  model-<requested>__reasoning-<effort>__api-<api>__history-<policy>__episodes-<N>__maxsteps-<N>/
+  model-<requested>__reasoning-<effort>__api-<api>__prompt-<version>__history-<policy>__episodes-<N>__maxsteps-<N>/
     <timestamp>-<uuid>/
       run_manifest.json
       run_summary.json
       episode_XXXX/
 ~~~
 
-For Chat Completions, the group name records image and action history windows.
-For Responses, it records `history-full`, because both windows must be `all`
-and retained context is chained through `previous_response_id`. The manifest
+For Chat Completions, the group name records the prompt version plus image and
+action history windows. For Responses, it records the Responses prompt version
+and `history-full`, because both windows must be `all` and retained context is
+chained through `previous_response_id`. The manifest
 contains the full key configuration without credentials. The run summary
 contains aggregate metrics, episode status, and endpoint-reported model names.
 
