@@ -208,9 +208,11 @@ def test_robocasa_mllm_task_rejects_successful_reset_before_model_call():
                         "Pick the cucumber from the counter and place it in "
                         "the cabinet."
                     ),
-                    "is_success": True,
                 },
             )
+
+        def get_state(self):
+            return {"is_success": True}
 
     with pytest.raises(RuntimeError, match="already successful immediately after reset"):
         task.reset(StubSim(), seed=42)

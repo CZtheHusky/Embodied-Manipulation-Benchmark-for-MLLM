@@ -31,7 +31,7 @@ class RoboCasaGenericTask(Task):
             self._instruction = _configured_instruction(self.config)
         if (
             self.config.params.get("reject_initial_success", False)
-            and _success_from_state(observation.state)
+            and _success_from_state(sim.get_state())
         ):
             raise RuntimeError(
                 "RoboCasa task is already successful immediately after reset "
