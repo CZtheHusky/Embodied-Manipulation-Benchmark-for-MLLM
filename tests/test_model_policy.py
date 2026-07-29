@@ -14,9 +14,11 @@ from mllm_teleop_benchmark.agents.model_client import (
     ModelUsage,
 )
 from mllm_teleop_benchmark.agents.model_policy import (
+    HIDDEN_REASONING_REDACTION,
     IMAGE_OMITTED,
     MLLMPolicy,
     _canonical_message_stream,
+    sanitize_provider_response,
 )
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.config.schema import (
@@ -178,6 +180,51 @@ def test_json_object_requirement_is_present_in_user_input():
     assert "json" in user_text.lower()
     assert "Reflection" not in request.messages[0]["content"]
     assert "Reflection" not in user_text
+
+
+def test_response_artifact_sanitization_removes_hidden_reasoning():
+    raw = {
+        "choices": [
+            {
+                "message": {
+                    "content": "{\"channels\":{}}",
+                    "reasoning_content": "PRIVATE_CHAIN_OF_THOUGHT",
+                }
+            }
+        ],
+        "output": [
+            {
+                "type": "reasoning",
+                "id": "reasoning-item",
+                "summary": "PRIVATE_REASONING_SUMMARY",
+                "encrypted_content": "PRIVATE_ENCRYPTED_REASONING",
+            }
+        ],
+        "usage": {
+            "completion_tokens_details": {
+                "reasoning_tokens": 42,
+            }
+        },
+    }
+
+    sanitized = sanitize_provider_response(raw)
+    serialized = json.dumps(sanitized)
+
+    assert "PRIVATE_CHAIN_OF_THOUGHT" not in serialized
+    assert "PRIVATE_REASONING_SUMMARY" not in serialized
+    assert "PRIVATE_ENCRYPTED_REASONING" not in serialized
+    assert (
+        sanitized["choices"][0]["message"]["reasoning_content"]
+        == HIDDEN_REASONING_REDACTION
+    )
+    assert sanitized["output"][0] == {
+        "type": "reasoning",
+        "content": HIDDEN_REASONING_REDACTION,
+    }
+    assert (
+        sanitized["usage"]["completion_tokens_details"]["reasoning_tokens"]
+        == 42
+    )
 
 
 def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():

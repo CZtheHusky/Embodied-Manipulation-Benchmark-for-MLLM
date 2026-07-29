@@ -259,13 +259,16 @@ listed as `incomplete`; completed request/response pairs remain inspectable.
 
 The request snapshot view renders every system/user/assistant message in the
 selected request, resolves image hashes to the exact persisted model-visible
-PNGs, and appends the raw provider response. The episode conversation view
+PNGs, and appends the sanitized provider response. Hidden reasoning fields such
+as `reasoning_content` and Responses reasoning items are replaced with an
+explicit redaction marker before the artifact is written; aggregate token
+counts remain available. The episode conversation view
 removes repeated request prefixes and shows each observation followed by its
 response over time. For Responses runs, the raw inspector shows the incremental
 request body while the conversation view reconstructs the retained chain from
 all step artifacts.
 
-The JSON inspector exposes the sanitized request, raw response, and public
+The JSON inspector exposes the sanitized request, sanitized response, and public
 agent trace. The server does not expose arbitrary files: image routes are
 restricted to PNG artifacts named in request manifests, and evaluator
 state/info are not returned by its API.

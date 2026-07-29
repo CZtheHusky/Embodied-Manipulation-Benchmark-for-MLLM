@@ -17,6 +17,19 @@ PROMPT_VERSION = "mllm_joystick_v2"
 REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v2"
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
+HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
+_HIDDEN_REASONING_KEYS = frozenset(
+    {
+        "analysis",
+        "chain_of_thought",
+        "reasoning",
+        "reasoning_content",
+        "reasoning_details",
+        "thinking",
+        "thinking_content",
+        "thoughts",
+    }
+)
 
 
 class ModelInputError(ValueError):
@@ -119,7 +132,10 @@ class MLLMPolicy(Agent):
             trace=self._trace(response, common_prefix_bytes, image_count, artifact_dir),
             artifacts=(
                 *request_artifacts,
-                _json_artifact(f"{artifact_dir}/response.json", _sanitize_json(response.raw)),
+                _json_artifact(
+                    f"{artifact_dir}/response.json",
+                    sanitize_provider_response(response.raw),
+                ),
             ),
         )
 
@@ -526,14 +542,27 @@ def _sanitized_request_body(
     return body
 
 
-def _sanitize_json(value: Any) -> Any:
+def sanitize_provider_response(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            str(key): "[REDACTED]" if str(key).lower() == "authorization" else _sanitize_json(item)
-            for key, item in value.items()
-        }
+        item_type = str(value.get("type", "")).lower()
+        if item_type in {"analysis", "reasoning", "thinking"}:
+            return {
+                "type": value.get("type"),
+                "content": HIDDEN_REASONING_REDACTION,
+            }
+        sanitized = {}
+        for key, item in value.items():
+            name = str(key)
+            lowered = name.lower()
+            if lowered == "authorization":
+                sanitized[name] = "[REDACTED]"
+            elif lowered in _HIDDEN_REASONING_KEYS:
+                sanitized[name] = HIDDEN_REASONING_REDACTION
+            else:
+                sanitized[name] = sanitize_provider_response(item)
+        return sanitized
     if isinstance(value, list):
-        return [_sanitize_json(item) for item in value]
+        return [sanitize_provider_response(item) for item in value]
     if isinstance(value, str) and value.startswith("data:image/") and ";base64," in value:
         return "[image data omitted]"
     return value

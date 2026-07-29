@@ -18,10 +18,10 @@ from mllm_teleop_benchmark.agents.model_policy import (
     _cache_hit_ratio,
     _history_action,
     _json_artifact,
-    _sanitize_json,
     _static_instruction,
     _system_prompt,
     _unique_images,
+    sanitize_provider_response,
 )
 from mllm_teleop_benchmark.config.schema import AgentConfig
 from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, AgentTrace, Observation, StepTransition
@@ -187,7 +187,10 @@ class ResponsesMLLMPolicy(MLLMPolicy):
             artifacts=(
                 *recovery_artifacts,
                 *request_artifacts,
-                _json_artifact(f"{artifact_dir}/response.json", _sanitize_json(response.raw)),
+                _json_artifact(
+                    f"{artifact_dir}/response.json",
+                    sanitize_provider_response(response.raw),
+                ),
             ),
         )
 
