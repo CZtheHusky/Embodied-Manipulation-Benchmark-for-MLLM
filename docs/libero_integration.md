@@ -112,9 +112,16 @@ Both use:
 - reasoning effort `low`
 - three historical image turns and all textual action history
 - public `agentview` and `robot0_eye_in_hand` RGB
-- one fixed upstream `libero_spatial` task and init state
+- one fixed upstream `libero_spatial` task with deterministic seed-selected
+  official init states
 
 The baseline exposes the fixed joystick mapping and identity frame. The perturbed condition tells the model that the mapping and frame transform are hidden and episode-fixed, but never includes the sampled permutation, signs, rotation matrix, quaternion, simulator state, BDDL goal predicates, reward, success oracle, native action, or seed in the request.
+
+The human-play config keeps explicit `init_state_id: 0`. The MLLM configs use
+`init_state_strategy: seed_modulo`, selecting `episode_seed % init_state_count`.
+This makes repeated runs deterministic while allowing a ten-episode batch to
+cover distinct official initial states. The selected id is evaluator metadata
+and is never included in the model request.
 
 The local Fake Client validation runs four real simulator steps for each condition. It checks:
 
@@ -137,6 +144,7 @@ Every reset records:
 - task id
 - upstream task name
 - init-state id
+- init-state selection strategy
 - `no_language_baseline`
 - `random_baseline`
 

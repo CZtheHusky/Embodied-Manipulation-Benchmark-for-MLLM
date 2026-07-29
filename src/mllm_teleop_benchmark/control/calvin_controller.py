@@ -52,11 +52,13 @@ class CalvinDeltaEEFController(Controller):
         values_by_dim = {dim: command.get(dim) * self.scales.get(dim, 1.0) for dim in self.dimensions if dim != "gripper"}
 
         if self.frame_transform is not None and any(dim in values_by_dim for dim in ("dx", "dy", "dz")):
-            transformed = self.frame_transform.transform_delta_position(
-                (
-                    values_by_dim.get("dx", 0.0),
-                    values_by_dim.get("dy", 0.0),
-                    values_by_dim.get("dz", 0.0),
+            transformed = _fit_normalized_vector(
+                self.frame_transform.transform_delta_position(
+                    (
+                        values_by_dim.get("dx", 0.0),
+                        values_by_dim.get("dy", 0.0),
+                        values_by_dim.get("dz", 0.0),
+                    )
                 )
             )
             for dim, value in zip(("dx", "dy", "dz"), transformed, strict=True):
@@ -111,3 +113,12 @@ class CalvinDeltaEEFController(Controller):
     def _map_gripper(self, value: float) -> float:
         clipped = min(max(float(value), 0.0), 1.0)
         return self.gripper_open_value if clipped >= 0.5 else self.gripper_closed_value
+
+
+def _fit_normalized_vector(
+    values: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    max_abs = max(abs(float(value)) for value in values)
+    if max_abs <= 1.0:
+        return tuple(float(value) for value in values)
+    return tuple(float(value) / max_abs for value in values)

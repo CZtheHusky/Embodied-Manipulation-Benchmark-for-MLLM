@@ -374,6 +374,97 @@ def test_rlbench_adapter_converts_delta_to_absolute_pose_action():
     np.testing.assert_allclose(native, [0.1, -0.1, 1.35, 0.0, 0.0, 0.0, 1.0, 1.0])
 
 
+def test_rlbench_variation_is_derived_from_episode_seed():
+    config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
+    adapter = RLBenchSimAdapter(config.simulator)
+
+    class FakeTask:
+        variation = None
+
+        def variation_count(self):
+            return 3
+
+        def set_variation(self, variation):
+            self.variation = variation
+
+    task = FakeTask()
+    adapter.task = task
+
+    assert adapter._sample_variation(seed=5) == 2
+    assert task.variation == 2
+
+
+def test_rlbench_rejected_planning_action_does_not_abort_episode_or_advance_sim():
+    config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
+    adapter = RLBenchSimAdapter(config.simulator)
+    native_observation = type(
+        "FakeRLBenchObs",
+        (),
+        {
+            "gripper_pose": np.asarray(
+                [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                dtype=np.float32,
+            )
+        },
+    )()
+    adapter.last_native_obs = native_observation
+
+    class FakeInvalidActionError(Exception):
+        pass
+
+    class RejectingTask:
+        calls = 0
+
+        def step(self, _action):
+            self.calls += 1
+            raise FakeInvalidActionError("unreachable target")
+
+    task = RejectingTask()
+    adapter.task = task
+    adapter._invalid_action_error_type = FakeInvalidActionError
+
+    result = adapter.step(
+        RLBenchAction(delta_position=(0.02, 0.0, 0.0), gripper=1.0)
+    )
+
+    assert task.calls == 1
+    assert result.observation.step_id == 1
+    assert result.info["action_rejected"] is True
+    assert result.terminated is False
+    assert result.truncated is False
+    assert adapter.last_native_obs is native_observation
+
+
+def test_rlbench_adapter_does_not_hide_unexpected_step_errors():
+    config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
+    adapter = RLBenchSimAdapter(config.simulator)
+    adapter.last_native_obs = type(
+        "FakeRLBenchObs",
+        (),
+        {
+            "gripper_pose": np.asarray(
+                [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                dtype=np.float32,
+            )
+        },
+    )()
+
+    class FakeInvalidActionError(Exception):
+        pass
+
+    class BrokenTask:
+        def step(self, _action):
+            raise RuntimeError("simulator disconnected")
+
+    adapter.task = BrokenTask()
+    adapter._invalid_action_error_type = FakeInvalidActionError
+
+    with pytest.raises(RuntimeError, match="simulator disconnected"):
+        adapter.step(
+            RLBenchAction(delta_position=(0.02, 0.0, 0.0), gripper=1.0)
+        )
+
+
 def test_rlbench_observation_provider_extracts_configured_rgb_camera():
     config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
     provider = RLBenchObservationProvider(build_camera_manager(config.camera, config.benchmark.seed))

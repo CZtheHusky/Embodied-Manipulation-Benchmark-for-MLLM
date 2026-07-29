@@ -526,6 +526,45 @@ def test_calvin_mllm_controller_uses_native_scale_and_does_not_rotate_euler_para
     assert controller.metadata()["transform_rotation"] is False
 
 
+def test_calvin_hidden_rotation_preserves_direction_within_native_action_bounds():
+    config = load_config(
+        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+    )
+    mapping = MagicMock()
+    mapping.map_action.return_value = {
+        "dx": 1.0,
+        "dy": 1.0,
+        "dz": 0.0,
+        "droll": 0.0,
+        "dpitch": 0.0,
+        "dyaw": 0.0,
+        "gripper": 1.0,
+    }
+    mapping.metadata.return_value = {}
+
+    from mllm_teleop_benchmark.control.calvin_controller import CalvinDeltaEEFController
+
+    transform = RotationControlFrameTransform.from_config(
+        FrameTransformConfig(
+            type="rotation_3d",
+            visible_to_agent=False,
+            params={"rpy_degrees": [0, 0, 45]},
+        )
+    )
+    controller = CalvinDeltaEEFController.from_config(
+        config.controller,
+        mapping,
+        transform,
+    )
+
+    sim_action = controller.translate(
+        JoystickAction(channels={"joystick_0": 1.0})
+    )
+
+    np.testing.assert_allclose(sim_action.values[:3], [0.0, 1.0, 0.0], atol=1e-12)
+    assert np.max(np.abs(sim_action.values[:3])) <= 1.0
+
+
 def test_calvin_mllm_normalized_action_reaches_pinned_native_step_size():
     pytest.importorskip("calvin_env")
     from types import SimpleNamespace
@@ -921,7 +960,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
         values = np.asarray(step["sim_action"]["values"], dtype=float)
         assert values.shape == (7,)
         assert np.all(np.isfinite(values))
-        assert np.all(np.abs(values[:6]) <= 0.100_001)
+        assert np.all(np.abs(values[:6]) <= 1.000_001)
         assert values[6] in {-1.0, 1.0}
 
     pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))

@@ -232,6 +232,37 @@ def test_libero_adapter_extracts_rgb_images_and_validity_metadata():
     assert state["benchmark_validity"]["random_baseline"] is True
 
 
+@pytest.mark.parametrize("config_path", [path for path, *_ in MLLM_CONFIGS])
+def test_libero_mllm_initial_state_is_deterministic_and_seed_diverse(config_path):
+    config = load_config(config_path)
+    adapter = LiberoSimAdapter(config.simulator)
+
+    assert config.simulator.params["init_state_strategy"] == "seed_modulo"
+    assert config.task.params["init_state_strategy"] == "seed_modulo"
+    assert adapter._select_init_state(config.task, seed=7, init_state_count=50) == (
+        7,
+        "seed_modulo",
+    )
+    assert adapter._select_init_state(config.task, seed=8, init_state_count=50) == (
+        8,
+        "seed_modulo",
+    )
+    assert adapter._select_init_state(config.task, seed=57, init_state_count=50) == (
+        7,
+        "seed_modulo",
+    )
+
+
+def test_libero_human_play_config_keeps_explicit_fixed_initial_state():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    adapter = LiberoSimAdapter(config.simulator)
+
+    assert adapter._select_init_state(config.task, seed=42, init_state_count=50) == (
+        0,
+        "fixed",
+    )
+
+
 def test_libero_adapter_flips_raw_opengl_images_exactly_once():
     config = load_config("configs/libero_spatial_task0.yaml")
     adapter = LiberoSimAdapter(config.simulator)

@@ -10,7 +10,7 @@ simulator:
     suite_name: libero_spatial
     task_id: 0
     task_order_index: 0
-    init_state_id: 0
+    init_state_strategy: seed_modulo
     horizon: 200
     control_freq: 20
     camera_names: [agentview, robot0_eye_in_hand]
@@ -25,7 +25,7 @@ task:
     suite_name: libero_spatial
     task_id: 0
     task_order_index: 0
-    init_state_id: 0
+    init_state_strategy: seed_modulo
     language_instruction: pick up the black bowl between the plate and the ramekin and place it on the plate
     no_language_baseline: false
     random_baseline: false
@@ -33,7 +33,7 @@ task:
       language_instruction: pick up the black bowl between the plate and the ramekin and place it on the plate
       suite_name: libero_spatial
       task_id: 0
-      init_state_id: 0
+      init_state_strategy: seed_modulo
       no_language_baseline: false
       random_baseline: false
 

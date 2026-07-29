@@ -42,7 +42,6 @@ class LiberoSimAdapter(SimAdapter):
 
         suite_name = str(task_config.params.get("suite_name", self.config.params.get("suite_name", "libero_spatial")))
         task_id = int(task_config.params.get("task_id", self.config.params.get("task_id", 0)))
-        init_state_id = int(task_config.params.get("init_state_id", self.config.params.get("init_state_id", 0)))
         task_order_index = int(task_config.params.get("task_order_index", self.config.params.get("task_order_index", 0)))
 
         benchmark_dict = benchmark.get_benchmark_dict()
@@ -54,16 +53,26 @@ class LiberoSimAdapter(SimAdapter):
         if not Path(bddl_file).exists():
             raise FileNotFoundError(f"LIBERO BDDL file is missing: {bddl_file}")
 
-        self._task_metadata = self._benchmark_validity(task_config, task, suite_name, task_id, init_state_id)
+        init_states = task_suite.get_task_init_states(task_id)
+        init_state_id, init_state_strategy = self._select_init_state(
+            task_config,
+            seed,
+            len(init_states),
+        )
+        self._task_metadata = self._benchmark_validity(
+            task_config,
+            task,
+            suite_name,
+            task_id,
+            init_state_id,
+            init_state_strategy,
+        )
         env_args = self._env_args(task_config, bddl_file)
         self.env = offscreen_env(**env_args)
         if hasattr(self.env, "seed"):
             self.env.seed(seed)
         self.env.reset()
 
-        init_states = task_suite.get_task_init_states(task_id)
-        if init_state_id < 0 or init_state_id >= len(init_states):
-            raise IndexError(f"LIBERO init_state_id {init_state_id} is outside available range 0..{len(init_states) - 1}")
         self.last_native_obs = self.env.set_init_state(init_states[init_state_id])
         return self._observation()
 
@@ -219,6 +228,7 @@ class LiberoSimAdapter(SimAdapter):
         suite_name: str,
         task_id: int,
         init_state_id: int,
+        init_state_strategy: str,
     ) -> dict[str, Any]:
         return {
             "language_instruction": str(getattr(task, "language", task_config.params.get("language_instruction", ""))),
@@ -226,9 +236,43 @@ class LiberoSimAdapter(SimAdapter):
             "task_id": task_id,
             "task_name": str(getattr(task, "name", "")),
             "init_state_id": init_state_id,
+            "init_state_strategy": init_state_strategy,
             "no_language_baseline": bool(task_config.params.get("no_language_baseline", False)),
             "random_baseline": bool(task_config.params.get("random_baseline", False)),
         }
+
+    def _select_init_state(
+        self,
+        task_config: TaskConfig,
+        seed: int,
+        init_state_count: int,
+    ) -> tuple[int, str]:
+        if init_state_count <= 0:
+            raise RuntimeError("LIBERO task does not provide any initial states")
+        strategy = str(
+            task_config.params.get(
+                "init_state_strategy",
+                self.config.params.get("init_state_strategy", "fixed"),
+            )
+        )
+        if strategy == "seed_modulo":
+            return int(seed) % init_state_count, strategy
+        if strategy != "fixed":
+            raise ValueError(
+                "LIBERO init_state_strategy must be 'fixed' or 'seed_modulo'"
+            )
+        init_state_id = int(
+            task_config.params.get(
+                "init_state_id",
+                self.config.params.get("init_state_id", 0),
+            )
+        )
+        if init_state_id < 0 or init_state_id >= init_state_count:
+            raise IndexError(
+                f"LIBERO init_state_id {init_state_id} is outside available "
+                f"range 0..{init_state_count - 1}"
+            )
+        return init_state_id, strategy
 
     def _observation(self) -> Observation:
         return Observation(

@@ -26,8 +26,10 @@ class RLBenchSimAdapter(SimAdapter):
         self.last_descriptions: tuple[str, ...] = ()
         self.last_reward: float | None = None
         self.last_terminate = False
+        self.last_action_rejected = False
         self.variation_index: int | None = None
         self._camera_specs: tuple[CameraSpec, ...] = ()
+        self._invalid_action_error_type: type[Exception] | None = None
 
     def set_camera_configuration(self, camera_specs: tuple[CameraSpec, ...]) -> None:
         if self.env is not None:
@@ -39,6 +41,7 @@ class RLBenchSimAdapter(SimAdapter):
         self.step_id = 0
         self.last_reward = None
         self.last_terminate = False
+        self.last_action_rejected = False
         self.variation_index = self._sample_variation(seed)
         descriptions, obs = self.task.reset()
         self.last_descriptions = tuple(str(item) for item in descriptions)
@@ -50,11 +53,28 @@ class RLBenchSimAdapter(SimAdapter):
             raise TypeError(f"RLBenchSimAdapter requires RLBenchAction, got {type(action).__name__}")
         self._ensure_task(None)
         native_action = self._native_action(action)
-        obs, reward, terminate = self.task.step(native_action)
+        try:
+            obs, reward, terminate = self.task.step(native_action)
+        except Exception as exc:
+            if self._invalid_action_error_type is None or not isinstance(
+                exc, self._invalid_action_error_type
+            ):
+                raise
+            self.step_id += 1
+            self.last_reward = 0.0
+            self.last_terminate = False
+            self.last_action_rejected = True
+            return StepResult(
+                observation=self._observation(),
+                terminated=False,
+                truncated=False,
+                info=self.get_state(),
+            )
         self.step_id += 1
         self.last_native_obs = obs
         self.last_reward = float(reward)
         self.last_terminate = bool(terminate)
+        self.last_action_rejected = False
         return StepResult(
             observation=self._observation(),
             terminated=self.last_terminate,
@@ -82,6 +102,7 @@ class RLBenchSimAdapter(SimAdapter):
             "reward": self.last_reward,
             "terminate": self.last_terminate,
             "success": self.last_terminate,
+            "action_rejected": self.last_action_rejected,
             "descriptions": list(self.last_descriptions),
         }
         gripper_pose = self._last_gripper_pose()
@@ -108,6 +129,7 @@ class RLBenchSimAdapter(SimAdapter):
         try:
             import pyrep  # noqa: F401
             from rlbench.environment import Environment
+            from rlbench.task_environment import InvalidActionError
         except ImportError as exc:
             raise ImportError(
                 "RLBench backend requires rlbench, pyrep, and an external CoppeliaSim install. "
@@ -117,6 +139,7 @@ class RLBenchSimAdapter(SimAdapter):
             ) from exc
 
         task_class = self._resolve_task_class()
+        self._invalid_action_error_type = InvalidActionError
         action_mode = self._action_mode()
         obs_config = self._observation_config()
         kwargs = dict(self.config.env_kwargs)
@@ -214,6 +237,17 @@ class RLBenchSimAdapter(SimAdapter):
             if variation is not None and hasattr(self.task, "set_variation"):
                 self.task.set_variation(int(variation))
                 return int(variation)
+            if hasattr(self.task, "variation_count") and hasattr(
+                self.task, "set_variation"
+            ):
+                variation_count = int(self.task.variation_count())
+                if variation_count <= 0:
+                    raise RuntimeError(
+                        "RLBench task must expose at least one variation"
+                    )
+                sampled = int(seed) % variation_count
+                self.task.set_variation(sampled)
+                return sampled
             if hasattr(self.task, "sample_variation"):
                 sampled = self.task.sample_variation()
                 return int(sampled) if sampled is not None else None
