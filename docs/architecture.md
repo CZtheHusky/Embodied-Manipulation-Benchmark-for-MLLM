@@ -29,6 +29,8 @@ Control-interface mapping strategies only confuse motion dimensions (`dx`, `dy`,
 
 Episode logging writes:
 
+- run-level `run_manifest.json` with the start-time git commit, dirty flag,
+  source config path, and key experiment settings
 - `config.yaml`
 - `summary.json`
 - `trajectory.jsonl`

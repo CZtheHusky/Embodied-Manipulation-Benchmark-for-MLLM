@@ -36,12 +36,14 @@ class EpisodeLogger:
         seed: int,
         run_id: str | None = None,
         run_group: str | None = None,
+        source_revision: dict[str, object] | None = None,
     ) -> None:
         self.config = config
         self.episode_id = episode_id
         self.seed = seed
         self.run_id = run_id or make_run_id()
         self.run_group = run_group
+        self.source_revision = dict(source_revision or {})
         relative_run_dir = (
             Path(run_group) / self.run_id if run_group is not None else Path(self.run_id)
         )
@@ -155,9 +157,10 @@ class EpisodeLogger:
         model = self.config.agent.model
         agent_metadata = self.metadata.get("agent", {})
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": self.run_id,
             "experiment_group": self.run_group,
+            "source": self.source_revision,
             "benchmark": {
                 "name": self.config.benchmark.name,
                 "num_episodes": self.config.benchmark.num_episodes,

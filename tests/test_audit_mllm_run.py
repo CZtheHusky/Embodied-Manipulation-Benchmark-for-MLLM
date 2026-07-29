@@ -313,6 +313,48 @@ def test_running_directory_is_incomplete(monkeypatch, tmp_path):
     }
 
 
+def test_schema_v2_requires_clean_source_revision(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _mock_ffprobe(monkeypatch)
+    _write_json(
+        run_dir / "run_manifest.json",
+        {
+            "schema_version": 2,
+            "benchmark": {"num_episodes": 1},
+            "source": {
+                "status": "reported",
+                "git_commit": "a" * 40,
+                "git_dirty": False,
+                "config_path": "configs/test.yaml",
+            },
+        },
+    )
+
+    clean = audit_mllm_run.audit_run(run_dir)
+
+    assert clean["status"] == "pass"
+    assert clean["checks"]["source_revision"] == {
+        "status": "pass",
+        "capture_status": "reported",
+        "git_commit": "a" * 40,
+        "git_dirty": False,
+        "config_path": "configs/test.yaml",
+    }
+
+    manifest = json.loads(
+        (run_dir / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    manifest["source"]["git_dirty"] = True
+    _write_json(run_dir / "run_manifest.json", manifest)
+
+    dirty = audit_mllm_run.audit_run(run_dir)
+
+    assert dirty["status"] == "fail"
+    assert "source_tree_dirty" in {
+        item["code"] for item in dirty["anomalies"]
+    }
+
+
 def test_ffprobe_unavailable_and_wrong_streams_are_not_passed(
     monkeypatch,
     tmp_path,

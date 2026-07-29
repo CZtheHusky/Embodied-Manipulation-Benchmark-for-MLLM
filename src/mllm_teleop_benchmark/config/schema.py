@@ -735,10 +735,15 @@ class BenchmarkConfig:
     logging: LoggingConfig
     ui: UIConfig
     control_interface: ControlInterfaceConfig
+    source_path: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "BenchmarkConfig":
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        source_path: str | None = None,
+    ) -> "BenchmarkConfig":
         control_interface_data = _require(data, "control_interface")
         if not isinstance(control_interface_data, dict):
             raise ValueError("control_interface must be a YAML mapping")
@@ -768,5 +773,6 @@ class BenchmarkConfig:
             logging=logging,
             ui=UIConfig.from_dict(data.get("ui", {})),
             control_interface=control_interface,
+            source_path=source_path,
             raw=data,
         )

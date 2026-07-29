@@ -71,6 +71,7 @@ class RunAuditor:
     def run(self) -> dict[str, Any]:
         manifest = self.read_json(self.root / "run_manifest.json", "incomplete")
         summary = self.read_json(self.root / "run_summary.json", "incomplete")
+        source_revision = self.audit_source_revision(manifest)
         requested = _nested_int(manifest, "benchmark", "num_episodes")
         if manifest is not None and requested is None:
             self.add("error", "requested_episode_count_invalid", "run_manifest.json")
@@ -153,8 +154,57 @@ class RunAuditor:
                 "secrets": secrets,
                 "prompt_privacy": privacy,
                 "model_view": self.video_summary(episodes),
+                "source_revision": source_revision,
             },
             "anomalies": self.anomalies,
+        }
+
+    def audit_source_revision(
+        self,
+        manifest: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        schema_version = _nested_int(manifest, "schema_version")
+        if schema_version is None or schema_version < 2:
+            return {"status": "legacy_unreported"}
+
+        source = manifest.get("source") if isinstance(manifest, dict) else None
+        if not isinstance(source, dict):
+            self.add("error", "source_revision_missing", "run_manifest.json")
+            return {"status": "fail"}
+
+        commit = source.get("git_commit")
+        dirty = source.get("git_dirty")
+        config_path = source.get("config_path")
+        capture_status = source.get("status")
+        if capture_status != "reported":
+            self.add(
+                "error",
+                "source_revision_unavailable",
+                "run_manifest.json",
+            )
+        if not isinstance(commit, str) or re.fullmatch(r"[0-9a-fA-F]{40}", commit) is None:
+            self.add("error", "git_commit_invalid", "run_manifest.json")
+        if dirty is not False:
+            self.add("error", "source_tree_dirty", "run_manifest.json")
+        if not isinstance(config_path, str) or not config_path:
+            self.add("error", "source_config_path_missing", "run_manifest.json")
+
+        failed = any(
+            item["code"]
+            in {
+                "source_revision_unavailable",
+                "git_commit_invalid",
+                "source_tree_dirty",
+                "source_config_path_missing",
+            }
+            for item in self.anomalies
+        )
+        return {
+            "status": "fail" if failed else "pass",
+            "capture_status": capture_status,
+            "git_commit": commit,
+            "git_dirty": dirty,
+            "config_path": config_path,
         }
 
     def audit_episode(self, episode_id: int, episode_dir: Path | None) -> dict[str, Any]:

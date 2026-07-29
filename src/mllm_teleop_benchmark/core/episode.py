@@ -30,6 +30,7 @@ class EpisodeManager:
         agent: Agent,
         run_id: str | None = None,
         run_group: str | None = None,
+        source_revision: dict[str, object] | None = None,
     ) -> None:
         self.config = config
         self.sim = sim
@@ -42,6 +43,7 @@ class EpisodeManager:
         self.agent = agent
         self.run_id = run_id
         self.run_group = run_group
+        self.source_revision = dict(source_revision or {})
 
     def run_episode(self, episode_id: int, seed: int) -> EpisodeResult:
         logger = EpisodeLogger(
@@ -50,6 +52,7 @@ class EpisodeManager:
             seed,
             run_id=self.run_id,
             run_group=self.run_group,
+            source_revision=self.source_revision,
         )
         metrics = MetricsRecorder()
         history: list[StepTransition] = []

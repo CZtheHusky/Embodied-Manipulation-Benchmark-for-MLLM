@@ -16,7 +16,7 @@ def load_config(path: str | Path, overrides: tuple[str, ...] = ()) -> BenchmarkC
         raise ValueError(f"Config must be a YAML mapping: {config_path}")
     for override in overrides:
         _apply_override(data, override)
-    return BenchmarkConfig.from_dict(data)
+    return BenchmarkConfig.from_dict(data, source_path=str(config_path.resolve()))
 
 
 def _apply_override(data: dict[str, Any], override: str) -> None:

@@ -26,6 +26,7 @@ from mllm_teleop_benchmark.logging.episode_logger import (
 )
 from mllm_teleop_benchmark.utils.seeding import episode_seed
 from mllm_teleop_benchmark.utils.serialization import to_jsonable
+from mllm_teleop_benchmark.utils.source_revision import capture_source_revision
 
 
 class BenchmarkRunner:
@@ -36,10 +37,16 @@ class BenchmarkRunner:
         results: list[EpisodeResult] = []
         run_id = make_run_id()
         run_group = make_experiment_group(self.config)
+        source_revision = capture_source_revision(self.config.source_path)
         selected_episode_ids = self._selected_episode_ids(episode_ids)
         for episode_id in selected_episode_ids:
             seed = episode_seed(self.config.benchmark.seed, episode_id)
-            manager = self._build_episode_manager(seed, run_id, run_group)
+            manager = self._build_episode_manager(
+                seed,
+                run_id,
+                run_group,
+                source_revision,
+            )
             results.append(manager.run_episode(episode_id=episode_id, seed=seed))
         aggregate_metrics = aggregate_episode_results(results)
         if run_group is not None:
@@ -77,6 +84,7 @@ class BenchmarkRunner:
         seed: int,
         run_id: str,
         run_group: str | None,
+        source_revision: dict[str, object],
     ) -> EpisodeManager:
         agent = build_agent(self.config, seed)
         sim = build_sim(self.config)
@@ -100,6 +108,7 @@ class BenchmarkRunner:
             agent=agent,
             run_id=run_id,
             run_group=run_group,
+            source_revision=source_revision,
         )
 
     def _write_run_summary(

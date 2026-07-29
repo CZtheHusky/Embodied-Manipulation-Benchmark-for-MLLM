@@ -43,6 +43,11 @@ trace, agent metadata, the experiment directory name, and
 in per-step traces and is aggregated into `run_summary.json`; a requested alias
 must not be treated as proof of the model that actually served the request.
 
+Manifest schema v2 also captures the repository commit, tracked-worktree dirty
+state, and source config path once at run start. The offline auditor rejects a
+new run recorded from a dirty or unidentifiable source tree. Each episode still
+stores the complete effective `config.yaml`, including command-line overrides.
+
 ## Output modes
 
 `agent.action_output_mode` makes the response contract explicit. The default
