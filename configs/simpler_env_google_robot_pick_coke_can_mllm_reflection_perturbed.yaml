@@ -1,0 +1,121 @@
+benchmark:
+  name: simpler_env_google_robot_pick_coke_can_mllm_reflection_perturbed_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: simpler_env
+  env_id: google_robot_pick_coke_can
+  render_mode: rgb_array
+
+task:
+  type: simpler_env_generic
+  max_steps: 80
+  success_threshold: 1.0
+  params:
+    instruction: pick coke can
+    success_key: success
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: image/base_camera
+      type: simpler_env_rgb
+      width: 128
+      height: 128
+    - name: image/overhead_camera
+      type: simpler_env_rgb
+      width: 640
+      height: 512
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: permuted_sign_flipped
+  visible_metadata: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_3d
+  frame_visible_to_agent: false
+  control_frame_description: the Google Robot end-effector origin with axes aligned to the robot base frame
+  gripper_open_command: 0
+  gripper_closed_command: 1
+  params:
+    scale_mode: simpler_env_google_robot_ee_align_axis_angle
+    rotation_representation: axis_angle
+    frame_transform:
+      sampling: uniform_so3
+
+controller:
+  type: simpler_env_delta_eef
+  frame: ee_align
+  scales:
+    dx: 0.05
+    dy: 0.05
+    dz: 0.05
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+  params:
+    dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
+    gripper_open_value: -1.0
+    gripper_closed_value: 1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [image/base_camera, image/overhead_camera]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/simpler_env_google_robot_pick_coke_can_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: image/overhead_camera
+  window_width: 720
+  window_height: 576
+  info_panel_height: 190
+  fps: 20
+  max_steps: 500
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true

@@ -9,6 +9,8 @@ SimplerEnv is integrated as an optional real-to-sim/VLA evaluation backend. The 
 - Controller: `control/simpler_env.py`
 - Task wrapper: `tasks/simpler_env_task.py`
 - Example config: `configs/simpler_env_google_robot_pick_coke_can.yaml`
+- MLLM baseline: `configs/simpler_env_google_robot_pick_coke_can_mllm_reflection.yaml`
+- MLLM perturbation: `configs/simpler_env_google_robot_pick_coke_can_mllm_reflection_perturbed.yaml`
 - uv backend: `simpler-env`
 
 ## Dependency
@@ -79,14 +81,66 @@ The rotation slots are passed into SimplerEnv's delta rotation action fields. Po
 
 The gripper is the final virtual joystick. The default mapping is `0.0 -> -1.0` and `1.0 -> 1.0`, configurable through controller params.
 
+For the Google Robot task, upstream defines the first three native action
+values as delta XYZ, the next three as an axis-angle rotation vector, and the
+last value as the gripper command. The active upstream controller uses an
+`ee_align` frame: the control origin is at the end effector and the axes are
+aligned to the robot base. In the benchmark's public joystick schema,
+`joystick_6=0` means open and `joystick_6=1` means closed; the controller maps
+those values to upstream `-1` and `1`.
+
 ## Observation
 
 The observation provider first tries to extract RGB frames from the native observation dict, then falls back to SimplerEnv's official `get_image_from_maniskill2_obs_dict(env, obs)` helper, and finally to `env.render()`.
 
 The adapter stores the latest native observation, reward, info, `success`, `truncated`, and language instruction when `env.get_language_instruction()` is available. `simpler_env_generic` uses `task.params.success_key`, defaulting to `success`, for success and metrics.
 
+Some upstream task diagnostics contain `sapien.Pose` values. The adapter
+serializes those evaluator-only values as `position` and
+`quaternion_wxyz` before trajectory logging; they remain excluded from model
+requests.
+
+The MLLM configs explicitly select only the public RGB views
+`image/base_camera` and `image/overhead_camera`. Native segmentation tensors
+remain in the simulator observation but are not selected by the MLLM
+projection. Model requests contain the task text, public control contract,
+selected RGB, and the model's own action/reflection history. They do not
+contain simulator state, reward, success, distance, object or end-effector
+pose, native simulator action, seed, or sampled mapping/frame-transform
+parameters.
+
+## MLLM Evaluation
+
+Both MLLM configurations use the shared `MLLMPolicy` and `SimAdapter` path,
+OpenAI-compatible Chat Completions, `action_with_reflection`,
+`reasoning_effort=low`, three historical RGB steps, and complete public action
+history. Video logging is disabled by default.
+
+The baseline exposes the fixed joystick mapping and uses the identity
+benchmark frame transform. The perturbed configuration uses a hidden
+`permuted_sign_flipped` motion mapping and hidden `random_rotation_3d`
+transform. The gripper remains the final, unpermuted, non-sign-flipped
+joystick in both modes. The sampled permutation, signs, and rotation remain
+fixed within one episode and are never included in model requests.
+
+Run the environment integration tests with the pinned runtime:
+
+```bash
+DISPLAY=:1 XAUTHORITY=/run/user/1001/gdm/Xauthority \
+PYTHONPATH=src .venvs/simpler-env/bin/python \
+  -m pytest tests/test_simpler_env_backend.py \
+  tests/test_simpler_env_integration.py -q
+```
+
+The tests perform real reset/step/render operations and run both MLLM
+configurations for four steps with an in-process fake model client. They check
+native action shape and bounds, RGB variance, image history, trajectory and
+run manifests, and privileged-information isolation. They do not access a
+model API.
+
 ## Current Limitations
 
 - Initial support is single-environment and Box-action focused.
-- Runtime camera mutation is out of scope; the initial config uses the default SimplerEnv rendered image.
+- Runtime camera mutation is out of scope; the MLLM configs consume the two
+  RGB cameras produced by the pinned Google Robot task.
 - The uv backend has no policy inference stack; it is for environment reset/step/render integration only.

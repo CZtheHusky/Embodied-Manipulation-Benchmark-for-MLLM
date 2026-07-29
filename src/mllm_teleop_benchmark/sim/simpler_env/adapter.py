@@ -193,6 +193,9 @@ class SimplerEnvSimAdapter(SimAdapter):
             return {str(key): self._jsonable(item) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
             return [self._jsonable(item) for item in value]
+        pose = self._pose_mapping(value)
+        if pose is not None:
+            return pose
         array = self._to_numpy(value)
         if array is not None:
             if array.size == 1:
@@ -230,6 +233,20 @@ class SimplerEnvSimAdapter(SimAdapter):
         if isinstance(value, np.generic):
             return np.asarray(value)
         return None
+
+    def _pose_mapping(self, value: Any) -> dict[str, Any] | None:
+        if not hasattr(value, "p") or not hasattr(value, "q"):
+            return None
+        position = self._to_numpy(value.p)
+        quaternion = self._to_numpy(value.q)
+        if position is None or quaternion is None:
+            return None
+        if position.size != 3 or quaternion.size != 4:
+            return None
+        return {
+            "position": position.reshape(3).tolist(),
+            "quaternion_wxyz": quaternion.reshape(4).tolist(),
+        }
 
     def _float_or_none(self, value: Any) -> float | None:
         if value is None:
