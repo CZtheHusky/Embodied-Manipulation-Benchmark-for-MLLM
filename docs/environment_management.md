@@ -15,7 +15,11 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
   - `uv_source`: uv lock plus pinned source checkouts installed after sync.
   - `external_runtime`: uv-managed Python dependencies plus a required host runtime, simulator binary, or driver stack.
   - `fallback_blocked`: uv is not currently reliable enough; use a documented conda or container fallback instead.
-- For `uv_source` backends, declare each upstream source in `scripts/manage_uv_env.py` with a repo URL and a 40-character commit SHA. Do not use floating branches, tags, or unpinned Git URLs as runtime verification inputs.
+- For source-backed environments, declare each upstream repository with a
+  40-character commit SHA. Environment creation requires both the exact `HEAD`
+  and no tracked modifications; untracked downloaded assets are allowed.
+  Floating branches, tags, dirty tracked sources, and unpinned Git URLs are not
+  valid runtime verification inputs.
 - Do not mix uv and conda inside the same backend environment. If a backend uses a conda fallback, treat that conda env as the primary environment for that backend.
 - Use CPU PyTorch for `maniskill-cpu` by default; use `maniskill-cu126` on NVIDIA CUDA 12.6 hosts.
 - Keep backend imports lazy so the core environment works without optional simulators installed.

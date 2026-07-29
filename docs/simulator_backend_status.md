@@ -13,7 +13,7 @@ This file records the environment-management and human-play status for simulator
 
 ## Source Pinning Rule
 
-Backends that depend on upstream source trees must record the source repository and exact 40-character commit SHA in the corresponding environment manager. Floating branches, tags, or unverified PyPI wheels are not enough for runtime verification. The create command fetches each source into `.venvs/_sources/`, checks out the pinned commit, verifies `HEAD`, and installs that checkout into the backend environment.
+Backends that depend on upstream source trees must record the source repository and exact 40-character commit SHA in the corresponding environment manager. Floating branches, tags, dirty tracked sources, or unverified PyPI wheels are not enough for runtime verification. The create command fetches each source into `.venvs/_sources/`, checks out the pinned commit, verifies `HEAD`, rejects tracked modifications while allowing untracked downloaded assets, and installs that checkout into the backend environment.
 
 ## Integrated In `main`
 

@@ -363,6 +363,15 @@ def verify_git_checkout(source_dir: Path, commit: str) -> None:
     actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
     if actual != commit:
         raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
+    status = run_output(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=source_dir,
+    )
+    if status:
+        raise SystemExit(
+            f"source checkout {source_dir} has tracked modifications; "
+            "refusing to install a dirty pinned source"
+        )
 
 
 def write_libero_config() -> None:

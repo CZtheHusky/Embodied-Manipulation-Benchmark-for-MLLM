@@ -231,6 +231,7 @@ def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
         except subprocess.CalledProcessError:
             actual = ""
         if actual == commit:
+            verify_git_checkout(source_dir, commit)
             return
         run(["git", "remote", "set-url", "origin", repo], cwd=source_dir)
     else:
@@ -240,9 +241,22 @@ def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
         run(["git", "remote", "add", "origin", repo], cwd=source_dir)
     run(["git", "fetch", "--depth", "1", "origin", commit], cwd=source_dir)
     run(["git", "checkout", "--detach", commit], cwd=source_dir)
+    verify_git_checkout(source_dir, commit)
+
+
+def verify_git_checkout(source_dir: Path, commit: str) -> None:
     actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
     if actual != commit:
         raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
+    status = run_output(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=source_dir,
+    )
+    if status:
+        raise SystemExit(
+            f"source checkout {source_dir} has tracked modifications; "
+            "refusing to install a dirty pinned source"
+        )
 
 
 def validate_exact_commit(commit: str, source_name: str) -> None:

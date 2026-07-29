@@ -112,7 +112,7 @@ def test_install_source_checks_out_and_installs_pinned_commit(monkeypatch, tmp_p
 
     def fake_run_output(command, *, cwd=None):
         commands.append((command, cwd, None))
-        return commit
+        return commit if command[:2] == ["git", "rev-parse"] else ""
 
     monkeypatch.setattr(module, "VENV_DIR", tmp_path / ".venvs")
     monkeypatch.setattr(module, "run", fake_run)
@@ -146,7 +146,13 @@ def test_install_source_updates_submodules_when_requested(monkeypatch, tmp_path)
 
     monkeypatch.setattr(module, "VENV_DIR", tmp_path / ".venvs")
     monkeypatch.setattr(module, "run", lambda command, *, cwd=None, env=None: commands.append((command, cwd, env)))
-    monkeypatch.setattr(module, "run_output", lambda command, *, cwd=None: commit)
+    monkeypatch.setattr(
+        module,
+        "run_output",
+        lambda command, *, cwd=None: (
+            commit if command[:2] == ["git", "rev-parse"] else ""
+        ),
+    )
 
     module.install_source("demo-backend", source)
 
@@ -161,4 +167,19 @@ def test_verify_git_checkout_rejects_mismatched_head(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "run_output", lambda command, *, cwd=None: actual)
 
     with pytest.raises(SystemExit, match=f"expected {expected}, got {actual}"):
+        module.verify_git_checkout(tmp_path, expected)
+
+
+def test_verify_git_checkout_rejects_tracked_modifications(monkeypatch, tmp_path):
+    module = load_manage_uv_env()
+    expected = "a" * 40
+
+    def fake_run_output(command, *, cwd=None):
+        if command[:2] == ["git", "rev-parse"]:
+            return expected
+        return " M simulator.py"
+
+    monkeypatch.setattr(module, "run_output", fake_run_output)
+
+    with pytest.raises(SystemExit, match="tracked modifications"):
         module.verify_git_checkout(tmp_path, expected)
