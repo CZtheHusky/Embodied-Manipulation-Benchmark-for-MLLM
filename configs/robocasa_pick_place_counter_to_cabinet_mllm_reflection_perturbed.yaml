@@ -18,6 +18,8 @@ task:
   success_threshold: 1.0
   params:
     instruction: Pick the object from the counter and place it in the cabinet.
+    instruction_from_observation: true
+    instruction_observation_key: annotation.human.task_description
 
 camera:
   manager: fixed

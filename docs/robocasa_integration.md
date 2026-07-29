@@ -32,7 +32,12 @@ The PickPlaceCounterToCabinet task has two switchable Chat Completions configs:
 - `configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection.yaml`: `fixed + identity`.
 - `configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection_perturbed.yaml`: hidden `permuted_sign_flipped + random_rotation_3d`.
 
-Both use `action_with_reflection`, reasoning effort `low`, three historical image steps, all action history, and prompt contract `mllm_joystick_reflection_v2`. The task instruction is identical in both conditions: `Pick the object from the counter and place it in the cabinet.`
+Both use `action_with_reflection`, reasoning effort `low`, three historical image
+steps, all action history, and prompt contract
+`mllm_joystick_reflection_v2`. After reset, both conditions project the upstream
+public `annotation.human.task_description` string into the prompt. This names the
+episode's target object and avoids the ambiguous static fallback when distractor
+objects are present. A missing or empty upstream instruction is a runtime error.
 
 The public joystick has six discrete motion channels followed by one binary gripper channel:
 
@@ -45,7 +50,8 @@ After a hidden 3D rotation, a multi-axis discrete command can have an individual
 
 The model input projection includes only:
 
-- The static benchmark task instruction.
+- The upstream public task instruction from
+  `annotation.human.task_description`.
 - Public control semantics and action schema.
 - RGB from `robot0_agentview_left`, `robot0_agentview_right`, and `robot0_eye_in_hand`.
 - The model's own normalized action and reflection history.

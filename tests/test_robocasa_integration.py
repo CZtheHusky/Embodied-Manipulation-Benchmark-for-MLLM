@@ -18,7 +18,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_sim,
     build_task,
 )
-from mllm_teleop_benchmark.core.types import RoboCasaAction
+from mllm_teleop_benchmark.core.types import Observation, RoboCasaAction
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import (
     IdentityControlFrameTransform,
@@ -146,6 +146,50 @@ def test_robocasa_config_builds_without_backend():
     assert isinstance(controller, RoboCasaOSCController)
     assert config.simulator.env_id == "robocasa/PickPlaceCounterToCabinet"
     assert config.simulator.env_kwargs["split"] == "pretrain"
+    assert config.task.params["instruction_from_observation"] is True
+    assert (
+        config.task.params["instruction_observation_key"]
+        == "annotation.human.task_description"
+    )
+
+
+def test_robocasa_task_projects_only_upstream_public_instruction():
+    config = load_config(CONFIG_PATH)
+    task = RoboCasaGenericTask(config.task)
+    public_instruction = "Pick the cucumber from the counter and place it in the cabinet."
+
+    class StubSim:
+        def reset(self, task_config, seed):
+            assert task_config is config.task
+            assert seed == 42
+            return Observation(
+                step_id=0,
+                images={},
+                state={
+                    "annotation.human.task_description": public_instruction,
+                    "state.object_pose": "PRIVATE_OBJECT_POSE",
+                },
+            )
+
+    task.reset(StubSim(), seed=42)
+
+    assert task.instruction() == public_instruction
+    assert "PRIVATE_OBJECT_POSE" not in task.instruction()
+
+
+def test_robocasa_task_fails_when_required_public_instruction_is_missing():
+    config = load_config(CONFIG_PATH)
+    task = RoboCasaGenericTask(config.task)
+
+    class StubSim:
+        def reset(self, _task_config, _seed):
+            return Observation(step_id=0, images={}, state={})
+
+    with pytest.raises(
+        RuntimeError,
+        match="annotation.human.task_description",
+    ):
+        task.reset(StubSim(), seed=42)
 
 
 def test_robocasa_config_uses_worker_play_runtime():
@@ -172,6 +216,11 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
 
     assert config.task.params["instruction"] == (
         "Pick the object from the counter and place it in the cabinet."
+    )
+    assert config.task.params["instruction_from_observation"] is True
+    assert (
+        config.task.params["instruction_observation_key"]
+        == "annotation.human.task_description"
     )
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
@@ -467,6 +516,13 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     )
 
     original_get_state = RoboCasaSimAdapter.get_state
+    public_instructions = []
+    original_task_reset = RoboCasaGenericTask.reset
+
+    def inspected_task_reset(self, sim, seed):
+        observation = original_task_reset(self, sim, seed)
+        public_instructions.append(self.instruction())
+        return observation
 
     def poisoned_get_state(self):
         state = original_get_state(self)
@@ -487,6 +543,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
 
     monkeypatch.setattr(RoboCasaSimAdapter, "get_state", poisoned_get_state)
     monkeypatch.setattr(RoboCasaSimAdapter, "step", inspected_step)
+    monkeypatch.setattr(RoboCasaGenericTask, "reset", inspected_task_reset)
     config = load_config(
         config_path,
         (
@@ -502,6 +559,8 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     assert episode.termination_reason == "max_steps"
     assert len(client.requests) == 4
     assert len(native_actions) == 4
+    assert len(public_instructions) == 1
+    assert public_instructions[0]
     assert [_image_count(request) for request in client.requests] == [3, 6, 9, 12]
     assert [
         sum(message["role"] == "assistant" for message in request.messages)
@@ -524,10 +583,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
 
     request_text = _request_text(client.requests[-1])
     assert "Prompt version: mllm_joystick_reflection_v2" in request_text
-    assert (
-        "Task: Pick the object from the counter and place it in the cabinet."
-        in request_text
-    )
+    assert f"Task: {public_instructions[0]}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
     assert "PandaOmron operational-space controller's robot-base" in request_text
