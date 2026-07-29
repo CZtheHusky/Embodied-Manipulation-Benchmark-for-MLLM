@@ -1,0 +1,121 @@
+benchmark:
+  name: calvin_delta_eef_mllm_reflection_perturbed_v0
+  num_episodes: 1
+  seed: 42
+
+simulator:
+  type: calvin
+  env_id: null
+  render_mode: rgb_array
+  params:
+    max_episode_steps: 100
+    camera_config: static_and_gripper
+    hydra_config_name: config_data_collection
+    use_egl: true
+    show_gui: false
+  env_kwargs:
+    use_vr: false
+    use_scene_info: true
+
+task:
+  type: calvin_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: Pick up the object and place it in the drawer.
+
+camera:
+  manager: fixed
+  visible_metadata: false
+  cameras:
+    - name: static
+      type: calvin_rgb
+      width: 200
+      height: 200
+    - name: gripper
+      type: calvin_rgb
+      width: 84
+      height: 84
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: permuted_sign_flipped
+  visible_metadata: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_3d
+  frame_visible_to_agent: false
+  control_frame_description: the CALVIN Cartesian-relative controller's PyBullet world x, y, and z axes
+  gripper_open_command: 1
+  gripper_closed_command: 0
+  params:
+    scale_mode: calvin_cartesian_relative_delta
+
+controller:
+  type: calvin_delta_eef
+  frame: controller
+  scales:
+    dx: 0.1
+    dy: 0.1
+    dz: 0.1
+    droll: 0.1
+    dpitch: 0.1
+    dyaw: 0.1
+  params:
+    dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
+    gripper_open_value: 1.0
+    gripper_closed_value: -1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [static, gripper]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/calvin_delta_eef_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: static
+  info_panel_height: 200
+  max_steps: 100
+  debug_frames: true
+  debug_control_history: true
