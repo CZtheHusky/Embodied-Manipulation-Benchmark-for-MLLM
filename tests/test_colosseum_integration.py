@@ -294,7 +294,21 @@ def test_colosseum_runtime_reset_step_render_smoke_when_installed():
             assert sim.get_state()["evaluator_metadata"]["seed"] == 42
 
             frame = sim.render(config.camera.cameras[0])
-            assert np.asarray(frame).shape == (240, 320, 3)
+            frame_array = np.asarray(frame)
+            assert frame_array.shape == (240, 320, 3)
+            assert frame_array.dtype == np.uint8
+            assert float(frame_array.mean()) > 2.0
+            assert float(frame_array.std()) > 2.0
+
+            enabled_factors = [
+                (
+                    str(factor.variation),
+                    str(factor.get("name", "any")),
+                )
+                for factor in sim._official_config.env.scene.factors
+                if bool(factor.enabled)
+            ]
+            assert enabled_factors == [("object_color", "manip_obj_color")]
 
             result = sim.step(
                 RLBenchAction(
