@@ -140,6 +140,10 @@ RoboCasa v1.0 needs a backend-specific uv setup: `lock robocasa` targets `x86_64
 
 Current RoboCasa state: lock, create, required asset download, runtime smoke, and one random-agent benchmark episode are verified. The previous robosuite `load_model_on_init` API blocker is resolved by pinning the upstream `master` instruction to robosuite commit `85abee228d1c43ab1939bce33028099945d453b4`. RoboCasa v1.0 expects monolithic Lightwheel asset zips, but the current NVIDIA Hugging Face dataset publishes split zip files; `scripts/download_robocasa_lightwheel_assets.py` pins dataset revision `420a04af939c34873e6839a586b70844baf28aab` and restores the expected layout. For large texture downloads behind Clash, the `robocasa` uv runner disables Hugging Face Xet and removes `ALL_PROXY/all_proxy` so downloads keep using the HTTP proxy path instead of the SOCKS/Xet path.
 
+The same runner also enforces `MUJOCO_GL=egl` and
+`PYOPENGL_PLATFORM=egl`, so non-interactive benchmark commands receive the
+offscreen rendering environment instead of relying on the Pygame UI hook.
+
 DMControl:
 
 ```bash

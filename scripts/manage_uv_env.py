@@ -67,7 +67,11 @@ BACKENDS: dict[str, dict[str, object]] = {
         "platform": "x86_64-manylinux_2_31",
         "torch_backend": "cpu",
         "excludes": ["robocasa-excludes.in"],
-        "env": {"NUMBA_DISABLE_JIT": "1"},
+        "env": {
+            "MUJOCO_GL": "egl",
+            "PYOPENGL_PLATFORM": "egl",
+            "NUMBA_DISABLE_JIT": "1",
+        },
         "sources": [
             {
                 "name": "robosuite",

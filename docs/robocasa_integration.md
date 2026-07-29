@@ -61,6 +61,10 @@ python3 scripts/manage_uv_env.py create robocasa
 python3 scripts/manage_uv_env.py smoke robocasa
 ```
 
+The `robocasa` runner sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl` for
+offscreen API benchmarks as well as runtime smoke tests. Run benchmark commands
+through `manage_uv_env.py` so this backend environment contract is applied.
+
 Pinned dependencies in `envs/uv/robocasa.in`:
 
 - RoboCasa commit `8f3c96ec8d1bfcd8126cad2bca887da98d30e997` (`v1.0` / RoboCasa365 release).

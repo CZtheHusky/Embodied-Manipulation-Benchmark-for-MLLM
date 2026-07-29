@@ -27,6 +27,18 @@ def test_list_backends_reports_support_levels():
     assert "calvin\tuv_source" in lines
 
 
+def test_robocasa_runner_enforces_offscreen_egl(monkeypatch):
+    module = load_manage_uv_env()
+    monkeypatch.setenv("MUJOCO_GL", "glfw")
+    monkeypatch.setenv("PYOPENGL_PLATFORM", "glx")
+
+    env = module.backend_env("robocasa")
+
+    assert env["MUJOCO_GL"] == "egl"
+    assert env["PYOPENGL_PLATFORM"] == "egl"
+    assert env["NUMBA_DISABLE_JIT"] == "1"
+
+
 def test_blocked_backend_fails_before_uv_commands():
     module = load_manage_uv_env()
     module.BACKENDS["blocked-sim"] = {
