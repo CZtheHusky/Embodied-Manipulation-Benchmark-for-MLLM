@@ -41,6 +41,9 @@ class ControlInstructionBuilder:
 
         if dimensions and visible:
             text_lines.append(f"The active controllable dimensions are: {', '.join(str(v) for v in dimensions)}.")
+            dimension_semantics = _dimension_semantics(dimensions)
+            if dimension_semantics:
+                text_lines.append(dimension_semantics)
             panel_lines.append(f"active dims: {', '.join(str(v) for v in dimensions)}")
             if mapping_summary:
                 text_lines.append(f"The visible joystick mapping is: {mapping_summary}.")
@@ -80,3 +83,25 @@ def _mapping_summary(mapping: object) -> str:
         target = f"-{dim}" if sign < 0.0 and dim != "gripper" else dim
         parts.append(f"{channel} -> {target}")
     return "; ".join(parts)
+
+
+def _dimension_semantics(dimensions: list[object]) -> str:
+    names = {str(value) for value in dimensions}
+    statements: list[str] = []
+    if names.intersection({"dx", "dy", "dz"}):
+        statements.append(
+            "dx, dy, and dz denote end-effector translation along the control "
+            "frame's x, y, and z axes"
+        )
+    if names.intersection({"droll", "dpitch", "dyaw"}):
+        statements.append(
+            "droll, dpitch, and dyaw denote end-effector rotation about the "
+            "control frame's x, y, and z axes"
+        )
+    if not statements:
+        return ""
+    return (
+        "; ".join(statements)
+        + ". A positive mapped value commands the positive direction, a negative "
+        "value commands the opposite direction, and zero commands no change."
+    )

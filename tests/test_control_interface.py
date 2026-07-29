@@ -122,6 +122,8 @@ def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
     text = instruction.text + "\n" + "\n".join(instruction.panel_lines)
     assert "mapping complexity: present" in text
     assert "frame complexity: present" in text
+    assert "dx, dy, and dz denote end-effector translation" in text
+    assert "positive mapped value commands the positive direction" in text
     assert "permuted_sign_flipped" not in text
     assert "random_rotation_3d" not in text
     assert "joystick_0 ->" not in text
