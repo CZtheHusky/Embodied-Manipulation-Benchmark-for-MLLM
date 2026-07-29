@@ -16,10 +16,6 @@ task:
     camera_names: ["agentview", "robot0_eye_in_hand"]
     camera_width: 320
     camera_height: 240
-    camera_randomization:
-      agentview:
-        pos: [1.0, 0.0, 1.5]
-        fovy: 45
 
 camera:
   manager: fixed

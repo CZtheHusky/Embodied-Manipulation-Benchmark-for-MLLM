@@ -113,7 +113,17 @@ The two conditions differ only in the motion-control complexity:
 
 ## Cameras
 
-Camera settings are sampled from the episode seed and applied during reset through robosuite runtime APIs. The project does not mutate static assets to randomize camera views. `camera_randomization` supports fixed `pos`, `quat`, and `fovy` values, plus `pos_range` and `fovy_range` for seeded episode-level sampling.
+The Lift configs preserve robosuite's upstream `agentview` task camera. A
+position-only override was removed because retaining the old orientation while
+moving the camera pointed it away from the robot workspace; the frames were
+non-black but unsuitable for visual evaluation. Custom camera settings, when
+needed for a new task, must specify and visually validate position and
+orientation together.
+
+The adapter still supports seeded episode-level camera settings through
+robosuite runtime APIs and does not mutate static assets.
+`camera_randomization` supports fixed `pos`, `quat`, and `fovy` values, plus
+`pos_range` and `fovy_range` for seeded sampling.
 
 The MLLM configs request `agentview` and `robot0_eye_in_hand` only. Adapter
 state and observation metadata are not part of a Chat Completions request.

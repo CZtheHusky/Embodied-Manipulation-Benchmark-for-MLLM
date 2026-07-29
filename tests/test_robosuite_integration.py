@@ -103,6 +103,22 @@ def test_robosuite_config_uses_worker_play_runtime():
 
 
 @pytest.mark.parametrize(
+    "config_path",
+    (
+        "configs/robosuite_lift.yaml",
+        "configs/robosuite_lift_mllm_reflection.yaml",
+        "configs/robosuite_lift_mllm_reflection_perturbed.yaml",
+    ),
+)
+def test_robosuite_lift_configs_preserve_upstream_task_camera_framing(config_path):
+    config = load_config(config_path)
+
+    # A position-only override keeps the old orientation and can point agentview
+    # away from the robot workspace even though the resulting RGB is non-black.
+    assert "camera_randomization" not in config.task.params
+
+
+@pytest.mark.parametrize(
     ("config_path", "mapping_strategy", "frame_transform"),
     MLLM_CONFIGS,
 )
