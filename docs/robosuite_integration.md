@@ -66,6 +66,11 @@ The configs resolve model name, base URL, and API key from the standard
 environment-variable fields. Tests replace the client with an in-process fake
 and do not load `.env.model-api.local` or contact any endpoint.
 
+Both MLLM configs use a 100-decision API budget. The native robosuite Lift
+environment retains its 1000-step horizon, so these results are a local
+API-budgeted protocol and must not be reported as the upstream 1000-step Lift
+success rate.
+
 ## Control
 
 The initial config targets robosuite `Lift` with Panda and OSC pose control.
@@ -118,6 +123,13 @@ divides all three components by their largest absolute component. This
 preserves the rotated direction while possibly shortening a diagonal step and
 prevents robosuite's native per-component clipping from distorting the intended
 direction. The same public bound policy is configured in both conditions.
+
+Lift success comes from robosuite's native `_check_success()` oracle, which
+requires the cube to be at least `0.04 m` above the table. The config records
+that native threshold for audit clarity but does not reimplement the oracle.
+All Lift configs reject an initially successful reset before any model request.
+The adapter also closes the previous native environment and clears cached
+reward/info state before each episode reset.
 
 ## Cameras
 
@@ -182,7 +194,7 @@ PYTHONPATH=src NUMBA_DISABLE_JIT=1 \
 ```
 
 This includes config validation, controller checks, an exactly-one-flip canary,
-real simulator reset/step smoke, and a two-step Fake Client episode for each
+real simulator reset/step smoke, and a four-step Fake Client episode for each
 MLLM condition. The Fake Client test decodes the model request PNGs and checks
 that they are upright, non-black, and retain the visible Lift cube.
 
