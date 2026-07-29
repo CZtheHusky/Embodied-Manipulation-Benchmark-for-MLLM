@@ -1,7 +1,15 @@
+import json
+from dataclasses import replace
+from pathlib import Path
+
 import numpy as np
 import pytest
+from PIL import Image
 
+from mllm_teleop_benchmark import BenchmarkRunner
 from mllm_teleop_benchmark.action.joystick import JoystickAction
+from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
+from mllm_teleop_benchmark.agents.model_client import ModelResponse, ModelUsage
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.config.schema import FrameTransformConfig
 from mllm_teleop_benchmark.control.metaworld import MetaworldBoxActionController
@@ -13,12 +21,77 @@ from mllm_teleop_benchmark.core.registry import (
     build_observation_provider,
     build_sim,
     build_task,
+    control_interface_metadata,
 )
 from mllm_teleop_benchmark.core.types import MetaworldAction
+from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 from mllm_teleop_benchmark.sim.metaworld.adapter import MetaworldSimAdapter
 from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for_config
+
+
+MLLM_CONFIGS = (
+    (
+        "configs/metaworld_reach_mllm_reflection.yaml",
+        "fixed",
+        "identity",
+        True,
+    ),
+    (
+        "configs/metaworld_reach_mllm_reflection_perturbed.yaml",
+        "permuted_sign_flipped",
+        "random_rotation_3d",
+        False,
+    ),
+)
+
+PRIVATE_SENTINELS = {
+    "private_state": "PRIVATE_METAWORLD_STATE_SENTINEL",
+    "private_reward": "PRIVATE_METAWORLD_REWARD_SENTINEL",
+    "private_distance": "PRIVATE_METAWORLD_DISTANCE_SENTINEL",
+    "private_target_position": "PRIVATE_METAWORLD_TARGET_SENTINEL",
+    "private_eef_pose": "PRIVATE_METAWORLD_EEF_POSE_SENTINEL",
+    "private_simulator_action": "PRIVATE_METAWORLD_SIM_ACTION_SENTINEL",
+    "private_seed": "PRIVATE_METAWORLD_SEED_SENTINEL",
+}
+
+
+class MetaworldFakeClient:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def complete(self, request):
+        self.requests.append(request)
+        text = json.dumps(
+            {
+                "channels": {
+                    "joystick_0": 0,
+                    "joystick_1": 0,
+                    "joystick_2": 0,
+                },
+                "Reflection": (
+                    "The current RGB view does not yet show movement, so the "
+                    "translation channels still need to be identified."
+                ),
+            },
+            separators=(",", ":"),
+        )
+        raw = {
+            "id": f"fake-metaworld-{len(self.requests)}",
+            "model": "fake-metaworld-model",
+            "choices": [{"message": {"content": text}}],
+        }
+        return ModelResponse(
+            text=text,
+            request_id=raw["id"],
+            model=raw["model"],
+            usage=ModelUsage(input_tokens=100, output_tokens=32),
+            raw=raw,
+            latency_ms=1.0,
+            attempts=1,
+            request_bytes=len(request.encoded_body()),
+        )
 
 
 def test_metaworld_reach_config_builds_without_metaworld_install():
@@ -125,6 +198,299 @@ def test_metaworld_runtime_reset_step_render_close_when_installed():
         assert step.info["step_id"] == 1
 
         frame = adapter.render(config.camera.cameras[0])
-        assert np.asarray(frame).ndim == 3
+        pixels = np.asarray(frame)
+        assert pixels.ndim == 3
+        assert pixels.shape[-1] == 3
+        assert pixels.dtype == np.uint8
+        assert float(pixels.mean()) > 1.0
+        assert float(pixels.std()) > 1.0
     finally:
         adapter.close()
+
+
+@pytest.mark.parametrize(
+    ("config_path", "mapping_strategy", "frame_transform", "visible"),
+    MLLM_CONFIGS,
+)
+def test_metaworld_mllm_configs_are_explicit_and_switchable(
+    config_path,
+    mapping_strategy,
+    frame_transform,
+    visible,
+):
+    config = load_config(config_path)
+    schema = build_action_space(config).schema()
+
+    assert config.simulator.params["env_name"] == "reach-v3"
+    assert config.task.params["instruction"] == (
+        "Move the robot end-effector to the visible target position."
+    )
+    assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
+    assert config.control_interface.gripper == "none"
+    assert config.control_interface.mapping_strategy == mapping_strategy
+    assert config.control_interface.frame_transform == frame_transform
+    assert config.control_interface.mapping_visible_to_agent is visible
+    assert config.control_interface.frame_visible_to_agent is visible
+    assert config.agent.action_output_mode == "action_with_reflection"
+    assert config.agent.model is not None
+    assert config.agent.model.api == "chat_completions"
+    assert config.agent.model.reasoning_effort == "low"
+    assert config.agent.history.action_window == "all"
+    assert config.agent.history.image_window == 3
+    assert config.agent.observation.cameras == ("corner2",)
+    assert config.logging.save_video is False
+    assert tuple(schema) == (
+        "joystick_0",
+        "joystick_1",
+        "joystick_2",
+    )
+    assert all(
+        schema[f"joystick_{index}"]
+        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        for index in range(3)
+    )
+
+    group = make_experiment_group(config)
+    assert group is not None
+    assert "output-action_with_reflection" in group
+    if mapping_strategy == "fixed":
+        assert "__mapping-" not in group
+        assert "__frame-" not in group
+    else:
+        assert "__mapping-permuted_sign_flipped" in group
+        assert "__frame-random_rotation_3d" in group
+
+
+def test_metaworld_mllm_prompt_describes_public_xyz_and_gripper_only():
+    baseline = load_config("configs/metaworld_reach_mllm_reflection.yaml")
+    baseline_prompt = ControlInstructionBuilder().build(
+        control_interface_metadata(baseline, baseline.benchmark.seed),
+        build_action_space(baseline).schema(),
+    ).text
+
+    assert "active controllable dimensions are: dx, dy, dz" in baseline_prompt
+    assert "dx, dy, and dz denote end-effector translation" in baseline_prompt
+    assert "positive mapped value commands the positive direction" in baseline_prompt
+    assert "joystick_0 -> dx" in baseline_prompt
+    assert "joystick_1 -> dy" in baseline_prompt
+    assert "joystick_2 -> dz" in baseline_prompt
+    assert "Meta-World end-effector controller" in baseline_prompt
+    assert "gripper" not in baseline_prompt
+    assert "No additional control-frame rotation is applied" in baseline_prompt
+
+    perturbed = load_config(
+        "configs/metaworld_reach_mllm_reflection_perturbed.yaml"
+    )
+    metadata = control_interface_metadata(perturbed, perturbed.benchmark.seed)
+    perturbed_prompt = ControlInstructionBuilder().build(
+        metadata,
+        build_action_space(perturbed).schema(),
+    ).text
+
+    assert "active controllable dimensions are: dx, dy, dz" in perturbed_prompt
+    assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
+    assert "exact physical-frame transform is not disclosed" in perturbed_prompt
+    assert "joystick_0 ->" not in perturbed_prompt
+    assert "mapping" not in metadata
+    assert "mapping_strategy" not in metadata
+    assert "frame_transform" not in metadata
+    assert "rotation_matrix" not in str(metadata)
+
+
+def test_metaworld_perturbation_only_changes_translation_channels():
+    config = load_config(
+        "configs/metaworld_reach_mllm_reflection_perturbed.yaml"
+    )
+    mapping = build_mapping(config, config.benchmark.seed)
+    controller = build_controller(config, mapping, config.benchmark.seed)
+
+    assert isinstance(controller.frame_transform, RotationControlFrameTransform)
+    assert set(mapping.channels.values()) == {"dx", "dy", "dz"}
+    assert any(
+        mapping.signs[f"joystick_{index}"] < 0.0 for index in range(3)
+    )
+
+    sim_action = controller.translate(
+        JoystickAction(
+            {
+                "joystick_0": 1.0,
+                "joystick_1": 0.0,
+                "joystick_2": 0.0,
+            }
+        )
+    )
+    assert len(sim_action.values) == 4
+    assert np.all(np.isfinite(sim_action.values))
+    assert sim_action.values[3] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("config_path", "mapping_strategy", "frame_transform", "visible"),
+    MLLM_CONFIGS,
+)
+def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
+    monkeypatch,
+    tmp_path,
+    config_path,
+    mapping_strategy,
+    frame_transform,
+    visible,
+):
+    pytest.importorskip("gymnasium")
+    pytest.importorskip("metaworld")
+
+    client = MetaworldFakeClient()
+    monkeypatch.setenv("MLLM_TELEOP_MODEL", "fake-metaworld-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://fake-metaworld.invalid/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "PRIVATE_METAWORLD_API_KEY")
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.core.registry.OpenAICompatibleClient",
+        lambda **_kwargs: client,
+    )
+
+    original_get_state = MetaworldSimAdapter.get_state
+
+    def poisoned_get_state(self):
+        state = original_get_state(self)
+        state.update(PRIVATE_SENTINELS)
+        return state
+
+    monkeypatch.setattr(MetaworldSimAdapter, "get_state", poisoned_get_state)
+    config = load_config(config_path)
+    patched = replace(
+        config,
+        task=replace(config.task, max_steps=4, success_threshold=2.0),
+        logging=replace(
+            config.logging,
+            output_dir=str(tmp_path),
+            save_video=False,
+        ),
+    )
+
+    episode = BenchmarkRunner(patched).run((0,)).episodes[0]
+
+    assert episode.steps == 4
+    assert episode.termination_reason == "max_steps"
+    assert len(client.requests) == 4
+    assert [_image_count(request) for request in client.requests] == [1, 2, 3, 4]
+    assert [
+        sum(message["role"] == "assistant" for message in request.messages)
+        for request in client.requests
+    ] == [0, 1, 2, 3]
+
+    latest_request = client.requests[-1]
+    assistant_messages = [
+        message
+        for message in latest_request.messages
+        if message["role"] == "assistant"
+    ]
+    assert len(assistant_messages) == 3
+    assert all(json.loads(message["content"])["Reflection"] for message in assistant_messages)
+
+    request_text = _request_text(latest_request)
+    assert "active controllable dimensions are: dx, dy, dz" in request_text
+    assert "dx, dy, and dz denote end-effector translation" in request_text
+    assert "Meta-World end-effector controller" in request_text
+    assert "gripper" not in request_text
+    if mapping_strategy == "fixed":
+        assert "joystick_0 -> dx" in request_text
+        assert "No additional control-frame rotation is applied" in request_text
+    else:
+        assert "exact joystick-to-dimension mapping is not disclosed" in request_text
+        assert "exact physical-frame transform is not disclosed" in request_text
+
+    encoded_requests = "\n".join(
+        request.encoded_body().decode("utf-8") for request in client.requests
+    )
+    for sentinel in (
+        *PRIVATE_SENTINELS.values(),
+        "PRIVATE_METAWORLD_API_KEY",
+    ):
+        assert sentinel not in encoded_requests
+    lower_request_text = request_text.lower()
+    for forbidden in (
+        "native_observation",
+        "reward",
+        "distance_to_target",
+        "ee_position",
+        "simulator_action",
+        "episode seed",
+        "rotation_matrix",
+        "quaternion_xyzw",
+        "permuted_sign_flipped",
+        "random_rotation_3d",
+    ):
+        assert forbidden not in lower_request_text
+
+    episode_dir = Path(episode.log_dir)
+    trajectory = [
+        json.loads(line)
+        for line in (episode_dir / "trajectory.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(trajectory) == 4
+    assert all(step["validation"]["is_valid"] for step in trajectory)
+    assert all(step["reflection"] for step in trajectory)
+    assert all(len(step["sim_action"]["values"]) == 4 for step in trajectory)
+
+    pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))
+    assert len(pngs) == 4
+    for path in pngs:
+        with Image.open(path) as image:
+            pixels = np.asarray(image.convert("RGB"))
+        assert pixels.ndim == 3
+        assert pixels.shape[-1] == 3
+        assert float(pixels.mean()) > 1.0
+        assert float(pixels.std()) > 1.0
+
+    manifest = json.loads(
+        (episode_dir.parent / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["model"]["api"] == "chat_completions"
+    assert manifest["model"]["reasoning_effort"] == "low"
+    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v1"
+    assert manifest["history"] == {
+        "action_window": "all",
+        "image_window": 3,
+        "max_images_per_request": 128,
+        "max_request_bytes": 67_108_864,
+    }
+    assert manifest["control_interface"]["mapping_strategy"] == mapping_strategy
+    assert manifest["control_interface"]["frame_transform"] == frame_transform
+    assert (
+        manifest["control_interface"]["mapping_visible_to_agent"] is visible
+    )
+    assert manifest["control_interface"]["frame_visible_to_agent"] is visible
+
+    for artifact in episode_dir.rglob("*"):
+        if artifact.is_file():
+            assert b"PRIVATE_METAWORLD_API_KEY" not in artifact.read_bytes()
+
+
+def _image_count(request) -> int:
+    return sum(
+        1
+        for message in request.messages
+        if isinstance(message.get("content"), list)
+        for item in message["content"]
+        if isinstance(item, dict) and item.get("type") == "image_url"
+    )
+
+
+def _request_text(request) -> str:
+    values = []
+    for message in request.messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            values.append(content)
+            continue
+        if not isinstance(content, list):
+            continue
+        values.extend(
+            str(item["text"])
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text"
+        )
+    return "\n".join(values)
