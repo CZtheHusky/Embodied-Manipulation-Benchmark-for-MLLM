@@ -1,0 +1,113 @@
+benchmark:
+  name: reacher_delta_eef_mllm_reflection_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: gymnasium
+  env_id: MLLMTeleop/ReacherDeltaEEF-v0
+  render_mode: rgb_array
+  frame_skip: 1
+  params:
+    max_episode_steps: 500
+  env_kwargs:
+    eef_step_scale: 0.02
+    goal_distance_threshold: 0.02
+    goal_hold_steps: 3
+    random_goal: true
+
+task:
+  type: gymnasium_reacher
+  max_steps: 80
+  success_threshold: 0.02
+  goal_hold_steps: 3
+
+camera:
+  manager: mujoco_randomized
+  visible_metadata: true
+  params:
+    distance_range: [0.7, 1.4]
+    azimuth_range: [0.0, 90.0]
+    elevation_range: [-75.0, -30.0]
+    lookat: [0.0, 0.0, 0.0]
+  cameras:
+    - name: front
+      type: mujoco_rgb
+      width: 256
+      height: 256
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy]
+  gripper: none
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+
+controller:
+  type: reacher_delta_eef
+  frame: world_xy
+  scales:
+    dx: 1.0
+    dy: 1.0
+  params:
+    dimensions: [dx, dy]
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: medium
+    temperature: 0
+    max_output_tokens: 128
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [front]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/reacher_delta_eef_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  window_width: 640
+  window_height: 480
+  fps: 20
+  max_steps: 500
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true
+  mujoco_gl: egl

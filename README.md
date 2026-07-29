@@ -93,8 +93,9 @@ More details are in `docs/manual_play.md` and `docs/reacher_integration.md`.
 
 ## Run an API-Controlled MLLM
 
-The OpenAI-compatible Chat Completions agent uses public RGB observations and
-returns the same joystick action contract as human and baseline agents:
+The OpenAI-compatible Chat Completions and Responses agents use public RGB
+observations and return the same joystick action contract as human and baseline
+agents:
 
 ```bash
 python3 scripts/manage_uv_env.py run gymnasium -- \
@@ -110,10 +111,33 @@ two images. See `docs/model_api_control.md` for the public-input boundary,
 history semantics, cache metrics, artifacts, and follow-up `2`/`all` smoke
 procedure.
 
+The default config uses the strict `action_only` response contract. Select
+`configs/reacher_delta_eef_mllm_reflection.yaml` to use the explicitly separate
+`action_with_reflection` contract. That mode uses Chat Completions, sends the
+previous three images plus the current frame, and permits an optional
+top-level string field named `Reflection` alongside `channels`. Reflection
+runs are labeled in their experiment directory and manifest.
+
+Set `agent.model.api=responses` together with both history windows set to `all`
+to retain the complete episode context through `previous_response_id`. This
+mode sends only incremental observations after the first successful call and
+records every previous/response ID pair for audit.
+
+Set `agent.model.reasoning_effort` explicitly when comparing reasoning models.
+Supported values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
+Responses sends this as `reasoning.effort`; Chat Completions sends
+`reasoning_effort`.
+
 Add `--set logging.save_video=true` to create an offline
 `review/model_view.mp4` from the exact model-visible PNGs. The system must
 provide FFmpeg. Evaluator-oracle video is separate and opt-in through
 `logging.video.include_evaluator_debug=true`.
+
+MLLM runs are grouped automatically by requested model, reasoning effort, API,
+history policy, episode count, and max steps before the timestamped run
+directory. Each run root contains `run_manifest.json` and `run_summary.json`;
+the latter distinguishes the requested model from model names actually reported
+by the endpoint.
 
 ## Run ManiSkill
 

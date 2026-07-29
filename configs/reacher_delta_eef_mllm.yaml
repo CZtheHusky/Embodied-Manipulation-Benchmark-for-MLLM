@@ -59,10 +59,11 @@ controller:
 
 agent:
   type: mllm
+  action_output_mode: action_only
   invalid_action_recovery: noop
-  max_consecutive_errors: 3
   model:
     provider: openai_compatible
+    api: chat_completions
     name_env: MLLM_TELEOP_MODEL
     base_url_env: OPENAI_BASE_URL
     api_key_env: OPENAI_API_KEY
@@ -70,9 +71,13 @@ agent:
     timeout_seconds: 60
     max_retries: 2
     retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: medium
     temperature: 0
     max_output_tokens: 128
     response_format: json_object
+    stream: false
   observation:
     cameras: [front]
     image_max_side: 512

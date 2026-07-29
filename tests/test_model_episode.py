@@ -17,6 +17,7 @@ from mllm_teleop_benchmark.config.schema import (
     AgentObservationConfig,
     ModelConfig,
 )
+from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 
 
 def _valid_action_text():
@@ -62,10 +63,11 @@ class FakeClient:
         )
 
 
-def _config(tmp_path, image_window):
+def _config(tmp_path, image_window, action_output_mode="action_only"):
     config = load_config("configs/dummy_reach.yaml")
     agent = AgentConfig(
         type="mllm",
+        action_output_mode=action_output_mode,
         invalid_action_recovery="noop",
         model=ModelConfig(
             name="fake-model",
@@ -80,7 +82,6 @@ def _config(tmp_path, image_window):
             max_images_per_request=128,
             max_request_bytes=67_108_864,
         ),
-        max_consecutive_errors=3,
     )
     return replace(
         config,
@@ -155,21 +156,107 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     request_artifact = (episode_dir / "model_calls/step_0002/request.json").read_text(encoding="utf-8")
     assert "data:image/png;base64" not in request_artifact
     assert "data:image/png;sha256=" in request_artifact
+    run_dir = episode_dir.parent
+    group_dir = run_dir.parent
+    assert (
+        group_dir.name
+        == f"model-fake-model__reasoning-default__api-chat_completions"
+        f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
+    )
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["model"]["requested_model"] == "fake-model"
+    assert manifest["model"]["reasoning_effort"] is None
+    assert manifest["model"]["api"] == "chat_completions"
+    assert manifest["history"]["image_window"] == image_window
+    assert manifest["control_interface"]["mapping_strategy"] == "fixed"
+    assert manifest["control_interface"]["frame_transform"] == "identity"
+    run_summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert run_summary["observed_response_models"] == ["fake-model"]
+    assert run_summary["aggregate_metrics"]["num_episodes"] == 1
     for artifact in episode_dir.rglob("*"):
         if artifact.is_file():
             assert b"VERY_PRIVATE_API_KEY_SENTINEL" not in artifact.read_bytes()
 
 
-def test_three_consecutive_api_failures_terminate_with_agent_error(monkeypatch, tmp_path):
+def test_experiment_group_identifies_control_perturbations(tmp_path):
+    config = _config(tmp_path, "all")
+    config = replace(
+        config,
+        control_interface=replace(
+            config.control_interface,
+            mapping_strategy="permuted_sign_flipped",
+            frame_transform="random_rotation_2d",
+        ),
+    )
+
+    assert make_experiment_group(config) == (
+        "model-fake-model__reasoning-default__api-chat_completions"
+        "__history-images-all-actions-all__episodes-1__maxsteps-3"
+        "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
+    )
+
+
+def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
+    monkeypatch,
+    tmp_path,
+):
+    response = (
+        _valid_action_text()[:-1]
+        + ',"Reflection":"joystick_0 may control horizontal motion"}'
+    )
+    client = FakeClient(response_text=response)
+    episode = _run_with_fake(
+        monkeypatch,
+        _config(
+            tmp_path,
+            3,
+            action_output_mode="action_with_reflection",
+        ),
+        client,
+    )
+
+    episode_dir = Path(episode.log_dir)
+    trajectory = [
+        json.loads(line)
+        for line in (episode_dir / "trajectory.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert all(
+        step["reflection"] == "joystick_0 may control horizontal motion"
+        for step in trajectory
+    )
+    assistant_payload = json.loads(
+        next(
+            message["content"]
+            for message in client.requests[1].messages
+            if message["role"] == "assistant"
+        )
+    )
+    assert assistant_payload["Reflection"] == (
+        "joystick_0 may control horizontal motion"
+    )
+    run_dir = episode_dir.parent
+    assert run_dir.parent.name.endswith("__output-action_with_reflection")
+    manifest = json.loads((run_dir / "run_manifest.json").read_text())
+    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v1"
+
+
+def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):
     client = FakeClient(error=True)
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.sim.dummy.DummySimAdapter.step",
+        lambda *_args, **_kwargs: pytest.fail("API errors must not call sim.step"),
+    )
     episode = _run_with_fake(monkeypatch, _config(tmp_path, "all"), client)
 
-    assert episode.steps == 3
+    assert episode.steps == 0
     assert episode.termination_reason == "agent_error"
-    assert len(client.requests) == 3
-    assert episode.metrics["invalid_action_count"] == 3
-    assert episode.metrics["model_api_error_count"] == 3
-    assert episode.metrics["model_retry_count"] == 6
+    assert len(client.requests) == 1
+    assert episode.metrics["invalid_action_count"] == 0
+    assert episode.metrics["model_api_error_count"] == 1
+    assert episode.metrics["model_retry_count"] == 2
     summary = json.loads((Path(episode.log_dir) / "summary.json").read_text(encoding="utf-8"))
     assert summary["termination_reason"] == "agent_error"
 

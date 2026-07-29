@@ -491,6 +491,7 @@ def model_review_record(
         "control": public_control,
         "raw_action": to_jsonable(transition.raw_action),
         "parsed_action": to_jsonable(transition.parsed_action),
+        "reflection": transition.reflection,
         "action_status": _action_status(transition),
         "valid": transition.validation.is_valid,
         "validation_errors": [
@@ -498,12 +499,23 @@ def model_review_record(
         ],
         "api": {
             "status": trace.status if trace is not None else "unavailable",
+            "transport": trace.api if trace is not None else None,
             "error": (
                 _sanitize_error_text(trace.error)
                 if trace is not None and trace.error is not None
                 else None
             ),
             "model": trace.model if trace is not None else None,
+            "reasoning_effort": (
+                trace.reasoning_effort if trace is not None else None
+            ),
+            "previous_response_id": (
+                trace.previous_response_id if trace is not None else None
+            ),
+            "response_id": trace.response_id if trace is not None else None,
+            "context_recovery_count": (
+                trace.context_recovery_count if trace is not None else 0
+            ),
             "latency_ms": trace.latency_ms if trace is not None else None,
             "attempts": trace.attempts if trace is not None else 0,
             "input_tokens": trace.input_tokens if trace is not None else None,
@@ -630,10 +642,12 @@ def _model_panel_lines(panel: dict[str, Any]) -> list[str]:
             [
                 "api: "
                 f"status={_compact(api.get('status'))} "
-                f"model={_compact(api.get('model'))}",
+                f"model={_compact(api.get('model'))} "
+                f"reasoning={_compact(api.get('reasoning_effort'))}",
                 "api timing: "
                 f"latency_ms={_compact(api.get('latency_ms'))} "
-                f"attempts={_compact(api.get('attempts'))}",
+                f"attempts={_compact(api.get('attempts'))} "
+                f"context_recoveries={_compact(api.get('context_recovery_count'))}",
                 "tokens: "
                 f"input={_compact(api.get('input_tokens'))} "
                 f"output={_compact(api.get('output_tokens'))} "

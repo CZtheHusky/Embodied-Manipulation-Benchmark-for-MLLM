@@ -47,7 +47,10 @@ metaworld = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-mllm_teleop_benchmark = ["sim/gymnasium_envs/envs/assets/*.xml"]
+mllm_teleop_benchmark = [
+  "review/static/*",
+  "sim/gymnasium_envs/envs/assets/*.xml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

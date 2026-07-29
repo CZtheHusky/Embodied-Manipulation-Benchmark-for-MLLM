@@ -113,8 +113,13 @@ class AgentTrace:
     actor_type: str
     status: str = "ok"
     provider: str | None = None
+    api: str | None = None
     model: str | None = None
+    reasoning_effort: str | None = None
     request_id: str | None = None
+    previous_response_id: str | None = None
+    response_id: str | None = None
+    context_recovery_count: int = 0
     latency_ms: float | None = None
     attempts: int = 0
     input_tokens: int | None = None
@@ -156,6 +161,7 @@ class StepTransition:
     truncated: bool
     info: dict[str, Any] = field(default_factory=dict)
     agent_trace: AgentTrace | None = None
+    reflection: str | None = None
 
 
 @dataclass(frozen=True)

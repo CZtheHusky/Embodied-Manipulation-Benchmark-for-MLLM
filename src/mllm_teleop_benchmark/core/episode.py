@@ -29,6 +29,7 @@ class EpisodeManager:
         controller: Controller,
         agent: Agent,
         run_id: str | None = None,
+        run_group: str | None = None,
     ) -> None:
         self.config = config
         self.sim = sim
@@ -40,9 +41,16 @@ class EpisodeManager:
         self.controller = controller
         self.agent = agent
         self.run_id = run_id
+        self.run_group = run_group
 
     def run_episode(self, episode_id: int, seed: int) -> EpisodeResult:
-        logger = EpisodeLogger(self.config, episode_id, seed, run_id=self.run_id)
+        logger = EpisodeLogger(
+            self.config,
+            episode_id,
+            seed,
+            run_id=self.run_id,
+            run_group=self.run_group,
+        )
         metrics = MetricsRecorder()
         history: list[StepTransition] = []
 
@@ -76,7 +84,6 @@ class EpisodeManager:
 
         success = self.task.is_success(observation, self.sim.get_state())
         termination_reason = "success" if success else "max_steps"
-        consecutive_agent_errors = 0
         while not success and len(history) < self.config.task.max_steps:
             context = AgentContext(
                 observation=observation,
@@ -93,17 +100,13 @@ class EpisodeManager:
             logger.record_agent_artifacts(decision.artifacts)
             metrics.update_agent_trace(decision.trace)
 
-            if decision.trace.status == "fatal":
+            if decision.trace.status in {"fatal", "error"}:
                 termination_reason = "agent_error"
                 break
 
-            if decision.trace.status == "error":
-                consecutive_agent_errors += 1
-                parsed_action = self._noop_joystick_action()
-                validation = ValidationResult(False, (decision.trace.error or "Model API request failed",))
-            else:
-                consecutive_agent_errors = 0
-                parsed_action, validation = self._parse_and_validate(decision.action)
+            parsed_action, validation, reflection = self._parse_and_validate(
+                decision.action
+            )
 
             sim_action = self.controller.translate(
                 parsed_action if validation.is_valid else self._noop_joystick_action()
@@ -111,12 +114,8 @@ class EpisodeManager:
             step_result = self.sim.step(sim_action)
             next_observation = self.observation_provider.get_observation(self.sim)
             success = self.task.is_success(next_observation, self.sim.get_state())
-            agent_error_termination = (
-                decision.trace.status == "error"
-                and consecutive_agent_errors >= self.config.agent.max_consecutive_errors
-            )
             reached_max_steps = len(history) + 1 >= self.config.task.max_steps
-            truncated = (reached_max_steps and not success) or agent_error_termination
+            truncated = reached_max_steps and not success
             transition = StepTransition(
                 step_id=observation.step_id,
                 observation=observation,
@@ -129,6 +128,7 @@ class EpisodeManager:
                 truncated=truncated or step_result.truncated,
                 info=step_result.info,
                 agent_trace=decision.trace,
+                reflection=reflection,
             )
             logger.record_step(transition)
             metrics.update(transition)
@@ -137,8 +137,6 @@ class EpisodeManager:
 
             if success:
                 termination_reason = "success"
-            elif agent_error_termination:
-                termination_reason = "agent_error"
             elif step_result.terminated:
                 termination_reason = "simulator_terminated"
             elif step_result.truncated:
@@ -172,15 +170,31 @@ class EpisodeManager:
         window = self.config.agent.history_window
         return tuple(history[-window:]) if window > 0 else ()
 
-    def _parse_and_validate(self, raw_action: object) -> tuple[JoystickAction, ValidationResult]:
+    def _parse_and_validate(
+        self,
+        raw_action: object,
+    ) -> tuple[JoystickAction, ValidationResult, str | None]:
         try:
-            parsed_action = self.parser.parse(raw_action)
+            if self.config.agent.type == "mllm":
+                parsed_output = self.parser.parse_model_output(
+                    raw_action,
+                    self.config.agent.action_output_mode,
+                )
+                parsed_action = parsed_output.action
+                reflection = parsed_output.reflection
+            else:
+                parsed_action = self.parser.parse(raw_action)
+                reflection = None
         except ActionParseError as exc:
-            return self._noop_joystick_action(), ValidationResult(False, (str(exc),))
+            return (
+                self._noop_joystick_action(),
+                ValidationResult(False, (str(exc),)),
+                None,
+            )
         validation = self.validator.validate(parsed_action)
         if not validation.is_valid and self.config.agent.invalid_action_recovery != "noop":
             raise ValueError(f"Unsupported invalid action recovery: {self.config.agent.invalid_action_recovery}")
-        return parsed_action, validation
+        return parsed_action, validation, reflection
 
     def _noop_joystick_action(self) -> JoystickAction:
         return JoystickAction({name: 0.0 for name in self.action_space.channels})

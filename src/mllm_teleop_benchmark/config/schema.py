@@ -226,10 +226,22 @@ class ControlInterfaceConfig:
         rng = random.Random(seed if seed is not None else 0)
         if self.mapping_strategy in {"permuted", "permuted_sign_flipped"}:
             rng.shuffle(motion_dims)
+            if (
+                self.mapping_strategy == "permuted_sign_flipped"
+                and len(motion_dims) > 1
+                and motion_dims == list(self.active_dimensions)
+            ):
+                motion_dims[0], motion_dims[1] = motion_dims[1], motion_dims[0]
         channels = dict(zip(motion_channels, motion_dims, strict=True))
         signs = {channel: 1.0 for channel in motion_channels}
         if self.mapping_strategy in {"sign_flipped", "permuted_sign_flipped"}:
             signs = {channel: float(rng.choice((-1.0, 1.0))) for channel in motion_channels}
+            if (
+                self.mapping_strategy == "permuted_sign_flipped"
+                and motion_channels
+                and all(sign > 0.0 for sign in signs.values())
+            ):
+                signs[motion_channels[0]] = -1.0
         if self.gripper != "none":
             gripper_channel = self.channel_names()[-1]
             channels[gripper_channel] = "gripper"
@@ -324,6 +336,7 @@ class FrameTransformConfig:
 @dataclass(frozen=True)
 class ModelConfig:
     provider: str = "openai_compatible"
+    api: str = "chat_completions"
     name: str | None = None
     name_env: str = "MLLM_TELEOP_MODEL"
     base_url: str | None = None
@@ -333,10 +346,14 @@ class ModelConfig:
     timeout_seconds: float = 60.0
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
+    retry_backoff_max_seconds: float = 30.0
+    retry_until_success: bool = False
+    reasoning_effort: str | None = None
     temperature: float = 0.0
     max_output_tokens: int = 128
     response_format: str = "json_object"
     prompt_cache_key: str | None = None
+    stream: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ModelConfig":
@@ -346,23 +363,42 @@ class ModelConfig:
         timeout_seconds = float(values.get("timeout_seconds", 60.0))
         max_retries = int(values.get("max_retries", 2))
         retry_backoff_seconds = float(values.get("retry_backoff_seconds", 1.0))
+        retry_backoff_max_seconds = float(values.get("retry_backoff_max_seconds", 30.0))
         max_output_tokens = int(values.get("max_output_tokens", 128))
         response_format = str(values.get("response_format", "json_object"))
+        api = str(values.get("api", "chat_completions"))
+        reasoning_effort_value = values.get("reasoning_effort")
+        reasoning_effort = (
+            str(reasoning_effort_value) if reasoning_effort_value is not None else None
+        )
         if timeout_seconds <= 0:
             raise ValueError("agent.model.timeout_seconds must be positive")
         if max_retries < 0:
             raise ValueError("agent.model.max_retries must be non-negative")
         if retry_backoff_seconds < 0:
             raise ValueError("agent.model.retry_backoff_seconds must be non-negative")
+        if retry_backoff_max_seconds < retry_backoff_seconds:
+            raise ValueError(
+                "agent.model.retry_backoff_max_seconds must be greater than or equal to "
+                "retry_backoff_seconds"
+            )
         if max_output_tokens <= 0:
             raise ValueError("agent.model.max_output_tokens must be positive")
         if response_format not in {"json_object", "none"}:
             raise ValueError("agent.model.response_format must be one of: json_object, none")
+        if api not in {"chat_completions", "responses"}:
+            raise ValueError("agent.model.api must be one of: chat_completions, responses")
+        if reasoning_effort not in {None, "none", "low", "medium", "high", "xhigh", "max"}:
+            raise ValueError(
+                "agent.model.reasoning_effort must be one of: "
+                "none, low, medium, high, xhigh, max"
+            )
         name = values.get("name")
         base_url = values.get("base_url")
         prompt_cache_key = values.get("prompt_cache_key")
         return cls(
             provider=str(values.get("provider", "openai_compatible")),
+            api=api,
             name=str(name) if name is not None else None,
             name_env=str(values.get("name_env", "MLLM_TELEOP_MODEL")),
             base_url=str(base_url) if base_url is not None else None,
@@ -372,10 +408,14 @@ class ModelConfig:
             timeout_seconds=timeout_seconds,
             max_retries=max_retries,
             retry_backoff_seconds=retry_backoff_seconds,
+            retry_backoff_max_seconds=retry_backoff_max_seconds,
+            retry_until_success=bool(values.get("retry_until_success", False)),
+            reasoning_effort=reasoning_effort,
             temperature=float(values.get("temperature", 0.0)),
             max_output_tokens=max_output_tokens,
             response_format=response_format,
             prompt_cache_key=str(prompt_cache_key) if prompt_cache_key is not None else None,
+            stream=bool(values.get("stream", False)),
         )
 
 
@@ -438,33 +478,68 @@ class AgentHistoryConfig:
 @dataclass(frozen=True)
 class AgentConfig:
     type: str
+    action_output_mode: str = "action_only"
     invalid_action_recovery: str = "noop"
     history_window: int = 5
     model: ModelConfig | None = None
     observation: AgentObservationConfig = field(default_factory=AgentObservationConfig)
     history: AgentHistoryConfig = field(default_factory=AgentHistoryConfig)
-    max_consecutive_errors: int = 3
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AgentConfig":
         agent_type = str(_require(data, "type"))
+        action_output_mode = str(data.get("action_output_mode", "action_only"))
         invalid_action_recovery = str(data.get("invalid_action_recovery", "noop"))
         history_window = int(data.get("history_window", 5))
-        max_consecutive_errors = int(data.get("max_consecutive_errors", 3))
+        if action_output_mode not in {
+            "action_only",
+            "action_with_reflection",
+        }:
+            raise ValueError(
+                "agent.action_output_mode must be one of: "
+                "action_only, action_with_reflection"
+            )
+        if agent_type != "mllm" and action_output_mode != "action_only":
+            raise ValueError(
+                "agent.action_output_mode=action_with_reflection requires agent.type=mllm"
+            )
         if invalid_action_recovery != "noop":
             raise ValueError("agent.invalid_action_recovery currently supports only: noop")
         if history_window < 0:
             raise ValueError("agent.history_window must be non-negative")
-        if max_consecutive_errors <= 0:
-            raise ValueError("agent.max_consecutive_errors must be positive")
+        model = ModelConfig.from_dict(data.get("model")) if agent_type == "mllm" else None
+        history = AgentHistoryConfig.from_dict(data.get("history"))
+        if model is not None and model.api == "responses":
+            if history.action_window != "all" or history.image_window != "all":
+                raise ValueError(
+                    "agent.model.api=responses retains the full provider-side conversation "
+                    "and requires agent.history.action_window=all and image_window=all"
+                )
+        if action_output_mode == "action_with_reflection":
+            assert model is not None
+            if model.api != "chat_completions":
+                raise ValueError(
+                    "agent.action_output_mode=action_with_reflection requires "
+                    "agent.model.api=chat_completions"
+                )
+            if history.image_window != 3:
+                raise ValueError(
+                    "agent.action_output_mode=action_with_reflection requires "
+                    "agent.history.image_window=3"
+                )
+            if model.response_format != "json_object":
+                raise ValueError(
+                    "agent.action_output_mode=action_with_reflection requires "
+                    "agent.model.response_format=json_object"
+                )
         return cls(
             type=agent_type,
+            action_output_mode=action_output_mode,
             invalid_action_recovery=invalid_action_recovery,
             history_window=history_window,
-            model=ModelConfig.from_dict(data.get("model")) if agent_type == "mllm" else None,
+            model=model,
             observation=AgentObservationConfig.from_dict(data.get("observation")),
-            history=AgentHistoryConfig.from_dict(data.get("history")),
-            max_consecutive_errors=max_consecutive_errors,
+            history=history,
         )
 
 

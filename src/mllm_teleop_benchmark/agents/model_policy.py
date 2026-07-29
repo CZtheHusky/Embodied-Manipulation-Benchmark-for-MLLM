@@ -14,6 +14,7 @@ from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_nam
 
 
 PROMPT_VERSION = "mllm_joystick_v1"
+REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v1"
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 
@@ -41,6 +42,7 @@ class MLLMPolicy(Agent):
         self.config = config
         self.client = client
         self.model_name = model_name
+        self.prompt_version = _prompt_version(config.action_output_mode)
         self._image_cache: dict[tuple[int, str], EncodedImage] = {}
         self._previous_message_stream = b""
 
@@ -56,9 +58,11 @@ class MLLMPolicy(Agent):
                     actor_type="mllm",
                     status="fatal",
                     provider=self.config.model.provider,
+                    api=self.config.model.api,
                     model=self.model_name,
+                    reasoning_effort=self.config.model.reasoning_effort,
                     error=str(exc),
-                    prompt_version=PROMPT_VERSION,
+                    prompt_version=self.prompt_version,
                     artifact_dir=artifact_dir,
                 ),
                 artifacts=(
@@ -84,14 +88,16 @@ class MLLMPolicy(Agent):
                     actor_type="mllm",
                     status="error",
                     provider=self.config.model.provider,
+                    api=self.config.model.api,
                     model=self.model_name,
+                    reasoning_effort=self.config.model.reasoning_effort,
                     latency_ms=exc.latency_ms,
                     attempts=exc.attempts,
                     common_prefix_bytes=common_prefix_bytes,
                     request_bytes=exc.request_bytes or len(request.encoded_body()),
                     image_count=image_count,
                     error=str(exc),
-                    prompt_version=PROMPT_VERSION,
+                    prompt_version=self.prompt_version,
                     artifact_dir=artifact_dir,
                 ),
                 artifacts=(
@@ -122,8 +128,11 @@ class MLLMPolicy(Agent):
         return {
             "type": "mllm",
             "provider": self.config.model.provider,
+            "api": self.config.model.api,
             "model": self.model_name,
-            "prompt_version": PROMPT_VERSION,
+            "reasoning_effort": self.config.model.reasoning_effort,
+            "action_output_mode": self.config.action_output_mode,
+            "prompt_version": self.prompt_version,
         }
 
     def _build_request(
@@ -148,10 +157,17 @@ class MLLMPolicy(Agent):
             )
 
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": _system_prompt()},
+            {
+                "role": "system",
+                "content": _system_prompt(self.config.action_output_mode),
+            },
             {
                 "role": "user",
-                "content": _static_instruction(context),
+                "content": _static_instruction(
+                    context,
+                    self.prompt_version,
+                    self.config.action_output_mode,
+                ),
             },
         ]
         images: list[EncodedImage] = []
@@ -174,6 +190,7 @@ class MLLMPolicy(Agent):
                         transition,
                         context.action_schema,
                         include_action=include_action,
+                        action_output_mode=self.config.action_output_mode,
                     ),
                 }
             )
@@ -193,6 +210,7 @@ class MLLMPolicy(Agent):
             messages=tuple(messages),
             temperature=self.config.model.temperature,
             max_output_tokens=self.config.model.max_output_tokens,
+            reasoning_effort=self.config.model.reasoning_effort,
             response_format=self.config.model.response_format,
             prompt_cache_key=self.config.model.prompt_cache_key,
         )
@@ -296,7 +314,7 @@ class MLLMPolicy(Agent):
             for image in images
         ]
         payload = {
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": self.prompt_version,
             "common_prefix_bytes": common_prefix_bytes,
             "request": _sanitized_request_body(request, images),
             "images": manifest,
@@ -318,8 +336,11 @@ class MLLMPolicy(Agent):
             actor_type="mllm",
             status="ok",
             provider=self.config.model.provider,
+            api=self.config.model.api,
             model=response.model or self.model_name,
+            reasoning_effort=self.config.model.reasoning_effort,
             request_id=response.request_id,
+            response_id=response.request_id,
             latency_ms=response.latency_ms,
             attempts=response.attempts,
             input_tokens=response.usage.input_tokens,
@@ -333,36 +354,77 @@ class MLLMPolicy(Agent):
             common_prefix_bytes=common_prefix_bytes,
             request_bytes=response.request_bytes,
             image_count=image_count,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=self.prompt_version,
             artifact_dir=artifact_dir,
         )
 
 
-def _system_prompt() -> str:
-    return (
+def _prompt_version(action_output_mode: str) -> str:
+    if action_output_mode == "action_only":
+        return PROMPT_VERSION
+    if action_output_mode == "action_with_reflection":
+        return REFLECTION_PROMPT_VERSION
+    raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
+
+
+def _system_prompt(action_output_mode: str = "action_only") -> str:
+    prompt = (
         "You control a robot through a virtual joystick. "
-        "Return exactly one JSON object and no prose. "
+        "Return exactly one JSON object and no prose outside that object. "
         "Use the current observation and the permitted history only."
     )
+    if action_output_mode == "action_with_reflection":
+        return (
+            f"{prompt} You may include the top-level string key Reflection. "
+            "When included, Reflection must concisely summarize your current "
+            "hypothesis about what each joystick channel controls, based only on "
+            "public observations and your own action history."
+        )
+    if action_output_mode != "action_only":
+        raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
+    return prompt
 
 
-def _static_instruction(context: AgentContext) -> str:
+def _static_instruction(
+    context: AgentContext,
+    prompt_version: str = PROMPT_VERSION,
+    action_output_mode: str = "action_only",
+) -> str:
     control = ControlInstructionBuilder().build(
         context.metadata.get("control_interface", {}),
         context.action_schema,
     )
     schema = json.dumps(context.action_schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    example_payload: dict[str, Any] = {
+        "channels": {name: 0 for name in context.action_schema}
+    }
+    if action_output_mode == "action_with_reflection":
+        example_payload["Reflection"] = (
+            "joystick_0 appears to control ...; joystick_1 appears to control ..."
+        )
+    elif action_output_mode != "action_only":
+        raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
     example = json.dumps(
-        {"channels": {name: 0 for name in context.action_schema}},
+        example_payload,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
     )
+    if action_output_mode == "action_with_reflection":
+        format_requirement = (
+            "The only permitted top-level keys are channels and the optional "
+            "case-sensitive string key Reflection. "
+        )
+    else:
+        format_requirement = (
+            "The object must contain only the top-level key channels. "
+        )
     return (
-        f"Prompt version: {PROMPT_VERSION}. "
+        f"Prompt version: {prompt_version}. "
         f"Task: {context.task_instruction} "
         f"Control: {control.text} "
         f"Action schema: {schema}. "
+        f"{format_requirement}"
         f"Return valid JSON using this required output shape: {example}"
     )
 
@@ -372,11 +434,17 @@ def _history_action(
     action_schema: dict[str, Any],
     *,
     include_action: bool,
+    action_output_mode: str = "action_only",
 ) -> str:
     if not include_action:
         return ACTION_OMITTED
     if transition.validation.is_valid and transition.parsed_action is not None:
         payload: dict[str, Any] = {"channels": transition.parsed_action}
+        if (
+            action_output_mode == "action_with_reflection"
+            and transition.reflection is not None
+        ):
+            payload["Reflection"] = transition.reflection
     else:
         status = (
             "api_error_noop"
@@ -387,6 +455,8 @@ def _history_action(
             "channels": {name: 0 for name in action_schema},
             "status": status,
         }
+    if action_output_mode not in {"action_only", "action_with_reflection"}:
+        raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 

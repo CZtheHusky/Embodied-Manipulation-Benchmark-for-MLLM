@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MLLM Episode Review</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <button class="text-button compact-only" id="sidebar-toggle" type="button">Episodes</button>
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <div>
+            <strong>MLLM Episode Review</strong>
+            <span id="run-name">Loading run</span>
+          </div>
+        </div>
+        <button
+          class="version-button"
+          id="version-button"
+          type="button"
+          title="Prompt contract version"
+        >
+          prompt version: <span id="prompt-version">unknown</span>
+        </button>
+        <button class="text-button compact-only" id="inspector-toggle" type="button">JSON</button>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-header">
+            <label for="group-select">Experiment group</label>
+            <select id="group-select"></select>
+            <label for="run-select">Run</label>
+            <select id="run-select"></select>
+            <label for="episode-select">Episode</label>
+            <select id="episode-select"></select>
+            <div class="episode-status" id="episode-status"></div>
+            <label class="search-field" for="step-filter">
+              <span>Filter steps</span>
+              <input id="step-filter" type="search" inputmode="numeric" placeholder="Step number">
+            </label>
+          </div>
+          <nav class="step-list" id="step-list" aria-label="Episode steps"></nav>
+        </aside>
+
+        <main class="main">
+          <div class="main-toolbar">
+            <div class="segmented" role="tablist" aria-label="Review view">
+              <button class="active" id="snapshot-mode" type="button" role="tab">Request snapshot</button>
+              <button id="conversation-mode" type="button" role="tab">Episode conversation</button>
+            </div>
+            <div class="step-nav">
+              <button class="text-button" id="previous-step" type="button">Previous</button>
+              <span id="step-position">Step 0</span>
+              <button class="text-button" id="next-step" type="button">Next</button>
+            </div>
+          </div>
+          <div class="request-meta" id="request-meta"></div>
+          <section class="chat" id="chat" aria-live="polite"></section>
+        </main>
+
+        <aside class="inspector" id="inspector">
+          <div class="inspector-header">
+            <div class="inspector-tabs" role="tablist" aria-label="Raw artifacts">
+              <button class="active" data-inspector-tab="request" type="button">Request</button>
+              <button data-inspector-tab="response" type="button">Response</button>
+              <button data-inspector-tab="trace" type="button">Trace</button>
+            </div>
+            <button class="text-button" id="copy-json" type="button">Copy JSON</button>
+          </div>
+          <pre class="json-view" id="json-view"></pre>
+        </aside>
+      </div>
+    </div>
+
+    <dialog id="version-dialog">
+      <div class="dialog-header">
+        <strong id="dialog-version">Prompt version</strong>
+        <button class="text-button" id="close-version-dialog" type="button">Close</button>
+      </div>
+      <p>
+        This identifies the benchmark prompt contract, not the model. It freezes
+        the system instruction, public-input projection, history layout, image
+        policy, and joystick output schema used by a run.
+      </p>
+      <p>
+        Results with different prompt versions should be compared explicitly.
+        A behavior-changing prompt update requires a new version.
+      </p>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

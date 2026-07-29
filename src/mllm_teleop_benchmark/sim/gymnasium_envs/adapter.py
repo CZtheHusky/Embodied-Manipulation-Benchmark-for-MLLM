@@ -60,9 +60,19 @@ class GymnasiumSimAdapter(SimAdapter):
         )
 
     def render(self, camera: CameraSpec) -> Any:
-        frame = self.env.render()
-        self.last_render = frame
-        return frame
+        frame = self._render_frame()
+        if self._is_all_zero_rgb(frame):
+            frame = self._render_frame()
+            if self._is_all_zero_rgb(frame):
+                self._recreate_render_viewer()
+                frame = self._render_frame()
+                if self._is_all_zero_rgb(frame):
+                    raise RuntimeError(
+                        "Gymnasium rgb_array renderer returned an all-zero frame "
+                        "after MuJoCo context and viewer recovery"
+                    )
+        self.last_render = self._detached_frame(frame)
+        return self.last_render
 
     def get_state(self) -> dict[str, Any]:
         info = dict(self.last_info)
@@ -89,6 +99,45 @@ class GymnasiumSimAdapter(SimAdapter):
 
     def _observation(self) -> Observation:
         return Observation(step_id=self.step_id, images={}, state=self.get_state(), metadata={"simulator": "gymnasium", "env_id": self.env_id})
+
+    def _render_frame(self) -> Any:
+        self._restore_render_context()
+        return self.env.render()
+
+    def _restore_render_context(self) -> None:
+        renderer = getattr(self.env.unwrapped, "mujoco_renderer", None)
+        viewer = getattr(renderer, "viewer", None)
+        if viewer is None:
+            return
+        viewer.make_context_current()
+        import mujoco
+
+        mujoco.mjr_restoreBuffer(viewer.con)
+
+    def _recreate_render_viewer(self) -> None:
+        renderer = getattr(self.env.unwrapped, "mujoco_renderer", None)
+        viewers = getattr(renderer, "_viewers", None)
+        if renderer is None or not isinstance(viewers, dict):
+            return
+        viewer = viewers.pop(self.config.render_mode, None)
+        if viewer is not None:
+            viewer.close()
+        renderer.viewer = None
+
+    def _is_all_zero_rgb(self, frame: Any) -> bool:
+        if self.config.render_mode != "rgb_array":
+            return False
+        import numpy as np
+
+        array = np.asarray(frame)
+        return bool(array.ndim == 3 and array.size and not np.any(array))
+
+    def _detached_frame(self, frame: Any) -> Any:
+        if self.config.render_mode != "rgb_array":
+            return frame
+        import numpy as np
+
+        return np.ascontiguousarray(np.asarray(frame)).copy()
 
     def _jsonable_array(self, value: Any) -> Any:
         try:

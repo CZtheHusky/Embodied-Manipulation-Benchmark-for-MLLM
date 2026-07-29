@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import uuid
 import warnings
 from datetime import datetime
@@ -20,12 +22,23 @@ from mllm_teleop_benchmark.utils.serialization import to_jsonable
 
 
 class EpisodeLogger:
-    def __init__(self, config: BenchmarkConfig, episode_id: int, seed: int, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        config: BenchmarkConfig,
+        episode_id: int,
+        seed: int,
+        run_id: str | None = None,
+        run_group: str | None = None,
+    ) -> None:
         self.config = config
         self.episode_id = episode_id
         self.seed = seed
         self.run_id = run_id or make_run_id()
-        self.run_dir = Path(config.logging.output_dir) / self.run_id
+        self.run_group = run_group
+        relative_run_dir = (
+            Path(run_group) / self.run_id if run_group is not None else Path(self.run_id)
+        )
+        self.run_dir = Path(config.logging.output_dir) / relative_run_dir
         self.episode_dir = self.run_dir / f"episode_{episode_id:04d}"
         self.trajectory = TrajectoryLogger(self.episode_dir / "trajectory.jsonl")
         self.metadata: dict[str, Any] = {}
@@ -33,6 +46,8 @@ class EpisodeLogger:
     def start(self, metadata: dict[str, Any]) -> None:
         self.episode_dir.mkdir(parents=True, exist_ok=True)
         self.metadata = dict(metadata)
+        if self.run_group is not None:
+            self._write_run_manifest()
         if self.config.logging.save_config_snapshot:
             with (self.episode_dir / "config.yaml").open("w", encoding="utf-8") as handle:
                 yaml.safe_dump(to_jsonable(self.config.raw), handle, sort_keys=True)
@@ -129,7 +144,117 @@ class EpisodeLogger:
         with (self.episode_dir / "summary.json").open("w", encoding="utf-8") as handle:
             json.dump(to_jsonable(summary), handle, indent=2, sort_keys=True)
 
+    def _write_run_manifest(self) -> None:
+        model = self.config.agent.model
+        agent_metadata = self.metadata.get("agent", {})
+        manifest = {
+            "schema_version": 1,
+            "run_id": self.run_id,
+            "experiment_group": self.run_group,
+            "benchmark": {
+                "name": self.config.benchmark.name,
+                "num_episodes": self.config.benchmark.num_episodes,
+                "seed": self.config.benchmark.seed,
+            },
+            "task": {
+                "type": self.config.task.type,
+                "max_steps": self.config.task.max_steps,
+            },
+            "model": {
+                "requested_model": (
+                    agent_metadata.get("model")
+                    if isinstance(agent_metadata, dict)
+                    else None
+                ),
+                "provider": model.provider if model is not None else None,
+                "api": model.api if model is not None else None,
+                "reasoning_effort": model.reasoning_effort if model is not None else None,
+                "stream": model.stream if model is not None else None,
+                "response_format": model.response_format if model is not None else None,
+                "prompt_version": (
+                    agent_metadata.get("prompt_version")
+                    if isinstance(agent_metadata, dict)
+                    else None
+                ),
+                "action_output_mode": self.config.agent.action_output_mode,
+            },
+            "history": {
+                "action_window": self.config.agent.history.action_window,
+                "image_window": self.config.agent.history.image_window,
+                "max_images_per_request": self.config.agent.history.max_images_per_request,
+                "max_request_bytes": self.config.agent.history.max_request_bytes,
+            },
+            "observation": {
+                "cameras": list(self.config.agent.observation.cameras),
+                "image_max_side": self.config.agent.observation.image_max_side,
+            },
+            "control_interface": {
+                "mode": self.config.control_interface.mode,
+                "active_dimensions": list(
+                    self.config.control_interface.active_dimensions
+                ),
+                "gripper": self.config.control_interface.gripper,
+                "mapping_strategy": self.config.control_interface.mapping_strategy,
+                "mapping_visible_to_agent": (
+                    self.config.control_interface.mapping_visible_to_agent
+                ),
+                "frame_transform": self.config.control_interface.frame_transform,
+                "frame_visible_to_agent": (
+                    self.config.control_interface.frame_visible_to_agent
+                ),
+                "params": self.config.control_interface.params,
+            },
+            "logging": {
+                "save_video": self.config.logging.save_video,
+                "include_evaluator_debug": (
+                    self.config.logging.video.include_evaluator_debug
+                ),
+            },
+        }
+        path = self.run_dir / "run_manifest.json"
+        serialized = json.dumps(to_jsonable(manifest), indent=2, sort_keys=True) + "\n"
+        if path.exists():
+            if path.read_text(encoding="utf-8") != serialized:
+                raise RuntimeError("Run manifest changed between episodes")
+            return
+        path.write_text(serialized, encoding="utf-8")
+
 
 def make_run_id(created_at: datetime | None = None) -> str:
     timestamp = created_at or datetime.now().astimezone()
     return f"{timestamp.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+
+
+def make_experiment_group(config: BenchmarkConfig) -> str | None:
+    if config.agent.type != "mllm" or config.agent.model is None:
+        return None
+    model = config.agent.model
+    requested_model = model.name or os.environ.get(model.name_env) or "unresolved"
+    reasoning_effort = model.reasoning_effort or "default"
+    if model.api == "responses":
+        history = "full"
+    else:
+        history = (
+            f"images-{config.agent.history.image_window}"
+            f"-actions-{config.agent.history.action_window}"
+        )
+    parts = [
+        f"model-{requested_model}",
+        f"reasoning-{reasoning_effort}",
+        f"api-{model.api}",
+        f"history-{history}",
+        f"episodes-{config.benchmark.num_episodes}",
+        f"maxsteps-{config.task.max_steps}",
+    ]
+    if config.agent.action_output_mode != "action_only":
+        parts.append(f"output-{config.agent.action_output_mode}")
+    if config.control_interface.mapping_strategy != "fixed":
+        parts.append(f"mapping-{config.control_interface.mapping_strategy}")
+    if config.control_interface.frame_transform != "identity":
+        parts.append(f"frame-{config.control_interface.frame_transform}")
+    return "__".join(_path_slug(part) for part in parts)
+
+
+def _path_slug(value: object) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-")
+    return slug or "unknown"

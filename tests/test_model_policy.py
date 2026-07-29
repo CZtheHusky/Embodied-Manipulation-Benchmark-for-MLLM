@@ -64,9 +64,11 @@ def _agent_config(
     action_window="all",
     max_images=128,
     max_request_bytes=67_108_864,
+    action_output_mode="action_only",
 ):
     return AgentConfig(
         type="mllm",
+        action_output_mode=action_output_mode,
         model=ModelConfig(require_api_key=False),
         observation=AgentObservationConfig(cameras=("front",), image_max_side=32),
         history=AgentHistoryConfig(
@@ -165,12 +167,87 @@ def test_json_object_requirement_is_present_in_user_input():
 
     policy.act(_context(0))
 
+    request = client.requests[0]
     user_text = " ".join(
         message["content"]
-        for message in client.requests[0].messages
+        for message in request.messages
         if message["role"] == "user" and isinstance(message["content"], str)
     )
     assert "json" in user_text.lower()
+    assert "Reflection" not in request.messages[0]["content"]
+    assert "Reflection" not in user_text
+
+
+def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():
+    client = RecordingClient()
+    config = _agent_config(
+        image_window=3,
+        action_output_mode="action_with_reflection",
+    )
+    policy = MLLMPolicy(config, client, "fake-model")
+    transition = replace(
+        _transition(0, action_value=1),
+        raw_action=(
+            '{"channels":{"joystick_0":1,"joystick_1":0},'
+            '"Reflection":"joystick_0 appears to move right"}'
+        ),
+        reflection="joystick_0 appears to move right",
+    )
+
+    decision = policy.act(_context(1, (transition,)))
+
+    request = client.requests[0]
+    assert request.messages[0]["role"] == "system"
+    assert "top-level string key Reflection" in request.messages[0]["content"]
+    static_instruction = request.messages[1]["content"]
+    assert "mllm_joystick_reflection_v1" in static_instruction
+    assert "optional case-sensitive string key Reflection" in static_instruction
+    assistant_payload = json.loads(
+        next(
+            message["content"]
+            for message in request.messages
+            if message["role"] == "assistant"
+        )
+    )
+    assert assistant_payload == {
+        "Reflection": "joystick_0 appears to move right",
+        "channels": {"joystick_0": 1.0, "joystick_1": 0.0},
+    }
+    assert decision.trace.prompt_version == "mllm_joystick_reflection_v1"
+
+
+def test_reflection_mode_includes_only_three_prior_images():
+    client = RecordingClient()
+    policy = MLLMPolicy(
+        _agent_config(
+            image_window=3,
+            action_output_mode="action_with_reflection",
+        ),
+        client,
+        "fake-model",
+    )
+    history = tuple(
+        replace(_transition(step), reflection=f"hypothesis {step}")
+        for step in range(5)
+    )
+
+    policy.act(_context(5, history))
+
+    request = client.requests[0]
+    assert _image_count(request) == 4
+    assert _request_text(request).count(IMAGE_OMITTED) == 2
+    assistant_payloads = [
+        json.loads(message["content"])
+        for message in request.messages
+        if message["role"] == "assistant"
+    ]
+    assert [payload["Reflection"] for payload in assistant_payloads] == [
+        "hypothesis 0",
+        "hypothesis 1",
+        "hypothesis 2",
+        "hypothesis 3",
+        "hypothesis 4",
+    ]
 
 
 @pytest.mark.parametrize(

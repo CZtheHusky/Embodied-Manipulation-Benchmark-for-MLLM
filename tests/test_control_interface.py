@@ -76,6 +76,19 @@ def test_motion_confusion_keeps_gripper_as_final_joystick():
     assert motion_dims == {"dx", "dy", "dz"}
 
 
+def test_combined_mapping_confusion_always_applies_permutation_and_sign_flip():
+    interface = ControlInterfaceConfig(
+        mode="eef_delta_pose",
+        active_dimensions=("dx", "dy"),
+        mapping_strategy="permuted_sign_flipped",
+    )
+
+    for seed in range(20):
+        mapping = interface.to_mapping_config(seed=seed)
+        assert list(mapping.channels.values()) == ["dy", "dx"]
+        assert any(sign < 0.0 for sign in mapping.signs.values())
+
+
 def test_control_instruction_panel_lines_include_mode_mapping_frame_and_scale():
     config = load_config("configs/reacher_delta_eef.yaml")
     action_space = build_action_space(config)
