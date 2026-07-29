@@ -39,8 +39,15 @@ class RLBenchSimAdapter(SimAdapter):
         self.step_id = 0
         self.last_reward = None
         self.last_terminate = False
+        # The pinned RLBench runtime samples variations and object poses from
+        # NumPy's process-global RNG.
+        np.random.seed(seed)
         self.variation_index = self._sample_variation(seed)
         descriptions, obs = self.task.reset()
+        if hasattr(self.task, "get_observation"):
+            refreshed_obs = self.task.get_observation()
+            if refreshed_obs is not None:
+                obs = refreshed_obs
         self.last_descriptions = tuple(str(item) for item in descriptions)
         self.last_native_obs = obs
         return self._observation()

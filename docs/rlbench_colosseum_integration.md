@@ -10,6 +10,8 @@ Implemented in this repository:
 - `task.type: rlbench_generic`
 - `controller.type: rlbench_delta_eef`
 - Example config: `configs/rlbench_reach_target_delta_eef.yaml`
+- MLLM baseline: `configs/rlbench_reach_target_mllm_reflection.yaml`
+- MLLM perturbation: `configs/rlbench_reach_target_mllm_reflection_perturbed.yaml`
 - Miniconda fallback backend: `rlbench`
 
 Not claimed yet:
@@ -113,6 +115,83 @@ JoystickAction -> JoystickMapping -> ControlFrameTransform -> RLBenchDeltaEEFCon
 ```
 
 For `ReachTarget`, the initial config exposes only `dx`, `dy`, and `dz` virtual joysticks. The gripper is held open with `controller.params.default_gripper: 1.0` because the fixed RLBench action mode still expects a gripper value.
+
+The MLLM configs expose the same three world-frame translation dimensions plus
+one final binary gripper joystick. The public contract is `0=open` and
+`1=closed`; the RLBench controller maps those commands to the native
+`Discrete` action values `1=open` and `0=closed`. This keeps an all-zero
+recovery action physically stable while preserving RLBench's native semantics.
+The motion scale is 2 cm per non-zero command.
+
+The public controller frame is the RLBench world-frame x, y, and z axes used by
+the end-effector pose planner. `ReachTarget` therefore has a genuine 3D
+Cartesian translation contract, so the perturbed config uses
+`random_rotation_3d`, not a planar transform. The baseline uses
+`fixed + identity`. The perturbed config uses
+`permuted_sign_flipped + random_rotation_3d`; only the three motion channels
+are permuted or sign-flipped, while the final gripper channel remains fixed.
+
+## MLLM Evaluation
+
+Both MLLM configs use:
+
+- Chat Completions through the shared OpenAI-compatible client
+- `action_with_reflection`
+- reasoning effort `low`
+- `max_output_tokens: 192`
+- the current shared reflection prompt contract
+- the current `front` RGB image plus three historical RGB images
+- all prior normalized action/reflection text
+- review video disabled by default
+
+The task instruction is identical in both conditions and only asks the agent to
+move the end-effector to the visible target. The public prompt explains the
+world XYZ translation axes, positive/negative/zero motion, and the gripper
+endpoints. In the perturbed condition it tells the model that fixed hidden
+mapping and frame complexity must be inferred from public RGB and its own
+actions, but it does not reveal the sampled permutation, signs, rotation
+matrix, quaternion, or seed.
+
+The request projection excludes RLBench state, reward, success, target or
+end-effector pose, distance, task low-dimensional state, joint positions,
+variation index, and the native simulator action. These values may remain in
+evaluator-only trajectory data but are never included in the model request.
+
+The adapter seeds the pinned RLBench release's process-global NumPy RNG before
+variation selection and reset. Equal benchmark episode seeds therefore produce
+equal variation, description, and target placement across the two control
+conditions. After reset, the adapter performs one non-stepping
+`TaskEnvironment.get_observation()` refresh. This avoids a CoppeliaSim first
+capture that can contain only the table and background before robot/task
+geometry appears.
+
+Run the dedicated integration suite on the verified display route:
+
+```bash
+DISPLAY=:1 MLLM_TELEOP_REQUIRE_RLBENCH=1 \
+  python3 scripts/manage_conda_env.py run rlbench -- \
+  python -m pytest -q tests/test_rlbench_colosseum_integration.py -rs
+```
+
+The MLLM tests replace the HTTP client with a deterministic Fake Client and run
+each control condition for four real simulator steps. They do not read
+`.env.model-api.local`, contact a model endpoint, or require network access.
+They verify request history, valid reflection actions, native 8D pose/gripper
+actions, manifest fields, request privacy, and non-black `240x320` RGB PNGs.
+
+Verified on 2026-07-29 with `DISPLAY=:1`:
+
+- RLBench dedicated suite: `15 passed, 1 skipped`
+- Core suite: `245 passed, 39 skipped`
+- Baseline and perturbed step-0 evaluator state and RGB were identical for the
+  same episode seed
+- Both four-step RGB sequences contained the robot and task objects without
+  black or incomplete frames
+- The one dedicated skip is the explicit Colosseum placeholder
+
+CoppeliaSim can emit `QObject::~QObject: Timers cannot be stopped from another
+thread` during shutdown. It was non-fatal in this run; all three sequential
+CoppeliaSim launches closed and the test process exited successfully.
 
 ## Cameras
 

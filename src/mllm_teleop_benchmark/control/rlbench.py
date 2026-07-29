@@ -17,12 +17,16 @@ class RLBenchDeltaEEFController(Controller):
         frame_transform: ControlFrameTransform | None = None,
         dimensions: tuple[str, ...] = ("dx", "dy", "dz", "droll", "dpitch", "dyaw"),
         default_gripper: float = 1.0,
+        gripper_open_value: float = 1.0,
+        gripper_closed_value: float = 0.0,
     ) -> None:
         self.mapping = mapping
         self.scales = dict(scales)
         self.frame_transform = frame_transform
         self.dimensions = dimensions
         self.default_gripper = float(default_gripper)
+        self.gripper_open_value = float(gripper_open_value)
+        self.gripper_closed_value = float(gripper_closed_value)
 
     @classmethod
     def from_config(
@@ -40,6 +44,8 @@ class RLBenchDeltaEEFController(Controller):
             frame_transform=frame_transform,
             dimensions=dimensions,
             default_gripper=float(config.params.get("default_gripper", 1.0)),
+            gripper_open_value=float(config.params.get("gripper_open_value", 1.0)),
+            gripper_closed_value=float(config.params.get("gripper_closed_value", 0.0)),
         )
 
     def translate(self, action: JoystickAction) -> RLBenchAction:
@@ -69,7 +75,10 @@ class RLBenchDeltaEEFController(Controller):
 
         gripper = self.default_gripper
         if "gripper" in command.values:
-            gripper = clamp(command.get("gripper", self.default_gripper), 0.0, 1.0)
+            public_gripper = clamp(command.get("gripper", 0.0), 0.0, 1.0)
+            gripper = self.gripper_open_value + public_gripper * (
+                self.gripper_closed_value - self.gripper_open_value
+            )
 
         return RLBenchAction(
             delta_position=tuple(float(v) for v in delta_position),
@@ -90,4 +99,6 @@ class RLBenchDeltaEEFController(Controller):
             "mapping": self.mapping.metadata(),
             "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
             "default_gripper": self.default_gripper,
+            "gripper_open_value": self.gripper_open_value,
+            "gripper_closed_value": self.gripper_closed_value,
         }
