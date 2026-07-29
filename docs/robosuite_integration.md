@@ -132,6 +132,11 @@ text contains none of them. The forbidden set covers simulator state, reward,
 object pose, end-effector pose, distance, simulator action, seed, camera
 randomization, sampled joystick mapping/signs, and sampled frame rotation.
 
+MuJoCo's direct offscreen render is vertically inverted. The adapter applies
+one vertical flip both when formatting robosuite observation images and when
+serving `render(camera)`, so UI frames and model-visible PNGs share the same
+upright public orientation.
+
 ## Public prompt status
 
 The shared prompt currently exposes the task, RGB camera names, active
@@ -155,9 +160,10 @@ PYTHONPATH=src NUMBA_DISABLE_JIT=1 \
   .venvs/robosuite/bin/python -m pytest tests/test_robosuite_integration.py -q -rs
 ```
 
-This includes config validation, controller checks, real simulator reset/step
-smoke, non-black RGB assertions, and a two-step Fake Client episode for each
-MLLM condition.
+This includes config validation, controller checks, an exactly-one-flip canary,
+real simulator reset/step smoke, and a two-step Fake Client episode for each
+MLLM condition. The Fake Client test decodes the model request PNGs and checks
+that they are upright, non-black, and retain the visible Lift cube.
 
 ## Current Limitations
 

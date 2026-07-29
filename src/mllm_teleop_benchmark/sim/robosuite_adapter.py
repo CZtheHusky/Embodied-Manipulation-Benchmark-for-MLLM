@@ -96,11 +96,13 @@ class RobosuiteSimAdapter(SimAdapter):
         )
 
     def render(self, camera: CameraSpec) -> Any:
-        return self._env.sim.render(
-            camera_name=camera.name,
-            width=camera.width,
-            height=camera.height,
-            depth=False,
+        return np.flipud(
+            self._env.sim.render(
+                camera_name=camera.name,
+                width=camera.width,
+                height=camera.height,
+                depth=False,
+            )
         )
 
     def get_state(self) -> dict[str, Any]:

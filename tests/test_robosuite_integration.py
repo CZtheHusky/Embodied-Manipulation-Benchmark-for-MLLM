@@ -1,9 +1,12 @@
+import base64
+import io
 import json
 import os
 from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from mllm_teleop_benchmark import BenchmarkRunner
 from mllm_teleop_benchmark.action.joystick import JoystickAction
@@ -242,6 +245,40 @@ def test_robosuite_adapter_init():
         adapter.close()
 
 
+def test_robosuite_render_applies_exactly_one_vertical_flip():
+    config = load_config("configs/robosuite_lift.yaml")
+    adapter = RobosuiteSimAdapter(config.simulator)
+    raw_frame = np.array(
+        [
+            [[255, 0, 0], [192, 0, 0]],
+            [[0, 255, 0], [0, 192, 0]],
+            [[0, 0, 255], [0, 0, 192]],
+        ],
+        dtype=np.uint8,
+    )
+
+    class FakeSim:
+        def render(self, **_kwargs):
+            return raw_frame
+
+    class FakeEnv:
+        sim = FakeSim()
+
+    adapter._env = FakeEnv()
+    camera = config.camera.cameras[0]
+    rendered = adapter.render(camera)
+    public_observation = adapter._format_observation(
+        {f"{camera.name}_image": raw_frame}
+    )
+
+    np.testing.assert_array_equal(rendered, np.flipud(raw_frame))
+    np.testing.assert_array_equal(
+        rendered,
+        public_observation.images[camera.name],
+    )
+    assert not np.array_equal(rendered, raw_frame)
+
+
 def test_robosuite_camera_randomization_sampling_is_seeded():
     cfg = {
         "agentview": {
@@ -421,12 +458,35 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
 
     pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))
     assert len(pngs) == 4
-    from PIL import Image
 
     assert all(
         int(np.asarray(Image.open(path).convert("RGB")).max()) > 0
         for path in pngs
     )
+
+    request_pngs = _request_pngs(client.requests[-1])
+    assert len(request_pngs) == 4
+    assert all(
+        image.dtype == np.uint8
+        and int(image.max()) > int(image.min())
+        for _, image in request_pngs
+    )
+    agentview_pngs = [
+        image
+        for camera, image in request_pngs
+        if camera == "agentview"
+    ]
+    assert len(agentview_pngs) == 2
+    for image in agentview_pngs:
+        pixels = image.astype(np.int16)
+        cube_mask = (
+            (pixels[:, :, 0] > 100)
+            & (pixels[:, :, 0] > pixels[:, :, 1] + 35)
+            & (pixels[:, :, 0] > pixels[:, :, 2] + 25)
+        )
+        cube_rows, _ = np.nonzero(cube_mask)
+        assert cube_rows.size >= 40
+        assert float(np.median(cube_rows)) < image.shape[0] / 2
 
 
 def _image_count(request) -> int:
@@ -437,6 +497,33 @@ def _image_count(request) -> int:
         for item in message["content"]
         if isinstance(item, dict) and item.get("type") == "image_url"
     )
+
+
+def _request_pngs(request) -> list[tuple[str, np.ndarray]]:
+    values = []
+    for message in request.messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        camera = None
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                text = str(item.get("text", ""))
+                if text.startswith("Camera ") and text.endswith(":"):
+                    camera = text[len("Camera ") : -1]
+                continue
+            if item.get("type") != "image_url":
+                continue
+            assert camera is not None
+            url = item["image_url"]["url"]
+            prefix = "data:image/png;base64,"
+            assert url.startswith(prefix)
+            payload = base64.b64decode(url[len(prefix) :])
+            with Image.open(io.BytesIO(payload)) as image:
+                values.append((camera, np.asarray(image.convert("RGB"))))
+    return values
 
 
 def _request_text(request) -> str:
