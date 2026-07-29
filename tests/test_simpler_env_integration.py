@@ -459,7 +459,7 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
         sim.close()
 
 
-def test_simpler_env_pick_coke_can_seed_42_through_51_reset_canary():
+def test_simpler_env_pick_coke_can_experiment_seeds_reset_canary():
     _require_simpler_env()
     config = load_config(BASELINE_CONFIG)
     sim = build_sim(config)
@@ -469,7 +469,7 @@ def test_simpler_env_pick_coke_can_seed_42_through_51_reset_canary():
     )
 
     try:
-        for seed in range(42, 52):
+        for seed in range(config.benchmark.seed, config.benchmark.seed + 10):
             sim.reset(config.task, seed=seed)
             state = sim.get_state()
             assert state["success"] is False, (
