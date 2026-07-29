@@ -559,6 +559,42 @@ def test_robocasa_runtime_smoke_reset_step_render_close():
         adapter.close()
 
 
+def test_robocasa_experiment_seeds_reset_rgb_canary():
+    _require_robocasa()
+    config = load_config(MLLM_CONFIGS[0][0])
+    adapter = RoboCasaSimAdapter(config.simulator)
+
+    try:
+        for seed in range(config.benchmark.seed, config.benchmark.seed + 10):
+            try:
+                observation = adapter.reset(config.task, seed=seed)
+            except Exception as exc:
+                _skip_unless_required(
+                    f"robocasa runtime or assets failed for seed {seed}",
+                    exc,
+                )
+
+            assert adapter.get_state()["is_success"] is False, (
+                f"RoboCasa seed {seed} is successful immediately after reset"
+            )
+            for camera in PUBLIC_CAMERAS:
+                assert camera in observation.images, (
+                    f"RoboCasa seed {seed} is missing public camera {camera}"
+                )
+                image = np.asarray(observation.images[camera])
+                assert image.ndim == 3
+                assert image.shape[-1] == 3
+                assert image.dtype == np.uint8
+                assert np.any(image != 0), (
+                    f"RoboCasa seed {seed} camera {camera} is all black"
+                )
+                assert float(image.std()) > 1.0, (
+                    f"RoboCasa seed {seed} camera {camera} has no visual variation"
+                )
+    finally:
+        adapter.close()
+
+
 @pytest.mark.parametrize(
     ("config_path", "mapping_strategy", "frame_transform", "visible"),
     MLLM_CONFIGS,

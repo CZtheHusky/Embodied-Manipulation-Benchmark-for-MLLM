@@ -293,6 +293,35 @@ def test_robosuite_adapter_init():
         adapter.close()
 
 
+def test_robosuite_experiment_seeds_reset_rgb_canary():
+    _require_robosuite()
+    config = load_config(MLLM_CONFIGS[0][0])
+    adapter = RobosuiteSimAdapter(config.simulator)
+
+    try:
+        for seed in range(config.benchmark.seed, config.benchmark.seed + 10):
+            observation = adapter.reset(config.task, seed=seed)
+            assert adapter.get_state()["is_success"] is False, (
+                f"robosuite seed {seed} is successful immediately after reset"
+            )
+            for camera in config.agent.observation.cameras:
+                assert camera in observation.images, (
+                    f"robosuite seed {seed} is missing public camera {camera}"
+                )
+                image = np.asarray(observation.images[camera])
+                assert image.ndim == 3
+                assert image.shape[-1] == 3
+                assert image.dtype == np.uint8
+                assert np.any(image != 0), (
+                    f"robosuite seed {seed} camera {camera} is all black"
+                )
+                assert float(image.std()) > 1.0, (
+                    f"robosuite seed {seed} camera {camera} has no visual variation"
+                )
+    finally:
+        adapter.close()
+
+
 def test_robosuite_render_applies_exactly_one_vertical_flip():
     config = load_config("configs/robosuite_lift.yaml")
     adapter = RobosuiteSimAdapter(config.simulator)
