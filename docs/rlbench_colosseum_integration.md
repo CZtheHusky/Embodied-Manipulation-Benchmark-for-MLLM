@@ -10,6 +10,9 @@ Implemented in this repository:
 - `task.type: rlbench_generic`
 - `controller.type: rlbench_delta_eef`
 - Example config: `configs/rlbench_reach_target_delta_eef.yaml`
+- MLLM configs:
+  - `configs/rlbench_reach_target_mllm_reflection.yaml`
+  - `configs/rlbench_reach_target_mllm_reflection_perturbed.yaml`
 - Miniconda fallback backend: `rlbench`
 
 Not claimed yet:
@@ -26,13 +29,16 @@ python3 scripts/manage_conda_env.py create rlbench
 python3 scripts/manage_conda_env.py smoke rlbench
 ```
 
-The smoke result was:
+The current smoke result is:
 
-- `tests/test_rlbench_colosseum_integration.py`: `8 passed, 1 skipped`
+- `tests/test_rlbench_colosseum_integration.py`: `15 passed, 1 skipped`
 - `configs/rlbench_reach_target_delta_eef_smoke.yaml`: one benchmark episode, `average_steps=1.0`, `success_rate=0.0`
 - `scripts/play_benchmark.py --config configs/rlbench_reach_target_delta_eef_smoke.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts RLBench, extracts the `front` camera frame, and exits cleanly.
 
-The remaining skip is the explicit Colosseum placeholder. Colosseum builds on this now-verified RLBench/CoppeliaSim route, but `simulator.type: colosseum` and perturbation configs are still not wired.
+The remaining skip is the explicit Colosseum placeholder. RLBench is now verified,
+including fixed and perturbed MLLM Fake Client loops. Colosseum builds on this route,
+but its upstream source is not pinned or installed and `simulator.type: colosseum`
+and official Colosseum perturbation configs are still not wired.
 
 ## External Prerequisites
 
@@ -114,6 +120,40 @@ JoystickAction -> JoystickMapping -> ControlFrameTransform -> RLBenchDeltaEEFCon
 
 For `ReachTarget`, the initial config exposes only `dx`, `dy`, and `dz` virtual joysticks. The gripper is held open with `controller.params.default_gripper: 1.0` because the fixed RLBench action mode still expects a gripper value.
 
+## MLLM Evaluation
+
+Both MLLM configs use the same public task text:
+
+```text
+Move the robot end-effector to the visible target.
+```
+
+They use `action_with_reflection`, OpenAI-compatible Chat Completions, reasoning
+effort `low`, three historical image turns, all textual action history, and the
+public `front` RGB camera. The public control surface contains only `dx`, `dy`,
+and `dz`; it does not expose rotation or gripper channels because `ReachTarget`
+does not need them. Each nonzero mapped translation command has magnitude
+`0.02 m`.
+
+The baseline exposes the fixed joystick mapping and identity frame. The
+perturbed condition uses an episode-fixed hidden `permuted_sign_flipped`
+mapping and `random_rotation_3d` transform over the same three translation
+dimensions. The prompt describes the RLBench world Cartesian frame but never
+includes the sampled permutation, signs, rotation matrix, target pose,
+end-effector pose, task low-dimensional state, reward, success oracle,
+variation index, seed, or native simulator action.
+
+The local Fake Client validation runs four real CoppeliaSim steps for each
+condition and verifies:
+
+- the `front` camera is non-black `320x240` RGB
+- native actions are finite absolute poses inside configured workspace bounds
+- quaternion and gripper fields satisfy the RLBench action contract
+- prompt v2, reflection history, and three-image-turn behavior
+- hidden state and API-key sentinels do not enter requests or artifacts
+
+This validates the benchmark chain, not task completion by a real model.
+
 ## Cameras
 
 The first config uses the RLBench `front` RGB camera. Camera names must match RLBench observation names without the `_rgb` suffix:
@@ -128,11 +168,13 @@ The observation provider configures RGB-only RLBench observations before environ
 
 ## Colosseum Plan
 
-Colosseum should be added only after RLBench has a verified runtime smoke on the target host. The next minimal step is a perturbation config over the same route, not a parallel simulator abstraction:
+RLBench now has a verified runtime smoke and an internal hidden-control
+perturbation condition. The next Colosseum-specific work is:
 
-1. Add the Colosseum Python dependency in a separate conda-managed backend or extend the documented backend name intentionally.
-2. Pin the upstream Colosseum source commit before installing it.
-3. Add a single perturbation config using an official Colosseum task/variation.
-4. Add smoke coverage that either runs `reset -> step -> render -> close` or fails loud with the exact missing Colosseum/CoppeliaSim prerequisite.
+1. Select and pin an upstream Colosseum source commit.
+2. Add it to a separate Miniconda backend or deliberately extend the RLBench backend.
+3. Wire one official Colosseum task and perturbation through the existing RLBench adapter path where its API contract permits.
+4. Add `reset -> step -> render -> close` coverage and compare the official perturbation metadata against the public-input policy.
 
-Until those steps are done, tests contain an explicit skip documenting the Colosseum blocker.
+Until those steps are done, tests contain an explicit skip documenting the
+missing Colosseum source/runtime integration.
