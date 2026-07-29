@@ -31,7 +31,10 @@ class RLBenchObservationProvider(ObservationProvider):
             step_id=int(state.get("step_id", 0)),
             images=images,
             state=state,
-            metadata={"camera": self.camera_manager.metadata(), "simulator": "rlbench"},
+            metadata={
+                "camera": self.camera_manager.metadata(),
+                "simulator": sim.config.type,
+            },
         )
 
     def _extract_images(self, observation: Any) -> dict[str, np.ndarray]:

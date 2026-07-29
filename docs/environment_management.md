@@ -180,7 +180,22 @@ RLBench is runtime verified through the Miniconda fallback in this branch. `scri
 
 The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, and uses `DISPLAY=:1` when that X socket exists. The verified path is display-backed OpenGL; headless GPU validation is not claimed on this host.
 
-Colosseum is not a separate backend in this worktree yet. It remains documented as a robustness extension that should be added after this verified RLBench route by pinning a Colosseum source commit and adding one perturbation smoke config. See `docs/rlbench_colosseum_integration.md`.
+Colosseum uses its own Miniconda backend:
+
+```bash
+python3 scripts/manage_conda_env.py create colosseum
+python3 scripts/manage_conda_env.py smoke colosseum
+```
+
+This environment uses the official Colosseum commit
+`098a910ae1d490524adb49b8d50735b00a1a62de`, RLBench commit
+`7c3f425f4a0b6b5ce001ba7246354eb3c70555be`, PyRep commit
+`076ca15c57f2495a4194da03565891ab1aaa317e`, and CoppeliaSim 4.1. Its source
+checkout names are separate from the `rlbench` backend, so creating Colosseum
+does not change the existing RLBench pin. The helper applies the same
+CoppeliaSim environment variables and display fallback. Use
+`MLLM_TELEOP_REQUIRE_COLOSSEUM=1` to turn an unavailable external runtime into a
+test failure.
 
 LIBERO:
 

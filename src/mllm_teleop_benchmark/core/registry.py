@@ -82,6 +82,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.rlbench.adapter import RLBenchSimAdapter
 
         return RLBenchSimAdapter(config.simulator)
+    if config.simulator.type == "colosseum":
+        from mllm_teleop_benchmark.sim.colosseum.adapter import ColosseumSimAdapter
+
+        return ColosseumSimAdapter(config.simulator)
     if config.simulator.type == "libero":
         from mllm_teleop_benchmark.sim.libero.adapter import LiberoSimAdapter
 
@@ -215,7 +219,7 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
         from mllm_teleop_benchmark.sim.calvin.observation import CalvinObservationProvider
 
         return CalvinObservationProvider(camera_manager)
-    if config.simulator.type == "rlbench":
+    if config.simulator.type in {"rlbench", "colosseum"}:
         from mllm_teleop_benchmark.sim.rlbench.observation import RLBenchObservationProvider
 
         return RLBenchObservationProvider(camera_manager)

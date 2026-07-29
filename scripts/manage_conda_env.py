@@ -41,6 +41,36 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "scripts/run_benchmark.py", "--config", "configs/rlbench_reach_target_delta_eef_smoke.yaml"],
         ],
     },
+    "colosseum": {
+        "env_name": "mllm-teleop-colosseum",
+        "env_file": "envs/environment-colosseum.yml",
+        "require_flag": "MLLM_TELEOP_REQUIRE_COLOSSEUM",
+        "root_install_args": ["--no-deps", "-e"],
+        "sources": [
+            {
+                "name": "colosseum-pyrep",
+                "repo": "https://github.com/stepjam/PyRep.git",
+                "commit": "076ca15c57f2495a4194da03565891ab1aaa317e",
+                "install_args": ["--no-build-isolation", "--no-deps", "-e"],
+            },
+            {
+                "name": "colosseum-rlbench",
+                "repo": "https://github.com/stepjam/RLBench.git",
+                "commit": "7c3f425f4a0b6b5ce001ba7246354eb3c70555be",
+                "install_args": ["--no-deps", "-e"],
+            },
+            {
+                "name": "colosseum",
+                "repo": "https://github.com/robot-colosseum/robot-colosseum.git",
+                "commit": "098a910ae1d490524adb49b8d50735b00a1a62de",
+                "install_args": ["--no-deps", "-e"],
+            },
+        ],
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_colosseum_integration.py", "-rs"],
+            ["python", "scripts/run_benchmark.py", "--config", "configs/colosseum_close_box_manip_obj_color_smoke.yaml"],
+        ],
+    },
     "libero": {
         "env_name": "mllm-teleop-libero",
         "env_file": "envs/environment-libero.yml",
@@ -280,7 +310,7 @@ def backend_env(name: str) -> dict[str, str]:
         env["NUMBA_DISABLE_JIT"] = "1"
         env.pop("ALL_PROXY", None)
         env.pop("all_proxy", None)
-    if name == "rlbench":
+    if name in {"rlbench", "colosseum"}:
         env["COPPELIASIM_ROOT"] = str(COPPELIASIM_ROOT)
         env["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(COPPELIASIM_ROOT)
         env["LD_LIBRARY_PATH"] = f"{COPPELIASIM_ROOT}:{env.get('LD_LIBRARY_PATH', '')}"
@@ -301,7 +331,7 @@ def report_runtime(name: str | None = None) -> None:
         print(f"conda={CONDA_EXE}")
         print(f"env_name={env_name(backend)}")
         print(f"display={env.get('DISPLAY', '')}")
-        if backend == "rlbench":
+        if backend in {"rlbench", "colosseum"}:
             print(f"coppeliasim_root={COPPELIASIM_ROOT}")
             print(f"coppeliasim_exists={(COPPELIASIM_ROOT / 'coppeliaSim.sh').exists()}")
             print(f"ld_library_path={env.get('LD_LIBRARY_PATH', '')}")

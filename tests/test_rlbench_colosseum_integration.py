@@ -696,15 +696,6 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
             assert b"PRIVATE_RLBENCH_API_KEY" not in artifact.read_bytes()
 
 
-def test_colosseum_route_is_blocked_pending_source_and_runtime_integration():
-    pytest.skip(
-        "Colosseum is intentionally not wired yet: RLBench is verified, but a "
-        "fixed Colosseum source, dependency install, official perturbation config, "
-        "and runtime smoke are still required; see "
-        "docs/rlbench_colosseum_integration.md."
-    )
-
-
 def _image_count(request) -> int:
     return sum(
         1

@@ -1,25 +1,28 @@
 # RLBench And Colosseum Integration
 
-RLBench is the first CoppeliaSim/PyRep backend for this benchmark route. Colosseum is treated as a robustness extension on the same family of runtime dependencies, but it is not wired as a simulator type until the base RLBench smoke test is verified against a real local CoppeliaSim install.
+RLBench and Colosseum are separate simulator backends that share the benchmark's
+RLBench action, controller, task, and observation contracts. They use independent
+Miniconda environments and independent RLBench source checkouts because Colosseum
+requires an older official RLBench pin.
 
 ## Verification Status
 
 Implemented in this repository:
 
 - `simulator.type: rlbench`
+- `simulator.type: colosseum`
 - `task.type: rlbench_generic`
 - `controller.type: rlbench_delta_eef`
-- Example config: `configs/rlbench_reach_target_delta_eef.yaml`
+- RLBench config: `configs/rlbench_reach_target_delta_eef.yaml`
+- Colosseum config:
+  `configs/colosseum_close_box_manip_obj_color_smoke.yaml`
 - MLLM configs:
   - `configs/rlbench_reach_target_mllm_reflection.yaml`
   - `configs/rlbench_reach_target_mllm_reflection_perturbed.yaml`
-- Miniconda fallback backend: `rlbench`
+- Miniconda fallback backends: `rlbench`, `colosseum`
 
-Not claimed yet:
-
-- `simulator.type: colosseum`
-- Colosseum perturbation configs
-- Any Colosseum runtime smoke result
+The Colosseum route uses official `EnvironmentExt`, task `close_box`, and
+`spreadsheet_idx=2`, whose official variation name is `manip_obj_color`.
 
 Verified on 2026-06-24 with display-backed CoppeliaSim:
 
@@ -29,20 +32,23 @@ python3 scripts/manage_conda_env.py create rlbench
 python3 scripts/manage_conda_env.py smoke rlbench
 ```
 
-The current smoke result is:
+The RLBench smoke result was:
 
-- `tests/test_rlbench_colosseum_integration.py`: `15 passed, 1 skipped`
+- `tests/test_rlbench_colosseum_integration.py`: core tests and the real
+  reset/step/render smoke passed in the RLBench environment
 - `configs/rlbench_reach_target_delta_eef_smoke.yaml`: one benchmark episode, `average_steps=1.0`, `success_rate=0.0`
 - `scripts/play_benchmark.py --config configs/rlbench_reach_target_delta_eef_smoke.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts RLBench, extracts the `front` camera frame, and exits cleanly.
 
-The remaining skip is the explicit Colosseum placeholder. RLBench is now verified,
-including fixed and perturbed MLLM Fake Client loops. Colosseum builds on this route,
-but its upstream source is not pinned or installed and `simulator.type: colosseum`
-and official Colosseum perturbation configs are still not wired.
+The Colosseum core integration tests are verified without external simulator
+dependencies. A real Colosseum/CoppeliaSim launch was not run while adding this
+route, so runtime readiness is not claimed until `smoke colosseum` passes in the
+new environment.
 
 ## External Prerequisites
 
-The Miniconda fallback manages Python packages and pinned source checkouts. It also provides a helper to install CoppeliaSim v4.1.0 under `/home/caozhe/opt/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04`.
+The Miniconda fallback manages Python packages and pinned source checkouts. It
+also provides a helper to install CoppeliaSim v4.1.0 under
+`/home/caozhe/opt/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04`.
 
 RLBench upstream documents CoppeliaSim v4.1.0 with PyRep. Use a matching Linux CoppeliaSim archive and set:
 
@@ -56,10 +62,21 @@ The verified run used the existing desktop display socket (`DISPLAY=:1`) rather 
 
 ## Environment
 
-The fallback source pins are:
+The existing RLBench backend pins remain:
 
 - PyRep: `https://github.com/stepjam/PyRep.git@076ca15c57f2495a4194da03565891ab1aaa317e`
 - RLBench: `https://github.com/stepjam/RLBench.git@f214b6ecc177babce12d3ad13dd92049c824c1d9`
+
+The independent Colosseum backend pins are:
+
+- Colosseum: `https://github.com/robot-colosseum/robot-colosseum.git@098a910ae1d490524adb49b8d50735b00a1a62de`
+- RLBench: `https://github.com/stepjam/RLBench.git@7c3f425f4a0b6b5ce001ba7246354eb3c70555be`
+- PyRep: `https://github.com/stepjam/PyRep.git@076ca15c57f2495a4194da03565891ab1aaa317e`
+- CoppeliaSim: `4.1`
+
+The source directories are named `colosseum`, `colosseum-rlbench`, and
+`colosseum-pyrep`. They do not mutate the editable checkouts used by the
+existing `rlbench` environment.
 
 Create the Python backend:
 
@@ -67,10 +84,22 @@ Create the Python backend:
 python3 scripts/manage_conda_env.py create rlbench
 ```
 
+Create the Colosseum backend:
+
+```bash
+python3 scripts/manage_conda_env.py create colosseum
+```
+
 Run the focused smoke:
 
 ```bash
 python3 scripts/manage_conda_env.py smoke rlbench
+```
+
+Run the Colosseum smoke:
+
+```bash
+python3 scripts/manage_conda_env.py smoke colosseum
 ```
 
 This requires both the Python environment and the external CoppeliaSim/PyRep runtime. The helper sets `COPPELIASIM_ROOT`, `LD_LIBRARY_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, and falls back to `DISPLAY=:1` when that X socket exists.
@@ -93,6 +122,14 @@ To make runtime launch failures fail the test instead of being reported as optio
 MLLM_TELEOP_REQUIRE_RLBENCH=1 python3 scripts/manage_conda_env.py run rlbench -- python -m pytest -q tests/test_rlbench_colosseum_integration.py -rs
 ```
 
+Colosseum uses a separate requirement flag. Without it, the external runtime
+test skips when Colosseum, RLBench, PyRep, CoppeliaSim, or the display runtime is
+unavailable. With it, the same condition fails:
+
+```bash
+MLLM_TELEOP_REQUIRE_COLOSSEUM=1 python3 scripts/manage_conda_env.py run colosseum -- python -m pytest -q tests/test_colosseum_integration.py -rs
+```
+
 The older uv route is not the verified path for this backend. CoppeliaSim is an external binary, PyRep needs a source build, and the conda flow is the reproducible route currently proven on this host.
 
 ## Control Contract
@@ -106,11 +143,15 @@ MoveArmThenGripper(
 )
 ```
 
-The benchmark control path remains:
+The shared benchmark control path remains:
 
 ```text
 JoystickAction -> JoystickMapping -> ControlFrameTransform -> RLBenchDeltaEEFController -> RLBenchSimAdapter -> task.step()
 ```
+
+For `simulator.type: colosseum`, `ColosseumSimAdapter` replaces the final
+adapter in that chain and launches official `EnvironmentExt`; the
+`RLBenchAction` shape and controller behavior are unchanged.
 
 `RLBenchDeltaEEFController` emits an internal `RLBenchAction` containing delta end-effector position, optional delta RPY rotation, and a gripper scalar. `RLBenchSimAdapter` is the only layer that reads the latest `obs.gripper_pose` and converts that delta command into RLBench's native absolute world-frame planning action:
 
@@ -146,6 +187,33 @@ available. The adapter treats RLBench `InvalidActionError` as a rejected
 decision: it keeps the latest observation, does not advance CoppeliaSim, marks
 `action_rejected: true` in evaluator state, and lets the episode continue.
 Unexpected simulator exceptions still propagate and fail the run.
+
+## Official Colosseum Condition
+
+On reset, `ColosseumSimAdapter` loads the official `close_box.yaml` and
+`close_box.json` assets from the pinned editable Colosseum checkout. It verifies
+that strategy entry 2 is `manip_obj_color`, applies the official
+`get_spreadsheet_config` helper, replaces `env.seed` with the episode seed, and
+passes the resulting `cfg.env` to:
+
+```text
+EnvironmentExt(
+  ...,
+  path_task_ttms=TASKS_TTM_FOLDER,
+  env_config=cfg.env,
+)
+```
+
+The adapter records task, perturbation, spreadsheet index, RLBench variation,
+and episode seed under evaluator state `evaluator_metadata`. Model requests do
+not serialize observation state or observation metadata; they receive only the
+public task instruction, public control-interface description, action schema,
+selected RGB images, and permitted action history.
+
+The shared invalid-action handler first imports
+`rlbench.backend.exceptions.InvalidActionError`, as required by the official
+Colosseum RLBench pin, and falls back to the legacy
+`rlbench.task_environment` location for the existing RLBench backend.
 
 ## MLLM Evaluation
 
@@ -201,15 +269,10 @@ prompt nor this integration assigns world `+x`, `+y`, or `+z` to image
 left/right/up/down. Such an image-axis claim requires runtime extrinsics rather
 than inference from the camera name or a rendered frame.
 
-## Colosseum Plan
+## Colosseum Runtime Status
 
-RLBench now has a verified runtime smoke and an internal hidden-control
-perturbation condition. The next Colosseum-specific work is:
-
-1. Select and pin an upstream Colosseum source commit.
-2. Add it to a separate Miniconda backend or deliberately extend the RLBench backend.
-3. Wire one official Colosseum task and perturbation through the existing RLBench adapter path where its API contract permits.
-4. Add `reset -> step -> render -> close` coverage and compare the official perturbation metadata against the public-input policy.
-
-Until those steps are done, tests contain an explicit skip documenting the
-missing Colosseum source/runtime integration.
+The source pins, independent environment, adapter, official perturbation config,
+registry route, evaluator metadata checks, and optional
+`reset -> render -> step -> close` test are present. The remaining verification
+step is to create `mllm-teleop-colosseum` on a host with CoppeliaSim 4.1 and run
+`python3 scripts/manage_conda_env.py smoke colosseum`.

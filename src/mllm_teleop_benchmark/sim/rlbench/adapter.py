@@ -13,8 +13,10 @@ from mllm_teleop_benchmark.utils.math import clamp
 
 
 class RLBenchSimAdapter(SimAdapter):
+    simulator_type = "rlbench"
+
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "rlbench":
+        if config.type != self.simulator_type:
             raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.task_class_name = str(config.env_id or config.params.get("task_class", "ReachTarget"))
@@ -129,7 +131,7 @@ class RLBenchSimAdapter(SimAdapter):
         try:
             import pyrep  # noqa: F401
             from rlbench.environment import Environment
-            from rlbench.task_environment import InvalidActionError
+            invalid_action_error_type = _load_invalid_action_error_type()
         except ImportError as exc:
             raise ImportError(
                 "RLBench backend requires rlbench, pyrep, and an external CoppeliaSim install. "
@@ -139,7 +141,7 @@ class RLBenchSimAdapter(SimAdapter):
             ) from exc
 
         task_class = self._resolve_task_class()
-        self._invalid_action_error_type = InvalidActionError
+        self._invalid_action_error_type = invalid_action_error_type
         action_mode = self._action_mode()
         obs_config = self._observation_config()
         kwargs = dict(self.config.env_kwargs)
@@ -275,7 +277,10 @@ class RLBenchSimAdapter(SimAdapter):
             step_id=self.step_id,
             images={},
             state=self.get_state(),
-            metadata={"simulator": "rlbench", "env_id": self.task_class_name},
+            metadata={
+                "simulator": self.simulator_type,
+                "env_id": self.task_class_name,
+            },
         )
 
     def _last_gripper_pose(self) -> list[float] | None:
@@ -344,6 +349,14 @@ def _quat_from_rpy(rpy: tuple[float, float, float]) -> tuple[float, float, float
         cr * cp * sy - sr * sp * cy,
         cr * cp * cy + sr * sp * sy,
     )
+
+
+def _load_invalid_action_error_type() -> type[Exception]:
+    try:
+        from rlbench.backend.exceptions import InvalidActionError
+    except ImportError:
+        from rlbench.task_environment import InvalidActionError
+    return InvalidActionError
 
 
 def _quat_multiply(

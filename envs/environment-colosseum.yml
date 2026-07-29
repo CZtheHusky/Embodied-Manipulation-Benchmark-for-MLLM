@@ -1,0 +1,22 @@
+name: mllm-teleop-colosseum
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.24
+  - pyyaml>=6.0
+  - imageio>=2.0
+  - pytest>=8.0
+  - pygame>=2.5
+  - pillow
+  - scipy
+  - pyquaternion
+  - natsort
+  - cffi
+  - cmake
+  - make
+  - pip:
+      - hydra-core>=1.3.2
+      - html-testRunner
