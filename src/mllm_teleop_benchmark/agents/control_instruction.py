@@ -111,15 +111,37 @@ def _mapping_summary(mapping: object) -> str:
 def _dimension_semantics(dimensions: list[object]) -> str:
     names = {str(value) for value in dimensions}
     statements: list[str] = []
-    if names.intersection({"dx", "dy", "dz"}):
+    translation = [
+        (dimension, axis)
+        for dimension, axis in (("dx", "x"), ("dy", "y"), ("dz", "z"))
+        if dimension in names
+    ]
+    if translation:
+        dimension_names = _join_terms([item[0] for item in translation])
+        axes = _join_terms([item[1] for item in translation])
+        verb = "denotes" if len(translation) == 1 else "denote"
+        axis_noun = "axis" if len(translation) == 1 else "axes"
         statements.append(
-            "dx, dy, and dz denote end-effector translation along the control "
-            "frame's x, y, and z axes"
+            f"{dimension_names} {verb} end-effector translation along the "
+            f"control frame's {axes} {axis_noun}"
         )
-    if names.intersection({"droll", "dpitch", "dyaw"}):
+    rotation = [
+        (dimension, axis)
+        for dimension, axis in (
+            ("droll", "x"),
+            ("dpitch", "y"),
+            ("dyaw", "z"),
+        )
+        if dimension in names
+    ]
+    if rotation:
+        dimension_names = _join_terms([item[0] for item in rotation])
+        axes = _join_terms([item[1] for item in rotation])
+        verb = "denotes" if len(rotation) == 1 else "denote"
+        axis_noun = "axis" if len(rotation) == 1 else "axes"
         statements.append(
-            "droll, dpitch, and dyaw denote end-effector rotation about the "
-            "control frame's x, y, and z axes"
+            f"{dimension_names} {verb} end-effector rotation about the "
+            f"control frame's {axes} {axis_noun}"
         )
     if not statements:
         return ""
@@ -128,6 +150,14 @@ def _dimension_semantics(dimensions: list[object]) -> str:
         + ". A positive mapped value commands the positive direction, a negative "
         "value commands the opposite direction, and zero commands no change."
     )
+
+
+def _join_terms(values: list[str]) -> str:
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
 def _gripper_semantics(commands: object) -> str:

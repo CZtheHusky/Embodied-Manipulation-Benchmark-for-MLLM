@@ -161,6 +161,7 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert (
         group_dir.name
         == f"model-fake-model__reasoning-default__api-chat_completions"
+        f"__prompt-mllm_joystick_v2"
         f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
     )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
@@ -191,6 +192,7 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
 
     assert make_experiment_group(config) == (
         "model-fake-model__reasoning-default__api-chat_completions"
+        "__prompt-mllm_joystick_v2"
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
@@ -237,10 +239,27 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         "joystick_0 may control horizontal motion"
     )
     run_dir = episode_dir.parent
+    assert "__prompt-mllm_joystick_reflection_v2__" in run_dir.parent.name
     assert run_dir.parent.name.endswith("__output-action_with_reflection")
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
     assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
+
+
+def test_responses_experiment_group_records_prompt_version(tmp_path):
+    config = _config(tmp_path, "all")
+    config = replace(
+        config,
+        agent=replace(
+            config.agent,
+            model=replace(config.agent.model, api="responses"),
+        ),
+    )
+
+    group = make_experiment_group(config)
+
+    assert group is not None
+    assert "__api-responses__prompt-mllm_joystick_responses_v2__history-full__" in group
 
 
 def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):

@@ -18,7 +18,7 @@ task:
   max_steps: 250
   success_threshold: 0.95
   params:
-    instruction: "Use planar end-effector translation and the gripper to pick up the ball and bring it to the matching target. The fixed camera shows the full workspace. Gripper value 0 applies maximum opening effort, 0.5 applies no gripper effort, and 1 applies maximum closing effort."
+    instruction: "Pick up the ball and bring it to the matching target."
     success_key: reward
 
 camera:

@@ -11,6 +11,13 @@ from typing import Any
 
 import yaml
 
+from mllm_teleop_benchmark.agents.model_policy import (
+    PROMPT_VERSION as CHAT_PROMPT_VERSION,
+    REFLECTION_PROMPT_VERSION,
+)
+from mllm_teleop_benchmark.agents.responses_policy import (
+    PROMPT_VERSION as RESPONSES_PROMPT_VERSION,
+)
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.core.types import AgentArtifact, EpisodeResult, Observation, StepTransition
 from mllm_teleop_benchmark.logging.review_video import (
@@ -242,6 +249,7 @@ def make_experiment_group(config: BenchmarkConfig) -> str | None:
         f"model-{requested_model}",
         f"reasoning-{reasoning_effort}",
         f"api-{model.api}",
+        f"prompt-{_configured_prompt_version(config)}",
         f"history-{history}",
         f"episodes-{config.benchmark.num_episodes}",
         f"maxsteps-{config.task.max_steps}",
@@ -253,6 +261,15 @@ def make_experiment_group(config: BenchmarkConfig) -> str | None:
     if config.control_interface.frame_transform != "identity":
         parts.append(f"frame-{config.control_interface.frame_transform}")
     return "__".join(_path_slug(part) for part in parts)
+
+
+def _configured_prompt_version(config: BenchmarkConfig) -> str:
+    model = config.agent.model
+    if model is not None and model.api == "responses":
+        return RESPONSES_PROMPT_VERSION
+    if config.agent.action_output_mode == "action_with_reflection":
+        return REFLECTION_PROMPT_VERSION
+    return CHAT_PROMPT_VERSION
 
 
 def _path_slug(value: object) -> str:
