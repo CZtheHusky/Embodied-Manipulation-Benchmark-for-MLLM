@@ -21,6 +21,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_frame_transform,
     build_mapping,
     build_sim,
+    build_task,
     control_interface_metadata,
 )
 from mllm_teleop_benchmark.core.types import (
@@ -212,6 +213,8 @@ def test_dmcontrol_mllm_config_is_planar_eef_not_native_motor_aliases(
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.history.image_window == 3
     assert config.agent.history.action_window == "all"
+    assert config.task.params["success_key"] == "current_reward"
+    assert config.task.params["reject_initial_success"] is True
 
 
 def test_dmcontrol_planar_controller_applies_mapping_and_rotation():
@@ -377,13 +380,14 @@ def test_dmcontrol_perturbed_mapping_and_rotation_reach_real_physics():
     pytest.importorskip("dm_control")
     pytest.importorskip("mujoco")
     config = load_config(PERTURBED_MLLM_CONFIG)
+    physics_test_seed = 7
     sim = build_sim(config)
     try:
-        sim.reset(config.task, config.benchmark.seed)
+        sim.reset(config.task, physics_test_seed)
         controller = build_controller(
             config,
-            build_mapping(config, config.benchmark.seed),
-            config.benchmark.seed,
+            build_mapping(config, physics_test_seed),
+            physics_test_seed,
         )
         action = controller.translate(
             JoystickAction(
@@ -604,6 +608,55 @@ def test_dmcontrol_reward_success_key_uses_threshold():
 
     assert task.is_success(None, {"reward": 0.5}) is False
     assert task.is_success(None, {"reward": 0.95}) is True
+
+
+def test_dmcontrol_mllm_task_rejects_successful_reset_before_model_call():
+    from mllm_teleop_benchmark.core.types import Observation
+    from mllm_teleop_benchmark.tasks.dmcontrol_task import DMControlTask
+
+    task = DMControlTask(
+        TaskConfig(
+            type="dmcontrol_generic",
+            max_steps=10,
+            success_threshold=0.95,
+            params={
+                "success_key": "current_reward",
+                "reject_initial_success": True,
+            },
+        )
+    )
+
+    class StubSim:
+        def reset(self, _task_config, seed):
+            return Observation(
+                step_id=0,
+                images={},
+                state={"current_reward": 1.0 if seed == 9 else 0.0},
+            )
+
+    with pytest.raises(RuntimeError, match="already successful immediately after reset"):
+        task.reset(StubSim(), seed=9)
+
+    observation = task.reset(StubSim(), seed=12)
+
+    assert observation.state["current_reward"] == 0.0
+
+
+def test_dmcontrol_mllm_seed_range_has_no_initial_success_when_installed():
+    pytest.importorskip("dm_control")
+    pytest.importorskip("mujoco")
+    config = load_config(BASELINE_MLLM_CONFIG)
+    sim = build_sim(config)
+    task = build_task(config)
+    try:
+        for seed in range(
+            config.benchmark.seed,
+            config.benchmark.seed + 10,
+        ):
+            observation = task.reset(sim, seed)
+            assert observation.state["current_reward"] < config.task.success_threshold
+    finally:
+        sim.close()
 
 
 def test_dmcontrol_action_to_native_clips_and_validates_shape():

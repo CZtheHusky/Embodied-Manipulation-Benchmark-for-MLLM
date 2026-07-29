@@ -94,6 +94,9 @@ class DMControlSimAdapter(SimAdapter):
         state = {
             "step_id": self.step_id,
             "reward": self.last_timestep.reward if self.last_timestep else None,
+            "current_reward": self._jsonable_array(
+                self.env.task.get_reward(self.env.physics)
+            ),
             "step_type": int(self.last_timestep.step_type) if self.last_timestep else None,
             "domain": self.domain_name,
             "task": self.task_name,

@@ -1,7 +1,7 @@
 benchmark:
   name: dmcontrol_manipulator_bring_ball_mllm_fixed_identity_v1
   num_episodes: 1
-  seed: 7
+  seed: 12
 
 simulator:
   type: dmcontrol
@@ -19,7 +19,8 @@ task:
   success_threshold: 0.95
   params:
     instruction: "Pick up the ball and bring it to the matching target."
-    success_key: reward
+    success_key: current_reward
+    reject_initial_success: true
 
 camera:
   manager: fixed

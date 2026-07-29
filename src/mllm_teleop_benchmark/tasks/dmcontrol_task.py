@@ -7,7 +7,16 @@ from mllm_teleop_benchmark.tasks.base import Task
 
 class DMControlTask(Task):
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
-        return sim.reset(self.config, seed)
+        observation = sim.reset(self.config, seed)
+        if (
+            self.config.params.get("reject_initial_success", False)
+            and self.is_success(observation, observation.state)
+        ):
+            raise RuntimeError(
+                "DMControl task is already successful immediately after reset "
+                f"for seed {seed}; choose an explicit nontrivial seed"
+            )
+        return observation
 
     def instruction(self) -> str:
         return str(self.config.params.get("instruction", "Complete the DMControl task."))
