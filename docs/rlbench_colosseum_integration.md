@@ -136,6 +136,17 @@ Rotation stays inactive, and the gripper is held open with
 `controller.params.default_gripper: 1.0` because the native action mode still
 expects a gripper value.
 
+Episode variation selection is deterministic. When a config does not provide
+an explicit variation, the adapter selects `episode_seed % variation_count`
+and calls RLBench `set_variation()` before reset. The selected variation stays
+in evaluator state and is excluded from model input.
+
+RLBench planning can reject an otherwise valid bounded command when no path is
+available. The adapter treats RLBench `InvalidActionError` as a rejected
+decision: it keeps the latest observation, does not advance CoppeliaSim, marks
+`action_rejected: true` in evaluator state, and lets the episode continue.
+Unexpected simulator exceptions still propagate and fail the run.
+
 ## MLLM Evaluation
 
 Both MLLM configs use the same public task text:
