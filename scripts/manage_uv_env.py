@@ -374,6 +374,12 @@ def verify_git_checkout(source_dir: Path, commit: str) -> None:
         )
 
 
+def verify_backend_sources(name: str) -> None:
+    for source in backend_sources(name):
+        validate_source_config(source)
+        verify_git_checkout(source_path(source), str(source["commit"]))
+
+
 def write_libero_config() -> None:
     config_dir = VENV_DIR / "libero_config"
     script = (
@@ -400,6 +406,7 @@ def run_backend(name: str, command: list[str]) -> None:
     python = python_bin(name)
     if not python.exists():
         raise SystemExit(f"uv environment does not exist: {venv_path(name)}; run create first")
+    verify_backend_sources(name)
     if command[0] == "python":
         command = [str(python), *command[1:]]
     elif command[0].endswith("/python"):

@@ -16,8 +16,8 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
   - `external_runtime`: uv-managed Python dependencies plus a required host runtime, simulator binary, or driver stack.
   - `fallback_blocked`: uv is not currently reliable enough; use a documented conda or container fallback instead.
 - For source-backed environments, declare each upstream repository with a
-  40-character commit SHA. Environment creation requires both the exact `HEAD`
-  and no tracked modifications; untracked downloaded assets are allowed.
+  40-character commit SHA. Environment creation, `run`, and `smoke` require
+  both the exact `HEAD` and no tracked modifications; untracked downloaded assets are allowed.
   Floating branches, tags, dirty tracked sources, and unpinned Git URLs are not
   valid runtime verification inputs.
 - Do not mix uv and conda inside the same backend environment. If a backend uses a conda fallback, treat that conda env as the primary environment for that backend.

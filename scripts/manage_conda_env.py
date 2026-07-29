@@ -259,6 +259,12 @@ def verify_git_checkout(source_dir: Path, commit: str) -> None:
         )
 
 
+def verify_backend_sources(name: str) -> None:
+    for source in backend_config(name).get("sources", []):  # type: ignore[union-attr]
+        validate_exact_commit(str(source["commit"]), str(source["name"]))
+        verify_git_checkout(source_path(source), str(source["commit"]))
+
+
 def validate_exact_commit(commit: str, source_name: str) -> None:
     if len(commit) != 40 or any(char not in "0123456789abcdefABCDEF" for char in commit):
         raise SystemExit(f"{source_name} source commit must be a 40-character Git commit SHA: {commit}")
@@ -301,6 +307,7 @@ def smoke_backend(name: str) -> None:
 
 
 def run_backend(name: str, command: list[str], *, env: dict[str, str] | None = None) -> None:
+    verify_backend_sources(name)
     if command[0] == "python":
         command = ["python", *command[1:]]
     run_conda(name, command, env=env)

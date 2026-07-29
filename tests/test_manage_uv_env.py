@@ -183,3 +183,24 @@ def test_verify_git_checkout_rejects_tracked_modifications(monkeypatch, tmp_path
 
     with pytest.raises(SystemExit, match="tracked modifications"):
         module.verify_git_checkout(tmp_path, expected)
+
+
+def test_run_backend_verifies_sources_before_command(monkeypatch, tmp_path):
+    module = load_manage_uv_env()
+    python = tmp_path / "python"
+    python.touch()
+    calls = []
+    monkeypatch.setattr(module, "python_bin", lambda _name: python)
+    monkeypatch.setattr(module, "verify_backend_sources", lambda name: calls.append(("verify", name)))
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda command, *, cwd=None, env=None: calls.append(("run", command)),
+    )
+
+    module.run_backend("simpler-env", ["python", "-c", "pass"])
+
+    assert calls == [
+        ("verify", "simpler-env"),
+        ("run", [str(python), "-c", "pass"]),
+    ]

@@ -43,3 +43,21 @@ def test_verify_git_checkout_rejects_tracked_modifications(monkeypatch, tmp_path
 
     with pytest.raises(SystemExit, match="tracked modifications"):
         module.verify_git_checkout(tmp_path, expected)
+
+
+def test_run_backend_verifies_sources_before_conda_command(monkeypatch):
+    module = load_manage_conda_env()
+    calls = []
+    monkeypatch.setattr(module, "verify_backend_sources", lambda name: calls.append(("verify", name)))
+    monkeypatch.setattr(
+        module,
+        "run_conda",
+        lambda name, command, *, env=None: calls.append(("run", name, command)),
+    )
+
+    module.run_backend("rlbench", ["python", "-c", "pass"])
+
+    assert calls == [
+        ("verify", "rlbench"),
+        ("run", "rlbench", ["python", "-c", "pass"]),
+    ]
