@@ -59,6 +59,12 @@ The integration follows the project boundaries:
 
 Heavy imports are lazy. Importing core registry, config loading, controllers, and tests does not import `libero`, `robosuite`, or `torch`.
 
+LIBERO exposes robosuite's raw OpenGL camera rows in bottom-up order. The
+adapter flips each observation image exactly once before it becomes public RGB;
+the direct `sim.render()` fallback applies the same normalization. Non-symmetric
+pixel canaries cover both paths so model-visible frames cannot silently become
+vertically inverted.
+
 ## Control
 
 The action path is:

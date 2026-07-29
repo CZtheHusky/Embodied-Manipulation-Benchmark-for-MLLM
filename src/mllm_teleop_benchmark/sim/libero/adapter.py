@@ -102,7 +102,19 @@ class LiberoSimAdapter(SimAdapter):
             return image
         if self.env is None:
             raise RuntimeError("LIBERO environment has not been reset")
-        return self.env.sim.render(camera_name=camera.name, width=camera.width, height=camera.height, depth=False)
+        frame = self._as_hwc_uint8(
+            self.env.sim.render(
+                camera_name=camera.name,
+                width=camera.width,
+                height=camera.height,
+                depth=False,
+            )
+        )
+        if frame is None:
+            raise RuntimeError(
+                f"LIBERO render returned an invalid image for camera {camera.name!r}"
+            )
+        return np.flipud(frame).copy()
 
     def get_state(self) -> dict[str, Any]:
         state = {
@@ -235,7 +247,7 @@ class LiberoSimAdapter(SimAdapter):
                 camera_name = key[: -len("_image")]
                 frame = self._as_hwc_uint8(value)
                 if frame is not None:
-                    images[camera_name] = frame
+                    images[camera_name] = np.flipud(frame).copy()
         return images
 
     def _image_from_observation(self, camera_name: str) -> Any | None:

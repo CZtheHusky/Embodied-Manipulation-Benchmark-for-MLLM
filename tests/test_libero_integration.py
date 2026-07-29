@@ -198,6 +198,50 @@ def test_libero_adapter_extracts_rgb_images_and_validity_metadata():
     assert state["benchmark_validity"]["random_baseline"] is True
 
 
+def test_libero_adapter_flips_raw_opengl_images_exactly_once():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    adapter = LiberoSimAdapter(config.simulator)
+    raw = np.asarray(
+        [
+            [[0, 0, 255], [0, 0, 255]],
+            [[255, 0, 0], [255, 0, 0]],
+        ],
+        dtype=np.uint8,
+    )
+
+    frame = adapter._extract_images({"agentview_image": raw})["agentview"]
+
+    np.testing.assert_array_equal(frame[0], raw[1])
+    np.testing.assert_array_equal(frame[1], raw[0])
+
+
+def test_libero_render_fallback_flips_raw_opengl_image_exactly_once():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    adapter = LiberoSimAdapter(config.simulator)
+    raw = np.asarray(
+        [
+            [[0, 0, 255], [0, 0, 255]],
+            [[255, 0, 0], [255, 0, 0]],
+        ],
+        dtype=np.uint8,
+    )
+
+    class StubRenderer:
+        def render(self, **_kwargs):
+            return raw
+
+    class StubEnv:
+        sim = StubRenderer()
+
+    adapter.env = StubEnv()
+    adapter.last_native_obs = {}
+
+    frame = adapter.render(config.camera.cameras[0])
+
+    np.testing.assert_array_equal(frame[0], raw[1])
+    np.testing.assert_array_equal(frame[1], raw[0])
+
+
 def test_libero_runtime_reset_init_state_step_render_smoke_when_installed():
     _import_runtime_dependency("libero")
     _import_runtime_dependency("robosuite")
