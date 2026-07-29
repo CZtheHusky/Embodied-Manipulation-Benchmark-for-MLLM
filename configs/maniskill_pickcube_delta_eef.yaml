@@ -63,6 +63,7 @@ controller:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: -1.0
     gripper_closed_value: 1.0
+    rotation_input_sign: -1.0
 
 agent:
   type: random

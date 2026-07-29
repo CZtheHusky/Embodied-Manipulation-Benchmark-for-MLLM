@@ -39,6 +39,13 @@ MLLM_CONFIGS = (
     "configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml",
     "configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml",
 )
+MANISKILL_CONTROL_FRAME = (
+    "the Panda root/base frame, fixed and aligned with ManiSkill world axes: "
+    "+x points from the robot base toward the table center, +y runs laterally "
+    "across the table toward the render_camera side, and +z points upward; "
+    "translation deltas and rotation-vector axes are root-aligned rather than "
+    "tool-local, and render_camera views the workspace from the +x,+y quadrant"
+)
 
 
 class RecordingManiSkillClient:
@@ -117,9 +124,7 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert config.camera.visible_metadata is False
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
-    assert config.control_interface.control_frame_description == (
-        "the ManiSkill end-effector delta-pose controller x, y, and z axes"
-    )
+    assert config.control_interface.control_frame_description == MANISKILL_CONTROL_FRAME
     assert config.control_interface.gripper_open_command == 0.0
     assert config.control_interface.gripper_closed_command == 1.0
     assert tuple(action_space.channels) == tuple(f"joystick_{index}" for index in range(7))
@@ -131,6 +136,7 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert mapping_config.channels["joystick_6"] == "gripper"
     assert mapping_config.signs["joystick_6"] == 1.0
     assert controller.metadata()["frame_transform"]["type"] == frame_transform
+    assert controller.metadata()["rotation_input_sign"] == -1.0
 
     if mapping_strategy == "fixed":
         assert tuple(mapping_config.channels.values()) == (
@@ -232,7 +238,10 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
     ) in request_text
     assert "gripper is always the final virtual joystick" in request_text
     assert "0 means open, 1 means closed" in request_text
-    assert "ManiSkill end-effector delta-pose controller" in request_text
+    assert "Panda root/base frame" in request_text
+    assert "+x points from the robot base toward the table center" in request_text
+    assert "root-aligned rather than tool-local" in request_text
+    assert "render_camera views the workspace from the +x,+y quadrant" in request_text
     assert request_text.count('"role":"assistant"') == 1
     for forbidden in (
         "PRIVATE_STATE",
@@ -323,7 +332,7 @@ def test_maniskill_delta_eef_controller_maps_pose_and_gripper():
     sim_action = controller.translate(action)
 
     assert isinstance(sim_action, ManiSkillAction)
-    assert sim_action.values == (1.0, -1.0, 0.0, 1.0, 0.0, -1.0, 1.0)
+    assert sim_action.values == (1.0, -1.0, 0.0, -1.0, 0.0, 1.0, 1.0)
 
 
 def test_maniskill_delta_eef_controller_applies_frame_rotation():
@@ -494,6 +503,46 @@ def test_maniskill_mllm_seed_range_has_no_initial_success_when_installed():
             assert not task.is_success(observation, sim.get_state())
     finally:
         sim.close()
+
+
+def test_maniskill_rotation_sign_matches_pinned_upstream_controller_when_installed():
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("mani_skill")
+    config = load_config(MLLM_CONFIGS[0])
+    sim = ManiSkillSimAdapter(config.simulator)
+    controller = build_controller(
+        config,
+        build_mapping(config, seed=config.benchmark.seed),
+        seed=config.benchmark.seed,
+    )
+    try:
+        sim.reset(config.task, config.benchmark.seed)
+        native_action = controller.translate(
+            JoystickAction(
+                {
+                    "joystick_0": 1.0,
+                    "joystick_1": 0.0,
+                    "joystick_2": 0.0,
+                    "joystick_3": 1.0,
+                    "joystick_4": 0.0,
+                    "joystick_5": 0.0,
+                    "joystick_6": 0.0,
+                }
+            )
+        )
+        arm = sim.env.unwrapped.agent.controller.controllers["arm"]
+        processed = arm._preprocess_action(
+            torch.tensor(
+                [native_action.values[:6]],
+                dtype=torch.float32,
+                device=arm.device,
+            )
+        )
+    finally:
+        sim.close()
+
+    assert processed[0, 0].item() == pytest.approx(0.1)
+    assert processed[0, 3].item() == pytest.approx(0.1)
 
 
 def test_sim_adapter_worker_maniskill_reset_step_shutdown_when_installed():

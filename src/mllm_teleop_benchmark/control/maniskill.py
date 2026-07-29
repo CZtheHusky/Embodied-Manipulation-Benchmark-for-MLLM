@@ -17,6 +17,7 @@ class ManiSkillDeltaEEFController(Controller):
         frame_transform: ControlFrameTransform | None = None,
         gripper_open_value: float = -1.0,
         gripper_closed_value: float = 1.0,
+        rotation_input_sign: float = 1.0,
     ) -> None:
         self.mapping = mapping
         self.dimensions = dimensions
@@ -24,6 +25,9 @@ class ManiSkillDeltaEEFController(Controller):
         self.frame_transform = frame_transform
         self.gripper_open_value = float(gripper_open_value)
         self.gripper_closed_value = float(gripper_closed_value)
+        self.rotation_input_sign = float(rotation_input_sign)
+        if self.rotation_input_sign not in {-1.0, 1.0}:
+            raise ValueError("rotation_input_sign must be -1 or 1")
 
     @classmethod
     def from_config(
@@ -42,6 +46,9 @@ class ManiSkillDeltaEEFController(Controller):
             frame_transform=frame_transform,
             gripper_open_value=float(config.params.get("gripper_open_value", -1.0)),
             gripper_closed_value=float(config.params.get("gripper_closed_value", 1.0)),
+            rotation_input_sign=float(
+                config.params.get("rotation_input_sign", 1.0)
+            ),
         )
 
     def translate(self, action: JoystickAction) -> ManiSkillAction:
@@ -72,6 +79,10 @@ class ManiSkillDeltaEEFController(Controller):
                 if dim in values_by_dim:
                     values_by_dim[dim] = value
 
+        for dim in ("droll", "dpitch", "dyaw"):
+            if dim in values_by_dim:
+                values_by_dim[dim] *= self.rotation_input_sign
+
         values = [values_by_dim.get(dim, 0.0) for dim in self.dimensions if dim != "gripper"]
         if "gripper" in self.dimensions:
             values.append(self._map_gripper(command.get("gripper", 0.0)))
@@ -94,6 +105,7 @@ class ManiSkillDeltaEEFController(Controller):
             "frame_transform": self.frame_transform.metadata() if self.frame_transform else None,
             "gripper_open_value": self.gripper_open_value,
             "gripper_closed_value": self.gripper_closed_value,
+            "rotation_input_sign": self.rotation_input_sign,
         }
 
     def _map_gripper(self, value: float) -> float:

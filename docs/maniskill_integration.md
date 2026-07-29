@@ -64,6 +64,20 @@ Mapping is applied before the frame transform. The transform rotates both the
 3D translation vector (`dx`, `dy`, `dz`) and the small delta-rotation vector
 (`droll`, `dpitch`, `dyaw`).
 
+For Panda `pd_ee_delta_pose`, the pinned upstream controller uses
+`root_translation:root_aligned_body_rotation`. The Panda root has identity
+orientation in PickCube, so this is the fixed ManiSkill world frame: `+x`
+points from the robot base toward the table center, `+y` runs laterally across
+the table toward the render-camera side, and `+z` points upward. The public
+prompt states that both translation and rotation-vector axes are root-aligned,
+not tool-local.
+
+The pinned `PDEEPoseController` scales a positive normalized rotation input by
+its negative `rot_lower` bound. `ManiSkillDeltaEEFController` therefore applies
+the explicit configured `rotation_input_sign: -1` after the benchmark frame
+transform. This makes a public positive `droll`, `dpitch`, or `dyaw` command
+produce a positive root-frame rotation, matching the shared joystick contract.
+
 ## PickCube MLLM Configurations
 
 PickCube has two standalone MLLM configurations:

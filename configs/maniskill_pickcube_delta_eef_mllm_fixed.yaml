@@ -48,7 +48,12 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
-  control_frame_description: the ManiSkill end-effector delta-pose controller x, y, and z axes
+  control_frame_description: >-
+    the Panda root/base frame, fixed and aligned with ManiSkill world axes:
+    +x points from the robot base toward the table center, +y runs laterally
+    across the table toward the render_camera side, and +z points upward;
+    translation deltas and rotation-vector axes are root-aligned rather than
+    tool-local, and render_camera views the workspace from the +x,+y quadrant
   gripper_open_command: 0
   gripper_closed_command: 1
   params:
@@ -68,6 +73,7 @@ controller:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: -1.0
     gripper_closed_value: 1.0
+    rotation_input_sign: -1.0
 
 agent:
   type: mllm
