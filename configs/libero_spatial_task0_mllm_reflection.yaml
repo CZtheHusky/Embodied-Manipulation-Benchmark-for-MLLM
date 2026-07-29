@@ -73,7 +73,8 @@ control_interface:
     rotation-vector commands are applied in this world frame, normalized native
     +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and in
     upright agentview image right is approximately +world y while image up is
-    approximately -0.628 world x +0.778 world z
+    approximately -0.628 world x +0.778 world z. robot0_eye_in_hand moves with
+    the wrist, so it has no fixed world-axis projection
   gripper_open_command: 0
   gripper_closed_command: 1
   params:

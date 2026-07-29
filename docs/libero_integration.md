@@ -69,7 +69,9 @@ For the resulting upright `agentview`, image right is approximately `+world y`
 (`[0, 1, 0]`) and image up is approximately
 `-0.628 world x + 0.778 world z` (`[-0.628, 0, 0.778]`). The MLLM configs store
 these approximate MuJoCo-world basis vectors, and lightweight tests verify their
-components, norms, and orthogonality.
+components, norms, and orthogonality. `robot0_eye_in_hand` moves with the wrist,
+so the prompt explicitly states that the fixed `agentview` projection must not
+be treated as a fixed world-axis projection for that view.
 
 ## Control
 

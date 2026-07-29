@@ -403,7 +403,9 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
         "rotation-vector commands are applied in this world frame, normalized "
         "native +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign compensation, "
         "and in upright agentview image right is approximately +world y while "
-        "image up is approximately -0.628 world x +0.778 world z"
+        "image up is approximately -0.628 world x +0.778 world z. "
+        "robot0_eye_in_hand moves with the wrist, so it has no fixed world-axis "
+        "projection"
     )
     assert interface.params == {
         "scale_mode": "normalized_robosuite_osc_pose_input",
@@ -487,6 +489,8 @@ def test_libero_mllm_public_prompt_matches_normalized_osc_pose_contract():
     assert "with no sign compensation" in prompt
     assert "image right is approximately +world y" in prompt
     assert "image up is approximately -0.628 world x +0.778 world z" in prompt
+    assert "robot0_eye_in_hand moves with the wrist" in prompt
+    assert "no fixed world-axis projection" in prompt
     assert "0 means open, 1 means closed" in prompt
     assert "joystick_0 -> dx" in prompt
     assert "joystick_5 -> dyaw" in prompt
@@ -507,6 +511,8 @@ def test_libero_mllm_public_prompt_matches_normalized_osc_pose_contract():
     assert "right-hand axis-angle rotation-vector commands are applied" in perturbed_prompt
     assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in perturbed_prompt
     assert "with no sign compensation" in perturbed_prompt
+    assert "robot0_eye_in_hand moves with the wrist" in perturbed_prompt
+    assert "no fixed world-axis projection" in perturbed_prompt
     assert (
         "Infer the hidden controls from visual observations and your own action "
         "history"
@@ -737,6 +743,8 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     assert "right-hand axis-angle rotation-vector commands are applied" in request_text
     assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in request_text
     assert "with no sign compensation" in request_text
+    assert "robot0_eye_in_hand moves with the wrist" in request_text
+    assert "no fixed world-axis projection" in request_text
     assert "0 means open, 1 means closed" in request_text
     if visible:
         assert "joystick_0 -> dx" in request_text
