@@ -29,6 +29,7 @@ class RobosuiteSimAdapter(SimAdapter):
         suite, camera_modder_cls = self._robosuite_modules()
         random.seed(seed)
         np.random.seed(int(seed) % (2**32))
+        self.close()
 
         env_name = task_config.params.get("env_name", "Lift")
         robots = task_config.params.get("robots", ["Panda"])
@@ -61,6 +62,10 @@ class RobosuiteSimAdapter(SimAdapter):
             obs_dict = self._env.reset()
         self._modder = camera_modder_cls(self._env.sim)
         self._step_id = 0
+        self._last_reward = 0.0
+        self._last_terminated = False
+        self._last_truncated = False
+        self._last_info = {}
         self._camera_randomization_sample = {}
 
         if "camera_randomization" in task_config.params:

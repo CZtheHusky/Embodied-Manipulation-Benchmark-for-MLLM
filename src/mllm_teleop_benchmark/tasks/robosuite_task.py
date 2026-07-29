@@ -17,7 +17,16 @@ class RobosuiteLiftTask(Task):
         super().__init__(config)
 
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
-        return sim.reset(self.config, seed)
+        observation = sim.reset(self.config, seed)
+        if (
+            self.config.params.get("reject_initial_success", False)
+            and self.is_success(observation, sim.get_state())
+        ):
+            raise RuntimeError(
+                "Robosuite Lift task is already successful immediately after "
+                f"reset for seed {seed}"
+            )
+        return observation
 
     def instruction(self) -> str:
         return "Lift the cube using the robot arm."

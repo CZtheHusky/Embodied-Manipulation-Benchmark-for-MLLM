@@ -23,7 +23,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_mapping,
     control_interface_metadata,
 )
-from mllm_teleop_benchmark.core.types import RobosuiteAction
+from mllm_teleop_benchmark.core.types import Observation, RobosuiteAction
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import (
     IdentityControlFrameTransform,
@@ -31,6 +31,7 @@ from mllm_teleop_benchmark.mapping.frame_transform import (
 )
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping
 from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter, sample_camera_randomization
+from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
 
 
 MLLM_CONFIGS = (
@@ -148,6 +149,8 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert config.agent.model.response_format == "json_object"
     assert config.agent.history.action_window == "all"
     assert config.agent.history.image_window == 3
+    assert config.task.success_threshold == 0.04
+    assert config.task.params["reject_initial_success"] is True
     assert config.agent.observation.cameras == (
         "agentview",
         "robot0_eye_in_hand",
@@ -236,6 +239,23 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     if mapping_strategy != "fixed":
         assert "mapping-permuted_sign_flipped" in group
         assert "frame-random_rotation_3d" in group
+
+
+def test_robosuite_task_rejects_successful_reset_before_model_request():
+    config = load_config("configs/robosuite_lift_mllm_reflection.yaml")
+    task = RobosuiteLiftTask(config.task)
+
+    class StubSim:
+        def reset(self, task_config, seed):
+            assert task_config is config.task
+            assert seed == 42
+            return Observation(step_id=0, images={}, state={})
+
+        def get_state(self):
+            return {"is_success": True}
+
+    with pytest.raises(RuntimeError, match="already successful immediately after reset"):
+        task.reset(StubSim(), seed=42)
 
 
 def test_robosuite_perturbation_only_changes_motion_channels():

@@ -9,9 +9,10 @@ simulator:
 task:
   type: robosuite_lift
   max_steps: 100
-  success_threshold: 0.02
+  success_threshold: 0.04
   params:
     env_name: Lift
+    reject_initial_success: true
     robots: ["Panda"]
     camera_names: ["agentview", "robot0_eye_in_hand"]
     camera_width: 320
