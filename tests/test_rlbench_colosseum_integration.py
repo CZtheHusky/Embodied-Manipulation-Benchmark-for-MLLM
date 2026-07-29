@@ -394,6 +394,42 @@ def test_rlbench_variation_is_derived_from_episode_seed():
     assert task.variation == 2
 
 
+def test_rlbench_reset_seeds_upstream_numpy_without_leaking_global_rng_state():
+    config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
+
+    class FakeTask:
+        def __init__(self):
+            self.sample = None
+
+        def variation_count(self):
+            return 1
+
+        def set_variation(self, _variation):
+            pass
+
+        def reset(self):
+            self.sample = tuple(np.random.uniform(size=3))
+            return ["Reach the target."], object()
+
+    def reset_sample(seed):
+        adapter = RLBenchSimAdapter(config.simulator)
+        task = FakeTask()
+        adapter.task = task
+        adapter.reset(config.task, seed)
+        return task.sample
+
+    np.random.seed(1234)
+    global_state = np.random.get_state()
+    first = reset_sample(17)
+    observed_next = np.random.uniform()
+    np.random.set_state(global_state)
+    expected_next = np.random.uniform()
+
+    assert first == reset_sample(17)
+    assert first != reset_sample(18)
+    assert observed_next == expected_next
+
+
 def test_rlbench_rejected_planning_action_does_not_abort_episode_or_advance_sim():
     config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
     adapter = RLBenchSimAdapter(config.simulator)

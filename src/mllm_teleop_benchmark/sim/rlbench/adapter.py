@@ -39,13 +39,18 @@ class RLBenchSimAdapter(SimAdapter):
         self._camera_specs = tuple(camera_specs)
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
-        self._ensure_task(task_config)
-        self.step_id = 0
-        self.last_reward = None
-        self.last_terminate = False
-        self.last_action_rejected = False
-        self.variation_index = self._sample_variation(seed)
-        descriptions, obs = self.task.reset()
+        numpy_random_state = np.random.get_state()
+        try:
+            np.random.seed(seed)
+            self._ensure_task(task_config)
+            self.step_id = 0
+            self.last_reward = None
+            self.last_terminate = False
+            self.last_action_rejected = False
+            self.variation_index = self._sample_variation(seed)
+            descriptions, obs = self.task.reset()
+        finally:
+            np.random.set_state(numpy_random_state)
         self.last_descriptions = tuple(str(item) for item in descriptions)
         self.last_native_obs = obs
         return self._observation()
