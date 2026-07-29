@@ -38,6 +38,7 @@ def test_control_interface_prompt_mentions_visible_two_axis_mapping():
     assert "active controllable dimensions are: dx, dy" in payload.control_instruction
     assert "joystick_0 -> dx" in payload.control_instruction
     assert "joystick_1 -> dy" in payload.control_instruction
+    assert "No additional control-frame rotation is applied" in payload.control_instruction
 
 
 def test_hidden_control_interface_prompt_does_not_expose_mapping():
@@ -124,6 +125,7 @@ def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
     assert "frame complexity: present" in text
     assert "dx, dy, and dz denote end-effector translation" in text
     assert "positive mapped value commands the positive direction" in text
+    assert "No additional control-frame rotation is applied" not in text
     assert "permuted_sign_flipped" not in text
     assert "random_rotation_3d" not in text
     assert "joystick_0 ->" not in text

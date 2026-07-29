@@ -53,6 +53,8 @@ class ControlInstructionBuilder:
                 panel_lines.append("mapping: hidden")
             if frame_complexity:
                 text_lines.append("Frame complexity is present, so the exact physical-frame transform is not disclosed.")
+            else:
+                text_lines.append("No additional control-frame rotation is applied.")
         else:
             text_lines.append("The joystick-to-dimension mapping is not visible.")
             panel_lines.append("active dims: hidden")

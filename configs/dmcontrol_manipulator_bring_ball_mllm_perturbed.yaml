@@ -74,7 +74,7 @@ agent:
     retry_backoff_seconds: 1
     retry_backoff_max_seconds: 30
     retry_until_success: true
-    reasoning_effort: medium
+    reasoning_effort: low
     temperature: 0
     max_output_tokens: 128
     response_format: json_object
