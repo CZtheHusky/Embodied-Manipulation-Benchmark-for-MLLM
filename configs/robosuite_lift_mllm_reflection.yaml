@@ -48,10 +48,14 @@ control_interface:
     the robosuite 1.4.1 OSC MuJoCo world x, y, and z axes; translation-only
     commands are normalized world-frame inputs with native +/-1 mapping to
     +/-0.05 m, and in upright agentview image right is approximately +world y
-    while image up is approximately -0.706 world x +0.708 world z. If a
-    transformed translation component would exceed native magnitude 1, all
-    three translation components are uniformly rescaled by the largest absolute
-    component; this preserves direction but can reduce step length
+    while image up is approximately -0.706 world x +0.708 world z.
+    robot0_eye_in_hand is wrist-mounted, so its image-plane basis changes with
+    end-effector pose and has no fixed world-axis projection. The Panda gripper
+    treats values below 0.5 as open, exactly 0.5 as hold, and values above 0.5
+    as closed. If a transformed translation component would exceed native
+    magnitude 1, all three translation components are uniformly rescaled by the
+    largest absolute component; this preserves direction but can reduce step
+    length
   gripper_open_command: 0
   gripper_closed_command: 1
   gripper_hold_command: 0.5

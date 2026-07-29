@@ -161,10 +161,13 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
         "translation-only commands are normalized world-frame inputs with "
         "native +/-1 mapping to +/-0.05 m, and in upright agentview image "
         "right is approximately +world y while image up is approximately "
-        "-0.706 world x +0.708 world z. If a transformed translation "
-        "component would exceed native magnitude 1, all three translation "
-        "components are uniformly rescaled by the largest absolute component; "
-        "this preserves direction but can reduce step length"
+        "-0.706 world x +0.708 world z. robot0_eye_in_hand is wrist-mounted, "
+        "so its image-plane basis changes with end-effector pose and has no "
+        "fixed world-axis projection. The Panda gripper treats values below "
+        "0.5 as open, exactly 0.5 as hold, and values above 0.5 as closed. If "
+        "a transformed translation component would exceed native magnitude 1, "
+        "all three translation components are uniformly rescaled by the largest "
+        "absolute component; this preserves direction but can reduce step length"
     )
     assert config.control_interface.params == {
         "scale_mode": "normalized_robosuite_1_4_1_osc_input_native_0_05m",
@@ -205,6 +208,11 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert "native +/-1 mapping to +/-0.05 m" in prompt
     assert "image right is approximately +world y" in prompt
     assert "image up is approximately -0.706 world x +0.708 world z" in prompt
+    assert "robot0_eye_in_hand is wrist-mounted" in prompt
+    assert "has no fixed world-axis projection" in prompt
+    assert "values below 0.5 as open" in prompt
+    assert "exactly 0.5 as hold" in prompt
+    assert "values above 0.5 as closed" in prompt
     assert tuple(action_schema) == (
         "joystick_0",
         "joystick_1",
@@ -579,6 +587,11 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
     assert "direct control" in request_text
     assert "final virtual joystick" in request_text
     assert "0 means open, 1 means closed, 0.5 means hold" in request_text
+    assert "robot0_eye_in_hand is wrist-mounted" in request_text
+    assert "has no fixed world-axis projection" in request_text
+    assert "values below 0.5 as open" in request_text
+    assert "exactly 0.5 as hold" in request_text
+    assert "values above 0.5 as closed" in request_text
     assert "robosuite 1.4.1 OSC MuJoCo world x, y, and z axes" in request_text
     assert "translation-only commands are normalized world-frame inputs" in request_text
     assert "native +/-1 mapping to +/-0.05 m" in request_text

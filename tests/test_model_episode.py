@@ -18,6 +18,7 @@ from mllm_teleop_benchmark.config.schema import (
     ModelConfig,
 )
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
+from mllm_teleop_benchmark.sim.dummy import DummySimAdapter
 
 
 def _valid_action_text():
@@ -113,6 +114,18 @@ def _run_with_fake(monkeypatch, config, client):
         lambda **_kwargs: client,
     )
     return BenchmarkRunner(config).run().episodes[0]
+
+
+def _capture_dummy_actions(monkeypatch):
+    actions = []
+    original_step = DummySimAdapter.step
+
+    def capture_step(sim, action):
+        actions.append(action)
+        return original_step(sim, action)
+
+    monkeypatch.setattr(DummySimAdapter, "step", capture_step)
+    return actions
 
 
 @pytest.mark.parametrize(
@@ -287,10 +300,63 @@ def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_pa
 
 def test_invalid_model_json_executes_noop_without_extra_api_request(monkeypatch, tmp_path):
     client = FakeClient(response_text="{not-json")
-    episode = _run_with_fake(monkeypatch, _config(tmp_path, 0), client)
+    config = _config(tmp_path, 0)
+    config = replace(
+        config,
+        control_interface=replace(
+            config.control_interface,
+            gripper_open_command=0.0,
+            gripper_closed_command=1.0,
+            gripper_hold_command=0.5,
+        ),
+    )
+    sim_actions = _capture_dummy_actions(monkeypatch)
+    episode = _run_with_fake(monkeypatch, config, client)
 
     assert episode.steps == 3
     assert episode.termination_reason == "max_steps"
     assert len(client.requests) == 3
     assert episode.metrics["invalid_action_count"] == 3
     assert episode.metrics["model_api_error_count"] == 0
+    assert [action.gripper for action in sim_actions] == [0.5, 0.5, 0.5]
+    assert all(action.delta_position == (0.0, 0.0, 0.0) for action in sim_actions)
+
+
+def test_invalid_model_action_preserves_last_binary_gripper_command(
+    monkeypatch,
+    tmp_path,
+):
+    class SequenceClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.responses = [
+                (
+                    '{"channels":{"joystick_0":0,"joystick_1":0,'
+                    '"joystick_2":0,"joystick_3":0,"joystick_4":0,'
+                    '"joystick_5":0,"joystick_6":1}}'
+                ),
+                "{not-json",
+                "{not-json",
+            ]
+
+        def complete(self, request):
+            self.response_text = self.responses[len(self.requests)]
+            return super().complete(request)
+
+    config = _config(tmp_path, 0)
+    config = replace(
+        config,
+        control_interface=replace(
+            config.control_interface,
+            gripper="binary",
+            gripper_open_command=0.0,
+            gripper_closed_command=1.0,
+            gripper_hold_command=None,
+        ),
+    )
+    sim_actions = _capture_dummy_actions(monkeypatch)
+    episode = _run_with_fake(monkeypatch, config, SequenceClient())
+
+    assert episode.metrics["invalid_action_count"] == 2
+    assert [action.gripper for action in sim_actions] == [1.0, 1.0, 1.0]
+    assert all(action.delta_position == (0.0, 0.0, 0.0) for action in sim_actions)

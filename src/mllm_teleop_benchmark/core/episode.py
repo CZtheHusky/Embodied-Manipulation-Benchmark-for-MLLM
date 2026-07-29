@@ -87,6 +87,7 @@ class EpisodeManager:
 
         success = self.task.is_success(observation, self.sim.get_state())
         termination_reason = "success" if success else "max_steps"
+        last_valid_action: JoystickAction | None = None
         while not success and len(history) < self.config.task.max_steps:
             context = AgentContext(
                 observation=observation,
@@ -111,8 +112,13 @@ class EpisodeManager:
                 decision.action
             )
 
+            if validation.is_valid:
+                action_to_execute = parsed_action
+                last_valid_action = parsed_action
+            else:
+                action_to_execute = self._noop_joystick_action(last_valid_action)
             sim_action = self.controller.translate(
-                parsed_action if validation.is_valid else self._noop_joystick_action()
+                action_to_execute
             )
             step_result = self.sim.step(sim_action)
             next_observation = self.observation_provider.get_observation(self.sim)
@@ -199,8 +205,26 @@ class EpisodeManager:
             raise ValueError(f"Unsupported invalid action recovery: {self.config.agent.invalid_action_recovery}")
         return parsed_action, validation, reflection
 
-    def _noop_joystick_action(self) -> JoystickAction:
-        return JoystickAction({name: 0.0 for name in self.action_space.channels})
+    def _noop_joystick_action(
+        self,
+        last_valid_action: JoystickAction | None = None,
+    ) -> JoystickAction:
+        channels = {name: 0.0 for name in self.action_space.channels}
+        interface = self.config.control_interface
+        if interface.gripper == "none":
+            return JoystickAction(channels)
+
+        gripper_channel = interface.channel_names()[-1]
+        if interface.gripper_hold_command is not None:
+            channels[gripper_channel] = interface.gripper_hold_command
+        elif (
+            last_valid_action is not None
+            and gripper_channel in last_valid_action.channels
+        ):
+            channels[gripper_channel] = last_valid_action.channels[gripper_channel]
+        elif interface.gripper_open_command is not None:
+            channels[gripper_channel] = interface.gripper_open_command
+        return JoystickAction(channels)
 
     def _public_controller_metadata(self) -> dict[str, object]:
         return {
