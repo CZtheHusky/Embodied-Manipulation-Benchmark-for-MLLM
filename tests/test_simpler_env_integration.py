@@ -200,6 +200,10 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
 
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
+    assert (
+        "Infer the hidden controls from visual observations and your own action "
+        "history"
+    ) in perturbed_prompt
     assert "joystick_0 ->" not in perturbed_prompt
     assert "mapping" not in perturbed_metadata
     assert "mapping_strategy" not in perturbed_metadata
@@ -427,7 +431,7 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v1"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
     assert manifest["history"]["action_window"] == "all"
     assert manifest["history"]["image_window"] == 3
     assert manifest["control_interface"]["mapping_strategy"] == mapping_strategy
