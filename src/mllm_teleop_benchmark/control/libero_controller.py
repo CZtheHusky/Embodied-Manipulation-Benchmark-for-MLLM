@@ -50,18 +50,22 @@ class LiberoDeltaEEFController(Controller):
     def translate(self, action: JoystickAction) -> LiberoAction:
         command = self.mapping.map_action(action)
 
-        delta_pos = self.frame_transform.transform_delta_position(
-            (
-                command.get("dx", 0.0) * self.scales.get("dx", 0.05),
-                command.get("dy", 0.0) * self.scales.get("dy", 0.05),
-                command.get("dz", 0.0) * self.scales.get("dz", 0.05),
+        delta_pos = _fit_normalized_vector(
+            self.frame_transform.transform_delta_position(
+                (
+                    command.get("dx", 0.0) * self.scales.get("dx", 0.05),
+                    command.get("dy", 0.0) * self.scales.get("dy", 0.05),
+                    command.get("dz", 0.0) * self.scales.get("dz", 0.05),
+                )
             )
         )
-        delta_rot = self.frame_transform.transform_delta_rotation(
-            (
-                command.get("droll", 0.0) * self.scales.get("droll", 0.1),
-                command.get("dpitch", 0.0) * self.scales.get("dpitch", 0.1),
-                command.get("dyaw", 0.0) * self.scales.get("dyaw", 0.1),
+        delta_rot = _fit_normalized_vector(
+            self.frame_transform.transform_delta_rotation(
+                (
+                    command.get("droll", 0.0) * self.scales.get("droll", 0.1),
+                    command.get("dpitch", 0.0) * self.scales.get("dpitch", 0.1),
+                    command.get("dyaw", 0.0) * self.scales.get("dyaw", 0.1),
+                )
             )
         )
         gripper = self._map_gripper(command.get("gripper", 0.0))
@@ -89,3 +93,13 @@ class LiberoDeltaEEFController(Controller):
     def _map_gripper(self, value: float) -> float:
         clipped = clamp(float(value), 0.0, 1.0)
         return self.gripper_open_value + clipped * (self.gripper_closed_value - self.gripper_open_value)
+
+
+def _fit_normalized_vector(
+    values: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    vector = np.asarray(values, dtype=np.float64)
+    max_abs = float(np.max(np.abs(vector)))
+    if max_abs > 1.0:
+        vector = vector / max_abs
+    return tuple(float(value) for value in vector)

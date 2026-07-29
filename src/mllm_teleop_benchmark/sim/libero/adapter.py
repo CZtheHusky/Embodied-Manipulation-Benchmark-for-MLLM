@@ -76,6 +76,10 @@ class LiberoSimAdapter(SimAdapter):
         native_action = np.asarray(action.values, dtype=np.float32)
         if native_action.shape != (7,):
             raise ValueError(f"LIBERO action must contain 7 values, got shape {native_action.shape}")
+        if not np.all(np.isfinite(native_action)):
+            raise ValueError("LIBERO action values must be finite")
+        if np.any(native_action < -1.0) or np.any(native_action > 1.0):
+            raise ValueError("LIBERO OSC_POSE action values must remain within [-1, 1]")
 
         obs, reward, done, info = self.env.step(native_action)
         self.step_id += 1

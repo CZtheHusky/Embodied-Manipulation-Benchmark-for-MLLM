@@ -7,6 +7,8 @@ LIBERO is added as an optional language-conditioned manipulation backend. The go
 Initial config:
 
 - `configs/libero_spatial_task0.yaml`
+- `configs/libero_spatial_task0_mllm_reflection.yaml`
+- `configs/libero_spatial_task0_mllm_reflection_perturbed.yaml`
 - `simulator.type: libero`
 - `task.type: libero_generic`
 - `controller.type: libero_delta_eef`
@@ -29,7 +31,7 @@ obs, reward, done, info = env.step([0.0] * 7)
 
 This matches the upstream README and current `env_wrapper.py`: `OffScreenRenderEnv` wraps robosuite and exposes `reset`, `set_init_state`, `step`, `check_success`, `sim`, and `close`.
 
-Dependency status on 2026-06-24: LIBERO is runtime verified through the Miniconda fallback in this branch. The uv setup remains blocked by the old upstream dependency stack and is not the supported route for this backend.
+Dependency status on 2026-07-29: LIBERO is runtime verified through the Miniconda fallback in this branch. The uv setup remains blocked by the old upstream dependency stack and is not the supported route for this backend.
 
 Verified commands:
 
@@ -40,7 +42,7 @@ python3 scripts/manage_conda_env.py smoke libero
 
 The smoke result was:
 
-- `tests/test_libero_integration.py`: `5 passed`
+- `tests/test_libero_integration.py`: `15 passed`, no skips
 - `configs/libero_spatial_task0.yaml`: one random-agent benchmark episode, `average_steps=200.0`, `success_rate=0.0`
 - `scripts/play_benchmark.py --config configs/libero_spatial_task0.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts LIBERO, extracts the `agentview` frame, and exits cleanly.
 
@@ -71,7 +73,42 @@ The native action order is fixed:
 [dx, dy, dz, droll, dpitch, dyaw, gripper]
 ```
 
-Default scales mirror robosuite OSC-style small deltas: `0.05` for translation and `0.1` for rotation. The gripper defaults to `0.0 -> -1.0` and `1.0 -> 1.0`.
+The legacy human-play config applies benchmark-side scales of `0.05` for translation and `0.1` for rotation. The MLLM configs instead send normalized `[-1, 1]` pose commands because robosuite's `OSC_POSE` controller performs its own scaling from normalized input to physical deltas: translation output is bounded at `0.05 m` and the axis-angle rotation-vector output at `0.5 rad` per controller command. Applying both scales would make MLLM motion unintentionally small.
+
+The six pose deltas use the MuJoCo world Cartesian frame. This follows robosuite `OSC_POSE`: translation deltas are added to the current world-space end-effector site position, and the axis-angle rotation error is applied to the current world-space orientation. The gripper virtual command is binary: `0` means open and maps to native `-1`; `1` means closed and maps to native `1`.
+
+The perturbed MLLM condition applies `permuted_sign_flipped` to the six motion dimensions and one episode-fixed `random_rotation_3d` to both the translation and axis-angle rotation vectors. The gripper remains direct. Rotated motion vectors are rescaled only when needed to preserve their direction while staying within LIBERO's normalized native action range.
+
+## MLLM Evaluation
+
+The two switchable MLLM conditions use identical upstream language text:
+
+```text
+pick up the black bowl between the plate and the ramekin and place it on the plate
+```
+
+Both use:
+
+- `action_with_reflection`
+- OpenAI-compatible Chat Completions
+- reasoning effort `low`
+- three historical image turns and all textual action history
+- public `agentview` and `robot0_eye_in_hand` RGB
+- one fixed upstream `libero_spatial` task and init state
+
+The baseline exposes the fixed joystick mapping and identity frame. The perturbed condition tells the model that the mapping and frame transform are hidden and episode-fixed, but never includes the sampled permutation, signs, rotation matrix, quaternion, simulator state, BDDL goal predicates, reward, success oracle, native action, or seed in the request.
+
+The local Fake Client validation runs four real simulator steps for each condition. It checks:
+
+- both public camera streams are non-black `256x256` RGB
+- each translated native action has shape `(7,)`, finite values, and satisfies the upstream robosuite `action_spec`
+- positive normalized `dx`, `dy`, and `dz` commands move the measured end-effector position along the corresponding MuJoCo world axis
+- `LiberoSimAdapter._check_success()`, `OffScreenRenderEnv.check_success()`, and the underlying BDDL environment `_check_success()` agree
+- the parsed BDDL goal state is non-empty and fixed during the episode
+- reflection/action history and the three-image-turn policy are preserved
+- poisoned privileged-state and API-key sentinels never enter model requests or persisted artifacts
+
+This establishes runtime and oracle wiring, not task completion by a real model. No real API request is part of the integration test.
 
 ## Benchmark Validity
 
@@ -150,6 +187,10 @@ The runtime smoke in `tests/test_libero_integration.py` skips when LIBERO is not
 - config and controller build
 - reset
 - `set_init_state`
-- one 7D action step
-- image extraction or render
+- one legacy 7D action step
+- four real MLLM Fake Client steps for each control condition
+- normalized native action validation
+- two-camera image extraction and non-black RGB
+- BDDL success-oracle agreement
+- public prompt isolation
 - close
