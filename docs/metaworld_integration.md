@@ -48,6 +48,13 @@ exposed because `reach-v3` does not require gripper control. The public frame
 description identifies the Meta-World end-effector controller axes without
 exposing episode state or a sampled transform.
 
+The public observation uses `topview` and `behindGripper` at `320x240`.
+`topview` provides a stable workspace view, while `behindGripper` exposes
+vertical alignment that is ambiguous from above. The adapter selects each
+named MuJoCo camera for its corresponding `CameraSpec` and fails if the
+rendered dimensions do not match. The old `corner2` route is not used because
+that fixed camera is below the work surface in this Meta-World model.
+
 ## MLLM Evaluation
 
 Both MLLM configurations use the shared `MLLMPolicy` and `SimAdapter`; there is
@@ -103,4 +110,5 @@ The runtime smoke in `tests/test_metaworld_integration.py` skips when `metaworld
 
 - Only MT1 `reach-v3` is configured.
 - MT10, MT50, ML benchmarks, vector envs, and task-specific expert policies are out of scope.
-- Camera selection is passed at environment creation through `camera_name`; per-camera runtime switching is not implemented.
+- Runtime camera switching is limited to fixed MuJoCo cameras with the same
+  configured render dimensions.

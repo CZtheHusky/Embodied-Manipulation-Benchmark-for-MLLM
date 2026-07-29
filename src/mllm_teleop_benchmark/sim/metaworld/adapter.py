@@ -61,8 +61,29 @@ class MetaworldSimAdapter(SimAdapter):
 
     def render(self, camera: CameraSpec) -> Any:
         self._ensure_env(None, None)
+        unwrapped = self.env.unwrapped
+        try:
+            import mujoco
+        except ImportError as exc:
+            raise ImportError(
+                "Meta-World rendering requires the MuJoCo Python package."
+            ) from exc
+        camera_id = mujoco.mj_name2id(
+            unwrapped.model,
+            mujoco.mjtObj.mjOBJ_CAMERA,
+            camera.name,
+        )
+        if camera_id < 0:
+            raise ValueError(f"Unknown Meta-World camera: {camera.name}")
+        unwrapped.mujoco_renderer.camera_id = camera_id
         frame = self.env.render()
         self.last_render = self._first_array(frame)
+        expected_shape = (camera.height, camera.width, 3)
+        if self.last_render.shape != expected_shape:
+            raise RuntimeError(
+                "Meta-World render shape does not match the configured camera: "
+                f"expected {expected_shape}, got {self.last_render.shape}"
+            )
         return self.last_render
 
     def get_state(self) -> dict[str, Any]:
@@ -114,6 +135,10 @@ class MetaworldSimAdapter(SimAdapter):
             kwargs.setdefault("camera_name", self.config.params["camera_name"])
         if "camera_id" in self.config.params:
             kwargs.setdefault("camera_id", self.config.params["camera_id"])
+        if "width" in self.config.params:
+            kwargs.setdefault("width", int(self.config.params["width"]))
+        if "height" in self.config.params:
+            kwargs.setdefault("height", int(self.config.params["height"]))
         if "max_episode_steps" in self.config.params:
             kwargs.setdefault("max_episode_steps", int(self.config.params["max_episode_steps"]))
         elif task_config is not None:

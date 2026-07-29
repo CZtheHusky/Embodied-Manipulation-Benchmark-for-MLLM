@@ -105,6 +105,9 @@ def test_metaworld_reach_config_builds_without_metaworld_install():
 
     assert config.simulator.type == "metaworld"
     assert config.simulator.params["env_name"] == "reach-v3"
+    assert config.simulator.params["camera_name"] == "topview"
+    assert config.simulator.params["width"] == 320
+    assert config.simulator.params["height"] == 240
     assert config.task.type == "metaworld_generic"
     assert tuple(action_space.channels) == ("joystick_0", "joystick_1", "joystick_2")
     assert isinstance(sim, MetaworldSimAdapter)
@@ -119,7 +122,7 @@ def test_metaworld_config_uses_worker_play_runtime():
 
     assert config.ui.backend == "pygame"
     assert config.ui.runtime == "sim_adapter_worker"
-    assert config.ui.frame_camera == "corner2"
+    assert config.ui.frame_camera == "topview"
     assert isinstance(hooks_for_config(config), MujocoPlayerRuntimeHooks)
 
 
@@ -197,13 +200,17 @@ def test_metaworld_runtime_reset_step_render_close_when_installed():
         step = adapter.step(sim_action)
         assert step.info["step_id"] == 1
 
-        frame = adapter.render(config.camera.cameras[0])
-        pixels = np.asarray(frame)
-        assert pixels.ndim == 3
-        assert pixels.shape[-1] == 3
-        assert pixels.dtype == np.uint8
-        assert float(pixels.mean()) > 1.0
-        assert float(pixels.std()) > 1.0
+        frames = {
+            camera.name: np.asarray(adapter.render(camera))
+            for camera in config.camera.cameras
+        }
+        assert tuple(frames) == ("topview", "behindGripper")
+        for pixels in frames.values():
+            assert pixels.shape == (240, 320, 3)
+            assert pixels.dtype == np.uint8
+            assert float(pixels.mean()) > 1.0
+            assert float(pixels.std()) > 1.0
+        assert not np.array_equal(frames["topview"], frames["behindGripper"])
     finally:
         adapter.close()
 
@@ -232,7 +239,9 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
     assert config.control_interface.control_frame_description == (
-        "the Meta-World end-effector controller x, y, and z axes"
+        "the Meta-World world frame: +x points right in topview, +y points "
+        "toward the far edge of the table (up in topview), and +z points "
+        "upward away from the tabletop"
     )
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
@@ -240,7 +249,7 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.history.action_window == "all"
     assert config.agent.history.image_window == 3
-    assert config.agent.observation.cameras == ("corner2",)
+    assert config.agent.observation.cameras == ("topview", "behindGripper")
     assert config.logging.save_video is False
     assert tuple(schema) == (
         "joystick_0",
@@ -286,7 +295,9 @@ def test_metaworld_mllm_prompt_describes_public_xyz_only():
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_1 -> dy" in baseline_prompt
     assert "joystick_2 -> dz" in baseline_prompt
-    assert "Meta-World end-effector controller" in baseline_prompt
+    assert "+x points right in topview" in baseline_prompt
+    assert "+y points toward the far edge of the table" in baseline_prompt
+    assert "+z points upward away from the tabletop" in baseline_prompt
     assert "gripper" not in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
@@ -391,7 +402,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert episode.steps == 4
     assert episode.termination_reason == "max_steps"
     assert len(client.requests) == 4
-    assert [_image_count(request) for request in client.requests] == [1, 2, 3, 4]
+    assert [_image_count(request) for request in client.requests] == [2, 4, 6, 8]
     assert [
         sum(message["role"] == "assistant" for message in request.messages)
         for request in client.requests
@@ -407,9 +418,12 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert all(json.loads(message["content"])["Reflection"] for message in assistant_messages)
 
     request_text = _request_text(latest_request)
+    assert "Camera order: topview, behindGripper" in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
-    assert "Meta-World end-effector controller" in request_text
+    assert "+x points right in topview" in request_text
+    assert "+y points toward the far edge of the table" in request_text
+    assert "+z points upward away from the tabletop" in request_text
     assert "gripper" not in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
@@ -458,14 +472,20 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert all(len(step["sim_action"]["values"]) == 4 for step in trajectory)
 
     pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))
-    assert len(pngs) == 4
+    assert len(pngs) == 8
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))
-        assert pixels.ndim == 3
-        assert pixels.shape[-1] == 3
+        assert pixels.shape == (240, 320, 3)
         assert float(pixels.mean()) > 1.0
         assert float(pixels.std()) > 1.0
+    with Image.open(episode_dir / "model_calls/images/step_0000/topview.png") as image:
+        topview = np.asarray(image.convert("RGB"))
+    with Image.open(
+        episode_dir / "model_calls/images/step_0000/behindGripper.png"
+    ) as image:
+        behind_gripper = np.asarray(image.convert("RGB"))
+    assert not np.array_equal(topview, behind_gripper)
 
     manifest = json.loads(
         (episode_dir.parent / "run_manifest.json").read_text(encoding="utf-8")

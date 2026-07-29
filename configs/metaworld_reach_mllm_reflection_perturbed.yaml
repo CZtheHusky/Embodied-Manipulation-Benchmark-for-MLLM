@@ -9,7 +9,9 @@ simulator:
   render_mode: rgb_array
   params:
     env_name: reach-v3
-    camera_name: corner2
+    camera_name: topview
+    width: 320
+    height: 240
     mujoco_gl: egl
     max_episode_steps: 100
   env_kwargs: {}
@@ -26,7 +28,11 @@ camera:
   manager: fixed
   visible_metadata: true
   cameras:
-    - name: corner2
+    - name: topview
+      type: metaworld_rgb
+      width: 320
+      height: 240
+    - name: behindGripper
       type: metaworld_rgb
       width: 320
       height: 240
@@ -42,7 +48,10 @@ control_interface:
   mapping_visible_to_agent: false
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
-  control_frame_description: the Meta-World end-effector controller x, y, and z axes
+  control_frame_description: >-
+    the Meta-World world frame: +x points right in topview, +y points toward
+    the far edge of the table (up in topview), and +z points upward away from
+    the tabletop
   params:
     scale_mode: metaworld_normalized_box
 
@@ -79,7 +88,7 @@ agent:
     response_format: json_object
     stream: false
   observation:
-    cameras: [corner2]
+    cameras: [topview, behindGripper]
     image_max_side: 512
   history:
     action_window: all
@@ -102,7 +111,7 @@ logging:
 ui:
   backend: pygame
   runtime: sim_adapter_worker
-  frame_camera: corner2
+  frame_camera: topview
   window_width: 720
   window_height: 540
   info_panel_height: 190
