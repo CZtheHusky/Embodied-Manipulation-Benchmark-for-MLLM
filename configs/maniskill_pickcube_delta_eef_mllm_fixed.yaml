@@ -1,0 +1,118 @@
+benchmark:
+  name: maniskill_pickcube_delta_eef_mllm_fixed_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: maniskill
+  env_id: PickCube-v1
+  render_mode: rgb_array
+  wrappers: [cpu_gym_wrapper]
+  params:
+    control_mode: pd_ee_delta_pose
+    max_episode_steps: 100
+  env_kwargs:
+    obs_mode: rgb
+    reward_mode: sparse
+    num_envs: 1
+
+task:
+  type: maniskill_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: >-
+      Pick up the visible cube and move it to the visible goal marker using only
+      RGB observations. The final joystick_6 directly controls the gripper in
+      [0, 1], where 0 is fully open and 1 is fully closed; it is never permuted,
+      sign-flipped, or frame-rotated.
+    success_key: success
+
+camera:
+  manager: maniskill_randomized
+  visible_metadata: false
+  cameras:
+    - name: base_camera
+      type: maniskill_rgb
+      width: 320
+      height: 240
+      pose: [0.7, 0.0, 0.6, 0.7071, 0.0, 0.7071, 0.0]
+      params:
+        position_ranges:
+          - [0.55, 0.85]
+          - [-0.25, 0.25]
+          - [0.45, 0.75]
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: direct
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  params:
+    scale_mode: maniskill_normalized_pd_ee_delta_pose
+
+controller:
+  type: maniskill_delta_eef
+  frame: controller
+  scales:
+    dx: 1.0
+    dy: 1.0
+    dz: 1.0
+    droll: 1.0
+    dpitch: 1.0
+    dyaw: 1.0
+  params:
+    dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
+    gripper_open_value: -1.0
+    gripper_closed_value: 1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: medium
+    temperature: 0
+    max_output_tokens: 128
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [base_camera]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/maniskill_pickcube_delta_eef_mllm_fixed
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  info_panel_height: 190
+  max_steps: 100
+  debug_frames: true
+  debug_control_history: true

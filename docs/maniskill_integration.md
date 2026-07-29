@@ -10,6 +10,8 @@ ManiSkill is integrated as an optional backend. The benchmark does not fork or m
 - Task wrapper: `tasks/maniskill.py`
 - Human play UI: `ui/human_player.py` with `ui.runtime: sim_adapter_worker`
 - Example config: `configs/maniskill_pickcube_delta_eef.yaml`
+- Fixed MLLM config: `configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml`
+- Perturbed MLLM config: `configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml`
 
 ## Dependency
 
@@ -28,6 +30,18 @@ python3 scripts/manage_uv_env.py smoke maniskill-cu126
 
 Core tests and non-ManiSkill environments continue to work when `mani_skill` is not installed.
 
+Local CPU verification uses a fake in-process model client and does not make a
+network request:
+
+```bash
+PYTHONPATH=src .venvs/maniskill-cpu/bin/python -m pytest tests/test_maniskill_backend.py -q
+```
+
+The smoke runs both MLLM configurations for five real PickCube steps, checks
+the `1, 2, 3, 4, 4` image-window progression, retains all prior actions,
+decodes a non-black `320x240` RGB request image, and checks the request privacy
+boundary.
+
 ## Control
 
 The initial config targets `PickCube-v1` with ManiSkill `control_mode: pd_ee_delta_pose`.
@@ -40,7 +54,48 @@ JoystickAction -> JoystickMapping -> ControlFrameTransform -> ManiSkillDeltaEEFC
 
 Joystick permutation, sign changes, and coordinate-frame rotation are handled by this repository before native ManiSkill actions are produced. ManiSkill receives a clipped native Box action.
 
-The gripper, when present, remains the final virtual joystick. The default mapping is `0.0 -> -1.0` and `1.0 -> 1.0`, configurable through controller params.
+The six motion joysticks accept only `-1`, `0`, or `1`. The final virtual
+joystick is the direct gripper and accepts any value in `[0, 1]`: `0` means
+fully open and `1` means fully closed. The controller converts that public
+range to ManiSkill's default native gripper range, `0.0 -> -1.0` and
+`1.0 -> 1.0`. The gripper is never permuted, sign-flipped, or frame-rotated.
+
+Mapping is applied before the frame transform. The transform rotates both the
+3D translation vector (`dx`, `dy`, `dz`) and the small delta-rotation vector
+(`droll`, `dpitch`, `dyaw`).
+
+## PickCube MLLM Configurations
+
+PickCube has two standalone MLLM configurations:
+
+| Configuration | Mapping | Control frame | Model-visible rule |
+| --- | --- | --- | --- |
+| `configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml` | `fixed` | `identity` | The exact ordered mapping and the identity-frame rule are public. |
+| `configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_3d` | The permutation/sign and 3D-frame rules are public, but their episode realization is hidden. |
+
+Both use the OpenAI-compatible Chat Completions API,
+`action_with_reflection`, `image_window: 3`, and `action_window: all`. They
+send one `base_camera` RGB stream. Select either YAML directly:
+
+```bash
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml
+```
+
+The model request is a strict projection containing only the task
+instruction, public control text and action schema, camera names, RGB images,
+step ids, and the permitted normalized action/reflection history. Adapter
+state, reward, cube/goal/EEF poses, distance, native simulator actions, seeds,
+camera metadata, and sampled mapping/frame values remain outside the request.
+They may still exist in simulator state and benchmark logs for evaluation.
+
+The shared `ControlInstructionBuilder` states the motion joystick values, 3D
+translation/rotation semantics, fixed mapping, identity-frame behavior, and
+whether mapping/frame complexity exists. It does not state the direct
+gripper's `[0, 1]` semantics. The two ManiSkill task instructions supply that
+missing public rule. A shared solution would need `ControlInstructionBuilder`
+to derive the gripper range and endpoint meanings from the action schema and
+controller convention; no shared prompt file is changed by this integration.
 
 ## Human Play
 

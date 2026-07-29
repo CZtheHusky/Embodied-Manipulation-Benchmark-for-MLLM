@@ -1,17 +1,66 @@
-import numpy as np
+import base64
+from dataclasses import replace
+from io import BytesIO
 import multiprocessing as mp
-import pytest
 
+import numpy as np
+import pytest
+from PIL import Image
+
+from mllm_teleop_benchmark import BenchmarkRunner
 from mllm_teleop_benchmark.action.joystick import JoystickAction
+from mllm_teleop_benchmark.agents.base import AgentContext
+from mllm_teleop_benchmark.agents.model_client import ModelResponse, ModelUsage
+from mllm_teleop_benchmark.agents.model_policy import MLLMPolicy
 from mllm_teleop_benchmark.config.loader import load_config
 from mllm_teleop_benchmark.config.schema import FrameTransformConfig
 from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
-from mllm_teleop_benchmark.core.registry import build_action_space, build_controller, build_mapping
-from mllm_teleop_benchmark.core.types import ManiSkillAction
+from mllm_teleop_benchmark.core.registry import (
+    build_action_space,
+    build_controller,
+    build_mapping,
+    control_interface_metadata,
+)
+from mllm_teleop_benchmark.core.types import (
+    ManiSkillAction,
+    Observation,
+    StepTransition,
+    ValidationResult,
+)
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.observation.camera import RandomizedManiSkillCameraManager
 from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
 from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
+
+
+MLLM_CONFIGS = (
+    "configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml",
+    "configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml",
+)
+
+
+class RecordingManiSkillClient:
+    def __init__(self):
+        self.requests = []
+
+    def complete(self, request):
+        self.requests.append(request)
+        channels = ",".join(f'"joystick_{index}":0' for index in range(7))
+        text = (
+            '{"channels":{'
+            + channels
+            + '},"Reflection":"No visible motion has been observed yet."}'
+        )
+        return ModelResponse(
+            text=text,
+            request_id=f"fake-{len(self.requests)}",
+            model="fake-maniskill-model",
+            usage=ModelUsage(input_tokens=100, output_tokens=16, cached_input_tokens=0),
+            raw={"id": f"fake-{len(self.requests)}", "model": "fake-maniskill-model"},
+            latency_ms=1.0,
+            attempts=1,
+            request_bytes=len(request.encoded_body()),
+        )
 
 
 def test_maniskill_pickcube_config_builds_without_maniskill_install():
@@ -24,6 +73,184 @@ def test_maniskill_pickcube_config_builds_without_maniskill_install():
     assert config.ui.runtime == "sim_adapter_worker"
     assert tuple(action_space.channels) == tuple(f"joystick_{idx}" for idx in range(7))
     assert controller.metadata()["type"] == "maniskill_delta_eef"
+
+
+@pytest.mark.parametrize(
+    ("path", "mapping_strategy", "frame_transform"),
+    (
+        (MLLM_CONFIGS[0], "fixed", "identity"),
+        (
+            MLLM_CONFIGS[1],
+            "permuted_sign_flipped",
+            "random_rotation_3d",
+        ),
+    ),
+)
+def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
+    path,
+    mapping_strategy,
+    frame_transform,
+):
+    config = load_config(path)
+    action_space = build_action_space(config)
+    mapping_config = config.control_interface.to_mapping_config(seed=config.benchmark.seed)
+    controller = build_controller(
+        config,
+        build_mapping(config, seed=config.benchmark.seed),
+        seed=config.benchmark.seed,
+    )
+
+    assert config.agent.type == "mllm"
+    assert config.agent.action_output_mode == "action_with_reflection"
+    assert config.agent.model.api == "chat_completions"
+    assert config.agent.model.response_format == "json_object"
+    assert config.agent.history.image_window == 3
+    assert config.agent.history.action_window == "all"
+    assert config.agent.observation.cameras == ("base_camera",)
+    assert config.camera.visible_metadata is False
+    assert config.control_interface.mapping_strategy == mapping_strategy
+    assert config.control_interface.frame_transform == frame_transform
+    assert tuple(action_space.channels) == tuple(f"joystick_{index}" for index in range(7))
+    assert action_space.schema()["joystick_6"] == {
+        "kind": "continuous",
+        "min": 0.0,
+        "max": 1.0,
+    }
+    assert mapping_config.channels["joystick_6"] == "gripper"
+    assert mapping_config.signs["joystick_6"] == 1.0
+    assert controller.metadata()["frame_transform"]["type"] == frame_transform
+
+    if mapping_strategy == "fixed":
+        assert tuple(mapping_config.channels.values()) == (
+            "dx",
+            "dy",
+            "dz",
+            "droll",
+            "dpitch",
+            "dyaw",
+            "gripper",
+        )
+        assert config.control_interface.mapping_visible_to_agent is True
+        assert config.control_interface.frame_visible_to_agent is True
+    else:
+        assert set(tuple(mapping_config.channels.values())[:-1]) == {
+            "dx",
+            "dy",
+            "dz",
+            "droll",
+            "dpitch",
+            "dyaw",
+        }
+        assert tuple(mapping_config.channels.values())[:-1] != config.control_interface.active_dimensions
+        assert any(value < 0.0 for key, value in mapping_config.signs.items() if key != "joystick_6")
+        assert config.control_interface.mapping_visible_to_agent is False
+        assert config.control_interface.frame_visible_to_agent is False
+        assert controller.metadata()["frame_transform"] == {
+            "type": "random_rotation_3d",
+            "visible_to_agent": False,
+        }
+
+
+@pytest.mark.parametrize("path", MLLM_CONFIGS)
+def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(path):
+    config = load_config(path)
+    client = RecordingManiSkillClient()
+    policy = MLLMPolicy(config.agent, client, "fake-maniskill-model")
+    action_space = build_action_space(config)
+    previous = Observation(
+        step_id=0,
+        images={"base_camera": np.full((12, 16, 3), 64, dtype=np.uint8)},
+        state={
+            "state": "PRIVATE_STATE",
+            "reward": "PRIVATE_REWARD",
+            "cube_pose": "PRIVATE_CUBE_POSE",
+            "goal_pose": "PRIVATE_GOAL_POSE",
+            "eef_pose": "PRIVATE_EEF_POSE",
+            "distance": "PRIVATE_DISTANCE",
+            "seed": "PRIVATE_SEED",
+        },
+        metadata={"camera_randomization": "PRIVATE_CAMERA_RANDOMIZATION"},
+    )
+    current = Observation(
+        step_id=1,
+        images={"base_camera": np.full((12, 16, 3), 128, dtype=np.uint8)},
+        state={"state": "PRIVATE_NEXT_STATE"},
+        metadata={"camera_randomization": "PRIVATE_NEXT_CAMERA_RANDOMIZATION"},
+    )
+    parsed_action = {f"joystick_{index}": 0.0 for index in range(7)}
+    transition = StepTransition(
+        step_id=0,
+        observation=previous,
+        raw_action="PRIVATE_RAW_MODEL_OUTPUT",
+        parsed_action=parsed_action,
+        validation=ValidationResult(True),
+        sim_action=ManiSkillAction(
+            values=(0.0,) * 7,
+            metadata={"sim_action": "PRIVATE_SIM_ACTION"},
+        ),
+        next_observation=current,
+        terminated=False,
+        truncated=False,
+        info={"reward": "PRIVATE_STEP_REWARD", "seed": "PRIVATE_STEP_SEED"},
+        reflection="No visible motion has been observed yet.",
+    )
+    public_control = control_interface_metadata(config, seed=config.benchmark.seed)
+    public_control["private_mapping_sample"] = "PRIVATE_MAPPING_SAMPLE"
+    public_control["private_frame_sample"] = "PRIVATE_FRAME_SAMPLE"
+    context = AgentContext(
+        observation=current,
+        task_instruction=str(config.task.params["instruction"]),
+        action_space=action_space,
+        action_schema=action_space.schema(),
+        metadata={
+            "control_interface": public_control,
+            "controller": {"private": "PRIVATE_CONTROLLER"},
+        },
+        history=(transition,),
+    )
+
+    decision = policy.act(context)
+
+    assert decision.trace.status == "ok"
+    request_text = client.requests[0].encoded_body().decode("utf-8")
+    assert "Each motion joystick value must be one of -1, 0, or 1" in request_text
+    assert (
+        "dx, dy, and dz denote end-effector translation along the control frame's "
+        "x, y, and z axes"
+    ) in request_text
+    assert "final joystick_6 directly controls the gripper in [0, 1]" in request_text
+    assert "0 is fully open and 1 is fully closed" in request_text
+    assert request_text.count('"role":"assistant"') == 1
+    for forbidden in (
+        "PRIVATE_STATE",
+        "PRIVATE_REWARD",
+        "PRIVATE_CUBE_POSE",
+        "PRIVATE_GOAL_POSE",
+        "PRIVATE_EEF_POSE",
+        "PRIVATE_DISTANCE",
+        "PRIVATE_SEED",
+        "PRIVATE_CAMERA_RANDOMIZATION",
+        "PRIVATE_NEXT_STATE",
+        "PRIVATE_NEXT_CAMERA_RANDOMIZATION",
+        "PRIVATE_RAW_MODEL_OUTPUT",
+        "PRIVATE_SIM_ACTION",
+        "PRIVATE_STEP_REWARD",
+        "PRIVATE_STEP_SEED",
+        "PRIVATE_MAPPING_SAMPLE",
+        "PRIVATE_FRAME_SAMPLE",
+        "PRIVATE_CONTROLLER",
+    ):
+        assert forbidden not in request_text
+
+    if config.control_interface.mapping_strategy == "fixed":
+        assert "joystick_0 -> dx" in request_text
+        assert "No additional control-frame rotation is applied" in request_text
+    else:
+        assert "undisclosed permutation and sign pattern" in request_text
+        assert "undisclosed 3D frame rotation" in request_text
+        assert "joystick_0 ->" not in request_text
+        assert "rotation_matrix" not in request_text
+        assert "quaternion" not in request_text
 
 
 def test_pygame_maniskill_player_builds_without_starting_env():
@@ -133,6 +360,81 @@ def test_maniskill_adapter_clips_native_action_against_box_space():
 
     assert native.tolist() == [1.0, -0.5, 0.25]
     assert metadata["clipped"] is True
+
+
+@pytest.mark.parametrize("path", MLLM_CONFIGS)
+def test_maniskill_pickcube_cpu_rgb_and_fake_client_smoke(
+    monkeypatch,
+    tmp_path,
+    path,
+):
+    pytest.importorskip("mani_skill")
+    config = load_config(path)
+    config = replace(
+        config,
+        task=replace(config.task, max_steps=5),
+        logging=replace(config.logging, output_dir=str(tmp_path)),
+    )
+    client = RecordingManiSkillClient()
+    monkeypatch.setenv("MLLM_TELEOP_MODEL", "fake-maniskill-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://fake-maniskill.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.core.registry.OpenAICompatibleClient",
+        lambda **_kwargs: client,
+    )
+
+    episode = BenchmarkRunner(config).run().episodes[0]
+
+    assert episode.steps == 5
+    assert episode.termination_reason == "max_steps"
+    assert len(client.requests) == 5
+    assert [
+        sum(
+            1
+            for message in request.messages
+            if isinstance(message.get("content"), list)
+            for item in message["content"]
+            if isinstance(item, dict) and item.get("type") == "image_url"
+        )
+        for request in client.requests
+    ] == [1, 2, 3, 4, 4]
+    assert [
+        sum(message["role"] == "assistant" for message in request.messages)
+        for request in client.requests
+    ] == [0, 1, 2, 3, 4]
+    image_urls = [
+        item["image_url"]["url"]
+        for message in client.requests[0].messages
+        if isinstance(message.get("content"), list)
+        for item in message["content"]
+        if isinstance(item, dict) and item.get("type") == "image_url"
+    ]
+    assert len(image_urls) == 1
+    image_bytes = base64.b64decode(image_urls[0].split(",", 1)[1])
+    rgb = np.asarray(Image.open(BytesIO(image_bytes)).convert("RGB"))
+    assert rgb.shape == (240, 320, 3)
+    assert rgb.dtype == np.uint8
+    assert np.any(rgb != 0)
+    request_text = "\n".join(
+        request.encoded_body().decode("utf-8")
+        for request in client.requests
+    )
+    for forbidden in (
+        "cube_pose",
+        "goal_pose",
+        "eef_pose",
+        "tcp_pose",
+        "distance",
+        "reward",
+        "sim_action",
+        "seed",
+        "rotation_matrix",
+        "quaternion_xyzw",
+        "permuted_sign_flipped",
+        "random_rotation_3d",
+    ):
+        assert forbidden not in request_text
 
 
 def test_sim_adapter_worker_maniskill_reset_step_shutdown_when_installed():
