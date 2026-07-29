@@ -169,6 +169,49 @@ class ControlInterfaceConfig:
     gripper_hold_command: float | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.control_frame_description is not None:
+            description = str(self.control_frame_description).strip()
+            if not description:
+                raise ValueError(
+                    "control_interface.control_frame_description must not be blank"
+                )
+            object.__setattr__(self, "control_frame_description", description)
+
+        commands = {
+            name: value
+            for name, value in (
+                ("gripper_open_command", self.gripper_open_command),
+                ("gripper_closed_command", self.gripper_closed_command),
+                ("gripper_hold_command", self.gripper_hold_command),
+            )
+            if value is not None
+        }
+        if commands and self.gripper == "none":
+            raise ValueError(
+                "control_interface gripper commands require a virtual gripper channel"
+            )
+        allowed_values = (0.0, 1.0) if self.gripper == "binary" else None
+        for name, value in commands.items():
+            if allowed_values is not None:
+                if value not in allowed_values:
+                    raise ValueError(
+                        f"control_interface.{name} must be one of {allowed_values}"
+                    )
+            elif not 0.0 <= value <= 1.0:
+                raise ValueError(
+                    f"control_interface.{name} must be within the virtual "
+                    "gripper schema [0, 1]"
+                )
+        if (
+            self.gripper_open_command is not None
+            and self.gripper_closed_command is not None
+            and self.gripper_open_command == self.gripper_closed_command
+        ):
+            raise ValueError(
+                "control_interface gripper open and closed commands must differ"
+            )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlInterfaceConfig":
         active_dimensions = tuple(str(v) for v in _require(data, "active_dimensions"))

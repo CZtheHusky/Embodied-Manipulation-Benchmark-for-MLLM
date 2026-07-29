@@ -167,7 +167,9 @@ def test_json_object_requirement_is_present_in_user_input():
 
     policy.act(_context(0))
 
+    assert policy.prompt_version == "mllm_joystick_v2"
     request = client.requests[0]
+    assert "mllm_joystick_v2" in request.messages[1]["content"]
     user_text = " ".join(
         message["content"]
         for message in request.messages
@@ -200,7 +202,7 @@ def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():
     assert request.messages[0]["role"] == "system"
     assert "top-level string key Reflection" in request.messages[0]["content"]
     static_instruction = request.messages[1]["content"]
-    assert "mllm_joystick_reflection_v1" in static_instruction
+    assert "mllm_joystick_reflection_v2" in static_instruction
     assert "optional case-sensitive string key Reflection" in static_instruction
     assistant_payload = json.loads(
         next(
@@ -213,7 +215,7 @@ def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():
         "Reflection": "joystick_0 appears to move right",
         "channels": {"joystick_0": 1.0, "joystick_1": 0.0},
     }
-    assert decision.trace.prompt_version == "mllm_joystick_reflection_v1"
+    assert decision.trace.prompt_version == "mllm_joystick_reflection_v2"
 
 
 def test_reflection_mode_includes_only_three_prior_images():

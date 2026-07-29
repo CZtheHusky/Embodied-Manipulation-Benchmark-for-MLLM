@@ -81,6 +81,9 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
     assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
+    assert config.control_interface.control_frame_description == (
+        "the Gymnasium Pusher world x, y, and z axes"
+    )
     group = make_experiment_group(config)
     assert group is not None
     assert "output-action_with_reflection" in group

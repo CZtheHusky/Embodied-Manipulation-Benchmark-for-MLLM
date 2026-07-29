@@ -42,10 +42,12 @@ JoystickAction -> JoystickMapping -> ControlFrameTransform -> MetaworldBoxAction
 
 `metaworld_box` maps `dx`, `dy`, and `dz` to the first three native action slots. The fourth Meta-World action slot is gripper control. For `reach-v3`, the config leaves benchmark gripper control disabled and sends `default_gripper_value: 1.0`.
 
-The MLLM configs preserve the same three-channel public interface as human
-play. The fourth native action slot stays at the configured fixed gripper value
-and is not exposed because `reach-v3` does not require gripper control. The
-three translation joysticks remain discrete `-1`, `0`, or `1` commands.
+The MLLM configs expose the fourth native slot as the final direct gripper
+joystick. Virtual command `0` means open and `1` means closed; the controller
+maps those public endpoints to native values `-1` and `1`. The three
+translation joysticks remain discrete `-1`, `0`, or `1` commands. The public
+frame description identifies the Meta-World end-effector controller axes
+without exposing episode state or a sampled transform.
 
 ## MLLM Evaluation
 
@@ -57,10 +59,11 @@ can be enabled by the real evaluation command.
 
 The baseline uses `fixed + identity`. The perturbed configuration uses
 `permuted_sign_flipped + random_rotation_3d`. The perturbation only changes the
-three translation controls. The model is told that mapping and frame
-complexity are present, but it is not given the permutation, signs, rotation,
-seed, simulator action, reward, distance, target coordinates, state, or
-end-effector pose.
+three translation controls; the gripper remains the final unflipped channel.
+The model is told that mapping and frame complexity are present and must be
+inferred from visual observations and its own action history, but it is not
+given an example, sampled value, permutation, signs, rotation, seed, simulator
+action, reward, distance, target coordinates, state, or end-effector pose.
 
 Local four-step integration checks replace the network client with a fake
 client while still running the real Meta-World environment:

@@ -1,3 +1,5 @@
+import pytest
+
 from mllm_teleop_benchmark.action.parser import ActionParser
 from mllm_teleop_benchmark.action.space import ActionSpace
 from mllm_teleop_benchmark.action.validator import ActionValidator
@@ -130,6 +132,11 @@ def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
         "hidden joystick mapping and control-frame transform remain fixed "
         "for the entire episode"
     ) in text
+    assert (
+        "Infer the hidden controls from visual observations and your own action "
+        "history"
+    ) in text
+    assert "no worked example or sampled hidden-control value is provided" in text
     assert "permuted_sign_flipped" not in text
     assert "random_rotation_3d" not in text
     assert "joystick_0 ->" not in text
@@ -139,6 +146,79 @@ def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
     assert "mapping_strategy" not in metadata
     assert "frame_transform" not in metadata
     assert "rotation_matrix" not in str(metadata)
+
+
+def test_control_interface_strips_public_frame_description():
+    interface = ControlInterfaceConfig(
+        mode="eef_delta_pose",
+        active_dimensions=("dx", "dy", "dz"),
+        control_frame_description="  the public world frame  ",
+    )
+
+    assert interface.control_frame_description == "the public world frame"
+    assert interface.metadata()["control_frame_description"] == (
+        "the public world frame"
+    )
+
+
+def test_control_interface_rejects_blank_public_frame_description():
+    with pytest.raises(ValueError, match="control_frame_description must not be blank"):
+        ControlInterfaceConfig(
+            mode="eef_delta_pose",
+            active_dimensions=("dx",),
+            control_frame_description=" \t ",
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("gripper_open_command", -0.01),
+        ("gripper_closed_command", 1.01),
+        ("gripper_hold_command", float("nan")),
+    ),
+)
+def test_direct_gripper_prompt_commands_must_fit_virtual_schema(field, value):
+    kwargs = {
+        "mode": "eef_delta_pose",
+        "active_dimensions": ("dx",),
+        "gripper": "direct",
+        field: value,
+    }
+
+    with pytest.raises(ValueError, match=r"virtual gripper schema \[0, 1\]"):
+        ControlInterfaceConfig(**kwargs)
+
+
+def test_binary_gripper_prompt_commands_must_be_schema_values():
+    with pytest.raises(ValueError, match="must be one of"):
+        ControlInterfaceConfig(
+            mode="eef_delta_pose",
+            active_dimensions=("dx",),
+            gripper="binary",
+            gripper_hold_command=0.5,
+        )
+
+
+def test_gripper_open_and_closed_prompt_commands_must_differ():
+    with pytest.raises(ValueError, match="open and closed commands must differ"):
+        ControlInterfaceConfig(
+            mode="eef_delta_pose",
+            active_dimensions=("dx",),
+            gripper="direct",
+            gripper_open_command=0.5,
+            gripper_closed_command=0.5,
+        )
+
+
+def test_gripper_prompt_commands_require_virtual_gripper_channel():
+    with pytest.raises(ValueError, match="require a virtual gripper channel"):
+        ControlInterfaceConfig(
+            mode="eef_delta_pose",
+            active_dimensions=("dx",),
+            gripper_open_command=0.0,
+            gripper_closed_command=1.0,
+        )
 
 
 def test_gripper_instruction_does_not_name_motion_complexity_mechanisms():

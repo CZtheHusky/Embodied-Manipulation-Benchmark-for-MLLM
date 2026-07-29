@@ -111,7 +111,9 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert config.camera.visible_metadata is False
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
-    assert config.control_interface.control_frame_description
+    assert config.control_interface.control_frame_description == (
+        "the ManiSkill end-effector delta-pose controller x, y, and z axes"
+    )
     assert config.control_interface.gripper_open_command == 0.0
     assert config.control_interface.gripper_closed_command == 1.0
     assert tuple(action_space.channels) == tuple(f"joystick_{index}" for index in range(7))
@@ -256,6 +258,10 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
         assert (
             "hidden joystick mapping and control-frame transform remain fixed "
             "for the entire episode"
+        ) in request_text
+        assert (
+            "Infer the hidden controls from visual observations and your own action "
+            "history"
         ) in request_text
         assert "joystick_0 ->" not in request_text
         assert "rotation_matrix" not in request_text

@@ -128,6 +128,12 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.gripper == "direct"
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
+    assert config.control_interface.control_frame_description == (
+        "the robosuite OSC world x, y, and z axes"
+    )
+    assert config.control_interface.gripper_open_command == 0.0
+    assert config.control_interface.gripper_closed_command == 1.0
+    assert config.control_interface.gripper_hold_command == 0.5
     assert tuple(action_schema) == (
         "joystick_0",
         "joystick_1",
@@ -351,6 +357,10 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
         assert (
             "hidden joystick mapping and control-frame transform remain fixed "
             "for the entire episode"
+        ) in request_text
+        assert (
+            "Infer the hidden controls from visual observations and your own action "
+            "history"
         ) in request_text
 
     for forbidden in (

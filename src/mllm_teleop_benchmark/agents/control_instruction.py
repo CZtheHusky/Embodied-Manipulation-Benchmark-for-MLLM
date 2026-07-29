@@ -68,6 +68,11 @@ class ControlInstructionBuilder:
                 noun = " and ".join(hidden_components)
                 verb = "remain" if len(hidden_components) > 1 else "remains"
                 text_lines.append(f"The hidden {noun} {verb} fixed for the entire episode.")
+                text_lines.append(
+                    "Infer the hidden controls from visual observations and your "
+                    "own action history; no worked example or sampled hidden-control "
+                    "value is provided."
+                )
         else:
             text_lines.append("The joystick-to-dimension mapping is not visible.")
             panel_lines.append("active dims: hidden")

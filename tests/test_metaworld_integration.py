@@ -69,6 +69,7 @@ class MetaworldFakeClient:
                     "joystick_0": 0,
                     "joystick_1": 0,
                     "joystick_2": 0,
+                    "joystick_3": 0.5,
                 },
                 "Reflection": (
                     "The current RGB view does not yet show movement, so the "
@@ -226,11 +227,16 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
         "Move the robot end-effector to the visible target position."
     )
     assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
-    assert config.control_interface.gripper == "none"
+    assert config.control_interface.gripper == "direct"
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
+    assert config.control_interface.control_frame_description == (
+        "the Meta-World end-effector controller x, y, and z axes"
+    )
+    assert config.control_interface.gripper_open_command == 0.0
+    assert config.control_interface.gripper_closed_command == 1.0
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
@@ -243,12 +249,18 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
         "joystick_0",
         "joystick_1",
         "joystick_2",
+        "joystick_3",
     )
     assert all(
         schema[f"joystick_{index}"]
         == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
         for index in range(3)
     )
+    assert schema["joystick_3"] == {
+        "kind": "continuous",
+        "min": 0.0,
+        "max": 1.0,
+    }
 
     group = make_experiment_group(config)
     assert group is not None
@@ -259,6 +271,15 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
     else:
         assert "__mapping-permuted_sign_flipped" in group
         assert "__frame-random_rotation_3d" in group
+
+
+def test_metaworld_mllm_task_instruction_is_identical_across_control_conditions():
+    baseline = load_config("configs/metaworld_reach_mllm_reflection.yaml")
+    perturbed = load_config(
+        "configs/metaworld_reach_mllm_reflection_perturbed.yaml"
+    )
+
+    assert baseline.task.params["instruction"] == perturbed.task.params["instruction"]
 
 
 def test_metaworld_mllm_prompt_describes_public_xyz_and_gripper_only():
@@ -275,7 +296,9 @@ def test_metaworld_mllm_prompt_describes_public_xyz_and_gripper_only():
     assert "joystick_1 -> dy" in baseline_prompt
     assert "joystick_2 -> dz" in baseline_prompt
     assert "Meta-World end-effector controller" in baseline_prompt
-    assert "gripper" not in baseline_prompt
+    assert "direct control" in baseline_prompt
+    assert "gripper is always the final virtual joystick" in baseline_prompt
+    assert "0 means open, 1 means closed" in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     perturbed = load_config(
@@ -290,6 +313,13 @@ def test_metaworld_mllm_prompt_describes_public_xyz_and_gripper_only():
     assert "active controllable dimensions are: dx, dy, dz" in perturbed_prompt
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
+    assert (
+        "Infer the hidden controls from visual observations and your own action "
+        "history"
+    ) in perturbed_prompt
+    assert "no worked example or sampled hidden-control value is provided" in (
+        perturbed_prompt
+    )
     assert "joystick_0 ->" not in perturbed_prompt
     assert "mapping" not in metadata
     assert "mapping_strategy" not in metadata
@@ -305,7 +335,9 @@ def test_metaworld_perturbation_only_changes_translation_channels():
     controller = build_controller(config, mapping, config.benchmark.seed)
 
     assert isinstance(controller.frame_transform, RotationControlFrameTransform)
-    assert set(mapping.channels.values()) == {"dx", "dy", "dz"}
+    assert set(mapping.channels.values()) == {"dx", "dy", "dz", "gripper"}
+    assert mapping.channels["joystick_3"] == "gripper"
+    assert mapping.signs["joystick_3"] == 1.0
     assert any(
         mapping.signs[f"joystick_{index}"] < 0.0 for index in range(3)
     )
@@ -316,6 +348,7 @@ def test_metaworld_perturbation_only_changes_translation_channels():
                 "joystick_0": 1.0,
                 "joystick_1": 0.0,
                 "joystick_2": 0.0,
+                "joystick_3": 1.0,
             }
         )
     )
@@ -391,13 +424,20 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "Meta-World end-effector controller" in request_text
-    assert "gripper" not in request_text
+    assert '"joystick_3":{"kind":"continuous","max":1.0,"min":0.0}' in request_text
+    assert "direct control" in request_text
+    assert "gripper is always the final virtual joystick" in request_text
+    assert "0 means open, 1 means closed" in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
         assert "No additional control-frame rotation is applied" in request_text
     else:
         assert "exact joystick-to-dimension mapping is not disclosed" in request_text
         assert "exact physical-frame transform is not disclosed" in request_text
+        assert (
+            "Infer the hidden controls from visual observations and your own action "
+            "history"
+        ) in request_text
 
     encoded_requests = "\n".join(
         request.encoded_body().decode("utf-8") for request in client.requests
@@ -450,7 +490,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v1"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

@@ -240,7 +240,7 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
     assert run_dir.parent.name.endswith("__output-action_with_reflection")
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v1"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
 
 
 def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):
