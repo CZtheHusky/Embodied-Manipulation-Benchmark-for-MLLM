@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from mllm_teleop_benchmark.core.types import RLBenchAction
 from scripts.preflight_coppeliasim import (
     PreflightFailure,
     inspect_rgb_frame,
@@ -70,6 +71,120 @@ class FakeAdapter:
         return SimpleNamespace(
             info={"action_rejected": self.last_action_rejected}
         )
+
+
+def _restricted_closebox_config(*, max_steps=100, scales=None):
+    return SimpleNamespace(
+        simulator=SimpleNamespace(type="colosseum"),
+        task=SimpleNamespace(max_steps=max_steps),
+        control_interface=SimpleNamespace(
+            active_dimensions=("dx", "dy", "dz"),
+            gripper="none",
+            channel_kind="discrete",
+            channel_values=(-1.0, 0.0, 1.0),
+            mapping_strategy="fixed",
+            frame_transform="identity",
+        ),
+        controller=SimpleNamespace(
+            type="rlbench_delta_eef",
+            scales=scales or {"dx": 0.02, "dy": 0.02, "dz": 0.02},
+            params={"default_gripper": 1.0},
+        ),
+    )
+
+
+class FakeWaypointObject:
+    def __init__(self, position):
+        self.position = np.asarray(position, dtype=np.float64)
+
+    def get_position(self):
+        return self.position.copy()
+
+
+class FakeWaypoint:
+    def __init__(self, position):
+        self.object = FakeWaypointObject(position)
+
+    def get_waypoint_object(self):
+        return self.object
+
+    def get_ext(self):
+        raise AssertionError("waypoint extensions must not be inspected")
+
+    def start_of_path(self):
+        raise AssertionError("official waypoint executor must not run")
+
+    def end_of_path(self):
+        raise AssertionError("official waypoint executor must not run")
+
+
+class FakeCloseBoxNativeTask:
+    def __init__(self):
+        self.completed = False
+        self.waypoints = [
+            FakeWaypoint((0.04, 0.0, 1.0)),
+            FakeWaypoint((0.04, 0.04, 1.0)),
+        ]
+
+    def get_waypoints(self):
+        return self.waypoints
+
+    def success(self):
+        return self.completed, self.completed
+
+
+class FakeCloseBoxTaskEnvironment:
+    def __init__(self, native_task):
+        self._task = native_task
+        self.get_demos_called = False
+
+    def get_demos(self, *_args, **_kwargs):
+        self.get_demos_called = True
+        raise AssertionError("legacy full-control demo path must not be called")
+
+
+class FakeRestrictedCloseBoxSim:
+    def __init__(self, *, reject_first=False, reject_all=False):
+        self.config = SimpleNamespace(type="colosseum")
+        self.task_name = "close_box"
+        self.native_task = FakeCloseBoxNativeTask()
+        self.task = FakeCloseBoxTaskEnvironment(self.native_task)
+        self.reject_first = reject_first
+        self.reject_all = reject_all
+        self.rejected_once = False
+        self.last_action_rejected = False
+        self.actions = []
+        self.last_native_obs = None
+
+    def reset(self, _task_config, _seed):
+        self.native_task.completed = False
+        self.rejected_once = False
+        self.actions = []
+        self.last_native_obs = SimpleNamespace(
+            gripper_pose=np.asarray(
+                [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                dtype=np.float64,
+            )
+        )
+
+    def get_state(self):
+        return {"success": self.native_task.completed}
+
+    def step(self, action):
+        self.actions.append(action)
+        rejected = self.reject_all or (
+            self.reject_first and not self.rejected_once
+        )
+        self.rejected_once = self.rejected_once or rejected
+        self.last_action_rejected = rejected
+        if not rejected:
+            pose = self.last_native_obs.gripper_pose.copy()
+            pose[:3] += np.asarray(action.delta_position)
+            self.last_native_obs.gripper_pose = pose
+            self.native_task.completed = bool(
+                np.allclose(pose[:3], (0.04, 0.04, 1.0), atol=1e-12)
+            )
+        return SimpleNamespace(info={"action_rejected": rejected})
 
 
 def test_projection_math_reports_pixel_displacements_and_visibility():
@@ -195,67 +310,105 @@ def test_ten_seed_canary_fails_when_camera_becomes_black():
 
 
 def test_closebox_scripted_success_fails_loudly_without_official_capabilities():
-    native_task = SimpleNamespace()
-    sim = SimpleNamespace(
-        config=SimpleNamespace(type="colosseum"),
-        task_name="close_box",
-        task=SimpleNamespace(_task=native_task),
-        reset=lambda _task_config, _seed: None,
-        get_state=lambda: {"success": False},
-    )
+    sim = FakeRestrictedCloseBoxSim()
+    sim.task._task.get_waypoints = None
 
     with pytest.raises(
         PreflightFailure,
-        match=r"lacks official capabilities.*No guessed pose script was executed",
+        match=r"lacks official Task.get_waypoints.*No guessed pose script",
     ):
         run_close_box_scripted_success_canary(
             sim,
-            SimpleNamespace(),
+            _restricted_closebox_config(),
             seed=11,
         )
+    assert sim.task.get_demos_called is False
 
 
-def test_closebox_scripted_success_uses_only_official_live_demo_waypoints():
-    class NativeTask:
-        def __init__(self):
-            self.completed = False
-
-        def get_waypoints(self):
-            return [object(), object()]
-
-        def success(self):
-            return self.completed, self.completed
-
-    class TaskEnvironment:
-        def __init__(self, native_task):
-            self._task = native_task
-            self.calls = []
-
-        def get_demos(self, amount, live_demos=False, max_attempts=10):
-            self.calls.append((amount, live_demos, max_attempts))
-            self._task.completed = True
-            return [[object(), object(), object()]]
-
-    native_task = NativeTask()
-    task_environment = TaskEnvironment(native_task)
-    sim = SimpleNamespace(
-        config=SimpleNamespace(type="colosseum"),
-        task_name="close_box",
-        task=task_environment,
-        reset=lambda _task_config, _seed: None,
-        get_state=lambda: {"success": False},
-    )
-
+def test_closebox_scripted_success_uses_only_restricted_benchmark_actions():
+    sim = FakeRestrictedCloseBoxSim(reject_first=True)
     report = run_close_box_scripted_success_canary(
         sim,
-        SimpleNamespace(),
+        _restricted_closebox_config(),
         seed=11,
     )
 
-    assert task_environment.calls == [(1, True, 1)]
+    allowed_components = {-0.02, 0.0, 0.02}
+    assert sim.actions
+    assert all(
+        isinstance(action, RLBenchAction)
+        and set(action.delta_position).issubset(allowed_components)
+        and action.delta_rotation_rpy == (0.0, 0.0, 0.0)
+        and action.gripper == 1.0
+        for action in sim.actions
+    )
+    assert sim.task.get_demos_called is False
     assert report["status"] == "pass"
-    assert report["method"] == "official_task_environment_live_demo_waypoints"
+    assert report["method"] == "official_waypoint_positions_via_rlbench_action"
     assert report["waypoint_count"] == 2
-    assert report["demo_observation_count"] == 3
+    assert report["actions_attempted"] == 5
+    assert report["planning_rejections"] == 1
+    assert report["planning_rejection_rate"] == pytest.approx(0.2)
+    assert report["adapter_native_success_checks"] >= len(sim.actions) + 1
     assert report["final_native_success"] is True
+    assert report["official_live_demo_called"] is False
+    assert report["waypoint_extensions_executed"] is False
+    assert report["waypoint_coordinates_recorded"] is False
     assert report["guessed_pose_script_executed"] is False
+    assert report["action_contract"]["action_budget"] == 100
+    assert "waypoint_positions" not in report
+
+
+def test_closebox_scripted_success_exhaustion_reports_planning_rejections():
+    sim = FakeRestrictedCloseBoxSim(reject_all=True)
+
+    with pytest.raises(
+        PreflightFailure,
+        match="action budget exhausted after 3 actions",
+    ) as captured:
+        run_close_box_scripted_success_canary(
+            sim,
+            _restricted_closebox_config(),
+            seed=11,
+            max_actions=3,
+        )
+
+    report = captured.value.report
+    assert report is not None
+    assert report["status"] == "fail"
+    assert report["actions_attempted"] == 3
+    assert report["planning_rejections"] == 3
+    assert report["planning_rejection_rate"] == 1.0
+    assert sim.task.get_demos_called is False
+
+
+@pytest.mark.parametrize(
+    ("scales", "message"),
+    [
+        (
+            {"dx": 0.02, "dy": 0.01, "dz": 0.02},
+            "dx/dy/dz scales must be equal",
+        ),
+        (
+            {"dx": 0.01, "dy": 0.01, "dz": 0.01},
+            "must equal the 0.02-meter benchmark control step",
+        ),
+    ],
+)
+def test_closebox_scripted_success_rejects_controller_scale_mismatch(
+    scales, message
+):
+    sim = FakeRestrictedCloseBoxSim()
+
+    with pytest.raises(
+        PreflightFailure,
+        match=message,
+    ):
+        run_close_box_scripted_success_canary(
+            sim,
+            _restricted_closebox_config(scales=scales),
+            seed=11,
+        )
+
+    assert sim.actions == []
+    assert sim.task.get_demos_called is False
