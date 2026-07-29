@@ -335,3 +335,56 @@ registry route, evaluator metadata checks, and forced
 `reset -> non-black render -> step -> close` test are verified on this host.
 The two MLLM conditions still require their real API batches and final artifact
 audits before model-evaluation readiness is claimed.
+
+## CoppeliaSim Preflight
+
+`scripts/preflight_coppeliasim.py` is a simulator-only sidecar. It never builds
+an agent or calls a model API, and its JSON output belongs only in a preflight
+report directory, not in model request or episode artifacts.
+
+Run the common 10-seed reset canary in the matching pinned environment:
+
+```bash
+python3 scripts/manage_conda_env.py run rlbench -- \
+  python scripts/preflight_coppeliasim.py reset-canary \
+  --config configs/rlbench_reach_target_mllm_reflection.yaml \
+  --output outputs/preflight/rlbench_reach_target.json
+```
+
+```bash
+python3 scripts/manage_conda_env.py run colosseum -- \
+  python scripts/preflight_coppeliasim.py reset-canary \
+  --config configs/colosseum_close_box_mllm_reflection.yaml \
+  --output outputs/preflight/colosseum_close_box.json
+```
+
+For every configured camera, the report checks that each reset frame is
+non-black and spatially non-constant, and that the successful reset frames are
+not all byte-identical across seeds. It records native reset success and one
+planning-action rejection result per non-successful seed. The default planning
+probe re-plans the current end-effector pose; pass a small explicit world-frame
+delta with `--planning-delta DX DY DZ` when a motion probe is required.
+
+For the `front` camera, each current native observation supplies
+`front_camera_intrinsics`, `front_camera_extrinsics`, and `gripper_pose`. The
+tool projects the EEF and 0.05-meter world `+x`, `+y`, and `+z` offsets. It
+reports pixel displacement, endpoint visibility, and a per-axis
+`can_publicly_declare` decision. An axis is allowed in a public prompt only
+when every sampled reset gives a visible displacement above the configured
+threshold and the primary image direction is stable. Numeric matrices and EEF
+positions are not copied into the report.
+
+The CloseBox scripted-success gate uses only the official Colosseum
+`TaskEnvironment.get_demos(live_demos=True)` waypoint executor and verifies the
+official native `Task.success()` result:
+
+```bash
+python3 scripts/manage_conda_env.py run colosseum -- \
+  python scripts/preflight_coppeliasim.py closebox-scripted-success \
+  --config configs/colosseum_close_box_mllm_reflection.yaml \
+  --output outputs/preflight/colosseum_close_box_scripted_success.json
+```
+
+If official waypoints, live-demo execution, or the native success oracle are
+missing or fail, the command exits nonzero and states that no guessed pose
+script was executed.
