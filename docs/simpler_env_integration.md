@@ -142,23 +142,27 @@ serializes those evaluator-only values as `position` and
 `quaternion_wxyz` before trajectory logging; they remain excluded from model
 requests.
 
-The MLLM configs explicitly select only the public RGB views
-`image/base_camera` and `image/overhead_camera`. Native segmentation tensors
-remain in the simulator observation but are not selected by the MLLM
-projection. Model requests contain the task text, public control contract,
-selected RGB, and the model's own action/reflection history. They do not
-contain simulator state, reward, success, distance, object or end-effector
-pose, native simulator action, seed, or sampled mapping/frame-transform
-parameters.
+The MLLM configs explicitly select only the official task RGB view
+`image/overhead_camera`. Native segmentation tensors remain in the simulator
+observation but are not selected by the MLLM projection. Upstream also exposes
+`base_camera`, but its own source labels that camera as unused; in this task it
+shows only static floor and robot-base geometry. A real API canary confirmed
+that its PNG bytes remain identical while the arm and official overhead view
+change, so it is intentionally excluded from model input.
 
-For this task, `base_camera` is world-fixed. Its approximate projection is base
-`+y` toward image left, base `+z` toward image up, and base `+x` deeper into
-the scene with an upward image component. These are approximate image
-relations, not a claim that all three base axes lie in the image plane.
-`overhead_camera` is attached to the robot's `link_camera`; it is
-robot-mounted, so the integration does not claim a fixed world-axis-to-image
-direction for that view. `camera.manager: fixed` means the benchmark selects a
-fixed camera set; it does not make a robot-mounted upstream camera world-fixed.
+`overhead_camera` is attached to the robot's `link_camera`. The benchmark does
+not command the mobile base, and a real nonzero arm action left the camera pose
+matrix exactly unchanged while changing the RGB frame. Using the pinned
+SAPIEN/OpenCV camera convention and runtime pose, base `+y` projects
+approximately image-left, base `+x` mainly away from the camera with an
+image-up component, and base `+z` image-up while pointing partly toward the
+camera. These static directional relations are public; the numeric runtime
+pose and intrinsic matrix are not serialized into model requests.
+
+Model requests contain the task text, public control contract, selected RGB,
+and the model's own action/reflection history. They do not contain simulator
+state, reward, success, distance, object or end-effector pose, native simulator
+action, seed, or sampled mapping/frame-transform parameters.
 
 ## MLLM Evaluation
 

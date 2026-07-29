@@ -21,10 +21,6 @@ camera:
   manager: fixed
   visible_metadata: true
   cameras:
-    - name: image/base_camera
-      type: simpler_env_rgb
-      width: 128
-      height: 128
     - name: image/overhead_camera
       type: simpler_env_rgb
       width: 640
@@ -50,12 +46,12 @@ control_interface:
     normalize_action is false: mapped magnitude-1 translation and rotation
     commands are scaled to 0.05 meters and 0.1 radians respectively. After the
     hidden mapping and frame transform, no additional sign compensation is
-    applied. base_camera is world-fixed: base +y is approximately image left,
-    base +x moves mainly deeper into the scene with an upward image component,
-    and base +z is image up. overhead_camera is robot-mounted, so no fixed
-    world-to-image direction is claimed. The continuous gripper command maps
-    linearly from 0 open to 1 closed; 0.5 emits native zero and holds the
-    previous gripper target
+    applied. overhead_camera is mounted to link_camera, whose pose remains fixed
+    for this arm-only benchmark: base +y projects approximately toward image
+    left, base +x mainly away from the camera with an upward image component,
+    and base +z toward image up while pointing partly toward the camera. The
+    continuous gripper command maps linearly from 0 open to 1 closed; 0.5 emits
+    native zero and holds the previous gripper target
   gripper_open_command: 0
   gripper_closed_command: 1
   gripper_hold_command: 0.5
@@ -102,7 +98,7 @@ agent:
     response_format: json_object
     stream: false
   observation:
-    cameras: [image/base_camera, image/overhead_camera]
+    cameras: [image/overhead_camera]
     image_max_side: 512
   history:
     action_window: all

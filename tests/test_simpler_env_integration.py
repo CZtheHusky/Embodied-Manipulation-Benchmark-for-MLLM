@@ -38,7 +38,7 @@ MLLM_CONFIGS = (
         False,
     ),
 )
-PUBLIC_CAMERAS = ("image/base_camera", "image/overhead_camera")
+PUBLIC_CAMERAS = ("image/overhead_camera",)
 PRIVATE_SENTINELS = {
     "state": "PRIVATE_STATE_SENTINEL",
     "reward": "PRIVATE_REWARD_SENTINEL",
@@ -167,6 +167,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert config.logging.save_video is False
     assert config.task.params["reject_initial_success"] is True
     assert config.agent.observation.cameras == PUBLIC_CAMERAS
+    assert tuple(camera.name for camera in config.camera.cameras) == PUBLIC_CAMERAS
     assert config.control_interface.active_dimensions == (
         "dx",
         "dy",
@@ -203,13 +204,14 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert "base +z is world +z" in frame_description
     assert "normalize_action is false" in frame_description
     assert "scaled to 0.05 meters and 0.1 radians respectively" in frame_description
-    assert "base_camera is world-fixed" in frame_description
-    assert "base +y is approximately image left" in frame_description
-    assert "base +z is image up" in frame_description
-    assert "base +x moves mainly deeper into the scene" in frame_description
+    assert "overhead_camera is mounted to link_camera" in frame_description
+    assert "pose remains fixed for this arm-only benchmark" in frame_description
+    assert "base +y projects approximately toward image left" in frame_description
+    assert "base +x mainly away from the camera" in frame_description
     assert "upward image component" in frame_description
-    assert "overhead_camera is robot-mounted" in frame_description
-    assert "no fixed world-to-image direction is claimed" in frame_description
+    assert "base +z toward image up" in frame_description
+    assert "pointing partly toward the camera" in frame_description
+    assert "base_camera" not in frame_description
     if visible:
         assert "with no sign compensation" in frame_description
     else:
@@ -277,13 +279,14 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "normalize_action is false" in baseline_prompt
     assert "scaled to 0.05 meters and 0.1 radians respectively" in baseline_prompt
     assert "with no sign compensation" in baseline_prompt
-    assert "base_camera is world-fixed" in baseline_prompt
-    assert "base +y is approximately image left" in baseline_prompt
-    assert "base +z is image up" in baseline_prompt
-    assert "base +x moves mainly deeper into the scene" in baseline_prompt
+    assert "overhead_camera is mounted to link_camera" in baseline_prompt
+    assert "pose remains fixed for this arm-only benchmark" in baseline_prompt
+    assert "base +y projects approximately toward image left" in baseline_prompt
+    assert "base +x mainly away from the camera" in baseline_prompt
     assert "upward image component" in baseline_prompt
-    assert "overhead_camera is robot-mounted" in baseline_prompt
-    assert "no fixed world-to-image direction is claimed" in baseline_prompt
+    assert "base +z toward image up" in baseline_prompt
+    assert "pointing partly toward the camera" in baseline_prompt
+    assert "base_camera" not in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_5 -> dyaw" in baseline_prompt
     assert "direct control" in baseline_prompt
@@ -299,11 +302,13 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "scaled to 0.05 meters and 0.1 radians respectively" in perturbed_prompt
     assert "no additional sign compensation is applied" in perturbed_prompt
     assert "fixed 180-degree yaw" in perturbed_prompt
-    assert "base_camera is world-fixed" in perturbed_prompt
-    assert "base +y is approximately image left" in perturbed_prompt
+    assert "overhead_camera is mounted to link_camera" in perturbed_prompt
+    assert "pose remains fixed for this arm-only benchmark" in perturbed_prompt
+    assert "base +y projects approximately toward image left" in perturbed_prompt
+    assert "base +x mainly away from the camera" in perturbed_prompt
+    assert "base +z toward image up" in perturbed_prompt
     assert "0.5 means hold" in perturbed_prompt
-    assert "overhead_camera is robot-mounted" in perturbed_prompt
-    assert "no fixed world-to-image direction is claimed" in perturbed_prompt
+    assert "base_camera" not in perturbed_prompt
     assert (
         "Infer the hidden controls from visual observations and your own action "
         "history"
@@ -555,10 +560,10 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert episode.termination_reason == "max_steps"
     assert len(client.requests) == 4
     assert [_request_image_count(request) for request in client.requests] == [
+        1,
         2,
+        3,
         4,
-        6,
-        8,
     ]
     assert [
         sum(message["role"] == "assistant" for message in request.messages)
@@ -569,7 +574,8 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
         _request_text(request)
         for request in client.requests
     )
-    assert "Camera order: image/base_camera, image/overhead_camera" in request_text
+    assert "Camera order: image/overhead_camera" in request_text
+    assert "image/base_camera" not in request_text
     assert "Segmentation" not in request_text
     assert "pick coke can" in request_text
     assert "success" not in request_text.lower()
@@ -600,7 +606,8 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     )
 
     pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))
-    assert len(pngs) == 8
+    assert len(pngs) == 4
+    assert len({path.read_bytes() for path in pngs}) == 4
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))
