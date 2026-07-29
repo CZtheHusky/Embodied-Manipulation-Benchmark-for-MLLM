@@ -52,17 +52,19 @@ class PusherFakeClient:
 
 
 @pytest.mark.parametrize(
-    ("config_path", "mapping_strategy", "frame_transform"),
+    ("config_path", "mapping_strategy", "frame_transform", "visible"),
     [
         (
             "configs/pusher_delta_eef_mllm_reflection.yaml",
             "fixed",
             "identity",
+            True,
         ),
         (
             "configs/pusher_delta_eef_mllm_reflection_perturbed.yaml",
             "permuted_sign_flipped",
             "random_rotation_3d",
+            False,
         ),
     ],
 )
@@ -70,6 +72,7 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
     config_path,
     mapping_strategy,
     frame_transform,
+    visible,
 ):
     config = load_config(config_path)
 
@@ -81,6 +84,8 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
     assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
+    assert config.control_interface.mapping_visible_to_agent is visible
+    assert config.control_interface.frame_visible_to_agent is visible
     assert config.control_interface.control_frame_description == (
         "the Gymnasium Pusher world x, y, and z axes"
     )
@@ -92,9 +97,18 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
         assert "frame-random_rotation_3d" in group
 
 
+@pytest.mark.parametrize(
+    ("config_path", "visible"),
+    [
+        ("configs/pusher_delta_eef_mllm_reflection.yaml", True),
+        ("configs/pusher_delta_eef_mllm_reflection_perturbed.yaml", False),
+    ],
+)
 def test_pusher_fake_client_closes_public_visual_loop(
     monkeypatch,
     tmp_path,
+    config_path,
+    visible,
 ):
     pytest.importorskip("gymnasium")
     client = PusherFakeClient()
@@ -106,7 +120,7 @@ def test_pusher_fake_client_closes_public_visual_loop(
         lambda **_kwargs: client,
     )
     config = load_config(
-        "configs/pusher_delta_eef_mllm_reflection.yaml",
+        config_path,
         (
             "task.max_steps=2",
             f"logging.output_dir={tmp_path}",
@@ -123,6 +137,15 @@ def test_pusher_fake_client_closes_public_visual_loop(
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "Gymnasium Pusher world x, y, and z axes" in request_text
     assert "Move the white cylinder to the red goal disk" in request_text
+    if visible:
+        assert "joystick_0 -> dx" in request_text
+        assert "No additional control-frame rotation is applied" in request_text
+    else:
+        assert "exact joystick-to-dimension mapping is not disclosed" in request_text
+        assert "exact physical-frame transform is not disclosed" in request_text
+        assert "permuted_sign_flipped" not in request_text
+        assert "random_rotation_3d" not in request_text
+        assert "rotation_matrix" not in request_text
     for forbidden in (
         "object_goal_distance",
         "fingertip_object_distance",
