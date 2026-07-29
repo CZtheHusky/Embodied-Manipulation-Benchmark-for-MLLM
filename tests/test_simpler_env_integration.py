@@ -105,6 +105,9 @@ class FakeInitiallySuccessfulSimplerEnv:
         }
         self.get_info_calls = 0
         self.evaluate_calls = 0
+        self.consecutive_grasp = 2
+        self.lifted_obj = False
+        self.episode_stats = {"grasped": False, "success_at": None}
         self.closed = False
 
     def reset(self, seed):
@@ -124,6 +127,10 @@ class FakeInitiallySuccessfulSimplerEnv:
 
     def evaluate(self):
         self.evaluate_calls += 1
+        self.consecutive_grasp += 1
+        self.lifted_obj = True
+        self.episode_stats["grasped"] = True
+        self.episode_stats["success_at"] = 0
         return {
             "success": True,
             "episode_stats": {"grasped": True},
@@ -166,6 +173,11 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert config.agent.history.image_window == 3
     assert config.logging.save_video is False
     assert config.task.params["reject_initial_success"] is True
+    assert config.simulator.params["reset_evaluator_state_fields"] == [
+        "consecutive_grasp",
+        "lifted_obj",
+        "episode_stats",
+    ]
     assert config.agent.observation.cameras == PUBLIC_CAMERAS
     assert tuple(camera.name for camera in config.camera.cameras) == PUBLIC_CAMERAS
     assert config.control_interface.active_dimensions == (
@@ -414,6 +426,9 @@ def test_simpler_env_rejects_evaluator_success_before_model_request(
     assert "success" not in fake_env.reset_observation
     assert fake_env.get_info_calls == 1
     assert fake_env.evaluate_calls == 1
+    assert fake_env.consecutive_grasp == 2
+    assert fake_env.lifted_obj is False
+    assert fake_env.episode_stats == {"grasped": False, "success_at": None}
     assert fake_env.closed is True
     assert client.requests == []
 

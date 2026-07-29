@@ -19,6 +19,11 @@ class DMControlSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
         if config.type != "dmcontrol":
             raise ValueError(f"Unsupported simulator type: {config.type}")
+        if bool(config.params.get("visualize_reward", False)):
+            raise ValueError(
+                "DMControl visualize_reward must remain false because it encodes "
+                "privileged reward information in public RGB observations"
+            )
 
         os.environ.setdefault("MUJOCO_GL", str(config.params.get("mujoco_gl", "egl")))
 
@@ -42,7 +47,7 @@ class DMControlSimAdapter(SimAdapter):
             domain_name=domain_name,
             task_name=task_name,
             task_kwargs=config.env_kwargs,
-            visualize_reward=bool(config.params.get("visualize_reward", False)),
+            visualize_reward=False,
         )
 
         self.step_id = 0
@@ -71,8 +76,7 @@ class DMControlSimAdapter(SimAdapter):
         self.last_timestep = self.env.step(native_action)
         self.step_id += 1
 
-        terminated = self.last_timestep.last()
-        truncated = False
+        terminated, truncated = self._termination_flags(self.last_timestep)
 
         return StepResult(
             observation=self._observation(),
@@ -177,6 +181,15 @@ class DMControlSimAdapter(SimAdapter):
                 "task": self.task_name,
             },
         )
+
+    @staticmethod
+    def _termination_flags(timestep: Any) -> tuple[bool, bool]:
+        if not bool(timestep.last()):
+            return False, False
+        discount = getattr(timestep, "discount", None)
+        if discount is not None and float(discount) > 0.0:
+            return False, True
+        return True, False
 
     def _jsonable_array(self, value: Any) -> Any:
         try:

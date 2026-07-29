@@ -43,6 +43,7 @@ class RoboCasaSimAdapter(SimAdapter):
         self._last_terminated = False
         self._last_truncated = False
         self._last_info = dict(info)
+        self._last_info["success"] = self._native_success()
         self._step_id = 0
         return self._format_observation(obs)
 
@@ -143,9 +144,30 @@ class RoboCasaSimAdapter(SimAdapter):
     def _success(self) -> bool:
         if "success" in self._last_info:
             return bool(self._last_info["success"])
-        if self._env is not None and hasattr(self._env, "_check_success"):
-            return bool(self._env._check_success())
+        if self._env is not None:
+            return self._native_success()
         return False
+
+    def _native_success(self) -> bool:
+        pending = [getattr(self._env, "unwrapped", None), self._env]
+        visited: set[int] = set()
+        while pending:
+            candidate = pending.pop(0)
+            if candidate is None or id(candidate) in visited:
+                continue
+            visited.add(id(candidate))
+            check_success = getattr(candidate, "_check_success", None)
+            if callable(check_success):
+                return bool(check_success())
+            pending.extend(
+                (
+                    getattr(candidate, "unwrapped", None),
+                    getattr(candidate, "env", None),
+                )
+            )
+        raise RuntimeError(
+            "RoboCasa environment does not expose the native _check_success() oracle"
+        )
 
     def _robocasa_gym_module(self) -> Any:
         try:

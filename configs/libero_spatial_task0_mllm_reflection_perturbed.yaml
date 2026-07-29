@@ -11,6 +11,7 @@ simulator:
     task_id: 0
     task_order_index: 0
     init_state_strategy: seed_modulo
+    settling_steps: 5
     horizon: 200
     control_freq: 20
     camera_names: [agentview, robot0_eye_in_hand]

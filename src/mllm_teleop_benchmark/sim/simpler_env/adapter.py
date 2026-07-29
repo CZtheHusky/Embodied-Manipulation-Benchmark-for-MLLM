@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 import numpy as np
@@ -31,7 +32,7 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.step_id = 0
         self.last_truncated = False
         native_obs, reset_info = self._reset_native(seed)
-        evaluator_info = self._evaluator_info()
+        evaluator_info = self._reset_evaluator_info()
         reset_info.update(evaluator_info)
         self.last_native_obs = native_obs
         self.last_info = reset_info
@@ -151,6 +152,43 @@ class SimplerEnvSimAdapter(SimAdapter):
             raise RuntimeError("SimplerEnv get_info() did not return required success")
         return info
 
+    def _reset_evaluator_info(self) -> dict[str, Any]:
+        raw_fields = self.config.params.get("reset_evaluator_state_fields")
+        if not isinstance(raw_fields, (list, tuple)) or not raw_fields:
+            raise RuntimeError(
+                "SimplerEnv simulator.params.reset_evaluator_state_fields must "
+                "declare the evaluator bookkeeping restored after reset inspection"
+            )
+        fields = tuple(str(field) for field in raw_fields)
+        owner = self._evaluator_state_owner(fields)
+        snapshots = {field: deepcopy(getattr(owner, field)) for field in fields}
+        try:
+            return self._evaluator_info()
+        finally:
+            for field, value in snapshots.items():
+                setattr(owner, field, value)
+
+    def _evaluator_state_owner(self, fields: tuple[str, ...]) -> Any:
+        pending = [getattr(self.env, "unwrapped", None), self.env]
+        visited: set[int] = set()
+        while pending:
+            candidate = pending.pop(0)
+            if candidate is None or id(candidate) in visited:
+                continue
+            visited.add(id(candidate))
+            if all(hasattr(candidate, field) for field in fields):
+                return candidate
+            pending.extend(
+                (
+                    getattr(candidate, "unwrapped", None),
+                    getattr(candidate, "env", None),
+                )
+            )
+        raise RuntimeError(
+            "SimplerEnv evaluator bookkeeping fields are unavailable: "
+            + ", ".join(fields)
+        )
+
     def _native_action(self, action: SimplerEnvAction) -> tuple[np.ndarray, dict[str, Any]]:
         values = np.asarray(action.values, dtype=np.float32)
         if values.shape != (7,):
@@ -199,10 +237,25 @@ class SimplerEnvSimAdapter(SimAdapter):
         )
 
     def _language_instruction(self) -> str | None:
-        if self.env is None or not hasattr(self.env, "get_language_instruction"):
+        if self.env is None:
+            return None
+        get_instruction = None
+        get_wrapper_attr = getattr(self.env, "get_wrapper_attr", None)
+        if callable(get_wrapper_attr):
+            try:
+                get_instruction = get_wrapper_attr("get_language_instruction")
+            except AttributeError:
+                pass
+        if get_instruction is None:
+            get_instruction = getattr(
+                getattr(self.env, "unwrapped", self.env),
+                "get_language_instruction",
+                None,
+            )
+        if not callable(get_instruction):
             return None
         try:
-            return str(self.env.get_language_instruction())
+            return str(get_instruction())
         except Exception:
             return None
 

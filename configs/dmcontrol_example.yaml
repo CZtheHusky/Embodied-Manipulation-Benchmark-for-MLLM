@@ -17,7 +17,8 @@ task:
   success_threshold: 0.95
   params:
     instruction: "Bring the ball to the target area."
-    success_key: "reward"
+    success_key: current_reward
+    reject_initial_success: true
 
 camera:
   manager: fixed

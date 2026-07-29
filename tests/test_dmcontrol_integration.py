@@ -28,6 +28,7 @@ from mllm_teleop_benchmark.core.types import (
     DMControlAction,
     DMControlPlanarEEFAction,
 )
+from mllm_teleop_benchmark.sim.dmcontrol.adapter import DMControlSimAdapter
 from mllm_teleop_benchmark.ui.runtime import (
     PlayerCommand,
     PlayerRuntimeResult,
@@ -123,6 +124,47 @@ def test_dmcontrol_short_episode(tmp_path):
     assert 1 <= result.episodes[0].steps <= 2
     assert "reward" in result.episodes[0].metrics
     assert "success" in result.episodes[0].metrics
+
+
+def test_dmcontrol_example_uses_reset_safe_success_oracle():
+    config = load_config("configs/dmcontrol_example.yaml")
+
+    assert config.task.params["success_key"] == "current_reward"
+    assert config.task.params["reject_initial_success"] is True
+
+
+def test_dmcontrol_distinguishes_terminal_and_time_limit_last_steps():
+    class StubTimestep:
+        def __init__(self, last, discount):
+            self._last = last
+            self.discount = discount
+
+        def last(self):
+            return self._last
+
+    assert DMControlSimAdapter._termination_flags(StubTimestep(False, 1.0)) == (
+        False,
+        False,
+    )
+    assert DMControlSimAdapter._termination_flags(StubTimestep(True, 0.0)) == (
+        True,
+        False,
+    )
+    assert DMControlSimAdapter._termination_flags(StubTimestep(True, 1.0)) == (
+        False,
+        True,
+    )
+
+
+def test_dmcontrol_rejects_reward_visualization_in_public_rgb():
+    config = load_config("configs/dmcontrol_example.yaml")
+    simulator = replace(
+        config.simulator,
+        params={**config.simulator.params, "visualize_reward": True},
+    )
+
+    with pytest.raises(ValueError, match="privileged reward"):
+        DMControlSimAdapter(simulator)
 
 
 def test_dmcontrol_manipulator_native_action_is_actuator_space():

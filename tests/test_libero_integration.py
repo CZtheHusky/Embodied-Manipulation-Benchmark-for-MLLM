@@ -277,10 +277,66 @@ def test_libero_human_play_config_keeps_explicit_fixed_initial_state():
     config = load_config("configs/libero_spatial_task0.yaml")
     adapter = LiberoSimAdapter(config.simulator)
 
+    assert config.simulator.params["settling_steps"] == 5
+    assert config.task.params["reject_initial_success"] is True
     assert adapter._select_init_state(config.task, seed=42, init_state_count=50) == (
         0,
         "fixed",
     )
+
+
+def test_libero_adapter_uses_official_settling_steps_without_counting_policy_steps():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    adapter = LiberoSimAdapter(config.simulator)
+
+    class StubEnv:
+        def __init__(self):
+            self.actions = []
+
+        def step(self, action):
+            self.actions.append(np.asarray(action).copy())
+            return (
+                {"settling_index": len(self.actions)},
+                0.0,
+                False,
+                {"success": False},
+            )
+
+        def check_success(self):
+            return False
+
+    adapter.env = StubEnv()
+    adapter.last_native_obs = {"settling_index": 0}
+
+    adapter._settle_after_init_state()
+
+    assert len(adapter.env.actions) == 5
+    assert all(action.shape == (7,) for action in adapter.env.actions)
+    assert all(np.count_nonzero(action) == 0 for action in adapter.env.actions)
+    assert adapter.last_native_obs["settling_index"] == 5
+    assert adapter.step_id == 0
+    assert adapter.last_reward is None
+    assert adapter.last_done is False
+
+
+def test_libero_native_horizon_preserves_policy_budget_after_settling():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    adapter = LiberoSimAdapter(config.simulator)
+
+    env_args = adapter._env_args(config.task, "task.bddl")
+
+    assert config.task.max_steps == 200
+    assert config.simulator.params["horizon"] == 200
+    assert env_args["horizon"] == 205
+
+
+def test_libero_adapter_rejects_instruction_that_does_not_match_selected_task():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    adapter = LiberoSimAdapter(config.simulator)
+    task = type("StubTask", (), {"language": "different upstream instruction"})()
+
+    with pytest.raises(ValueError, match="does not match"):
+        adapter._validate_language_instruction(config.task, task)
 
 
 def test_libero_adapter_flips_raw_opengl_images_exactly_once():
@@ -373,6 +429,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
     assert config.task.params["language_instruction"] == TASK_TEXT
     assert config.task.params["random_baseline"] is False
     assert config.task.params["reject_initial_success"] is True
+    assert config.simulator.params["settling_steps"] == 5
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"

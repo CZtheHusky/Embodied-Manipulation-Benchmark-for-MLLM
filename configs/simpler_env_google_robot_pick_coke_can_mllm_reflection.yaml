@@ -7,6 +7,8 @@ simulator:
   type: simpler_env
   env_id: google_robot_pick_coke_can
   render_mode: rgb_array
+  params:
+    reset_evaluator_state_fields: [consecutive_grasp, lifted_obj, episode_stats]
 
 task:
   type: simpler_env_generic

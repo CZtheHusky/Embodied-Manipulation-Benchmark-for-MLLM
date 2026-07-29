@@ -569,6 +569,38 @@ def test_robocasa_runtime_smoke_reset_step_render_close():
         adapter.close()
 
 
+def test_robocasa_reset_uses_native_success_instead_of_wrapper_placeholder(
+    monkeypatch,
+):
+    config = load_config(MLLM_CONFIGS[0][0])
+
+    class NativeEnv:
+        def _check_success(self):
+            return True
+
+    class StubEnv:
+        def __init__(self):
+            self.env = NativeEnv()
+            self.unwrapped = self
+
+        def reset(self, seed):
+            return {}, {"success": False, "seed": seed}
+
+        def close(self):
+            pass
+
+    stub_env = StubEnv()
+    gym = type("StubGym", (), {"make": staticmethod(lambda *_args, **_kwargs: stub_env)})
+    adapter = RoboCasaSimAdapter(config.simulator)
+    monkeypatch.setattr(adapter, "_robocasa_gym_module", lambda: gym)
+
+    observation = adapter.reset(config.task, seed=42)
+
+    assert observation.metadata["success"] is True
+    assert adapter.get_state()["is_success"] is True
+    assert adapter.get_state()["info"]["success"] is True
+
+
 def test_robocasa_experiment_seeds_reset_rgb_canary():
     _require_robocasa()
     config = load_config(MLLM_CONFIGS[0][0])
@@ -587,6 +619,7 @@ def test_robocasa_experiment_seeds_reset_rgb_canary():
             assert adapter.get_state()["is_success"] is False, (
                 f"RoboCasa seed {seed} is successful immediately after reset"
             )
+            assert adapter.get_state()["is_success"] == adapter._native_success()
             for camera in PUBLIC_CAMERAS:
                 assert camera in observation.images, (
                     f"RoboCasa seed {seed} is missing public camera {camera}"

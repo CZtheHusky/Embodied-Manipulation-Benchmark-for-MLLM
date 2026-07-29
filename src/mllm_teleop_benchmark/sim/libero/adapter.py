@@ -49,6 +49,7 @@ class LiberoSimAdapter(SimAdapter):
             raise ValueError(f"Unsupported LIBERO suite {suite_name!r}; available suites: {sorted(benchmark_dict)}")
         task_suite = benchmark_dict[suite_name](task_order_index=task_order_index)
         task = task_suite.get_task(task_id)
+        self._validate_language_instruction(task_config, task)
         bddl_file = task_suite.get_task_bddl_file_path(task_id)
         if not Path(bddl_file).exists():
             raise FileNotFoundError(f"LIBERO BDDL file is missing: {bddl_file}")
@@ -74,6 +75,7 @@ class LiberoSimAdapter(SimAdapter):
         self.env.reset()
 
         self.last_native_obs = self.env.set_init_state(init_states[init_state_id])
+        self._settle_after_init_state()
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
@@ -196,7 +198,16 @@ class LiberoSimAdapter(SimAdapter):
         env_args.setdefault("camera_heights", height)
         env_args.setdefault("camera_widths", width)
         env_args.setdefault("use_camera_obs", True)
-        env_args.setdefault("horizon", int(self.config.params.get("horizon", task_config.max_steps)))
+        policy_horizon = int(
+            self.config.params.get("horizon", task_config.max_steps)
+        )
+        required_native_horizon = policy_horizon + self._settling_steps()
+        if "horizon" in env_args and int(env_args["horizon"]) < required_native_horizon:
+            raise ValueError(
+                "LIBERO env_kwargs.horizon must include both the policy action "
+                f"budget and settling steps; expected at least {required_native_horizon}"
+            )
+        env_args.setdefault("horizon", required_native_horizon)
         env_args.setdefault("control_freq", int(self.config.params.get("control_freq", 20)))
         env_args.setdefault("hard_reset", bool(self.config.params.get("hard_reset", True)))
         if "render_gpu_device_id" in self.config.params:
@@ -237,9 +248,49 @@ class LiberoSimAdapter(SimAdapter):
             "task_name": str(getattr(task, "name", "")),
             "init_state_id": init_state_id,
             "init_state_strategy": init_state_strategy,
+            "settling_steps": self._settling_steps(),
             "no_language_baseline": bool(task_config.params.get("no_language_baseline", False)),
             "random_baseline": bool(task_config.params.get("random_baseline", False)),
         }
+
+    def _validate_language_instruction(self, task_config: TaskConfig, task: Any) -> None:
+        configured = task_config.params.get("language_instruction")
+        if configured is None:
+            raise ValueError(
+                "LIBERO task.params.language_instruction is required so the "
+                "public instruction can be checked against the selected upstream task"
+            )
+        upstream = getattr(task, "language", None)
+        if upstream is None:
+            raise RuntimeError("Selected LIBERO task does not expose its language instruction")
+        configured_text = " ".join(str(configured).split())
+        upstream_text = " ".join(str(upstream).split())
+        if configured_text != upstream_text:
+            raise ValueError(
+                "Configured LIBERO language instruction does not match the selected "
+                f"upstream task: configured={configured_text!r}, upstream={upstream_text!r}"
+            )
+
+    def _settle_after_init_state(self) -> None:
+        if self.env is None:
+            raise RuntimeError("LIBERO environment has not been reset")
+        settling_steps = self._settling_steps()
+        for _ in range(settling_steps):
+            obs, _reward, done, info = self.env.step(
+                np.zeros(7, dtype=np.float32)
+            )
+            self.last_native_obs = obs
+            self.last_done = bool(done)
+            self.last_info = self._jsonable_mapping(info)
+        if settling_steps:
+            self.last_done = self._check_success()
+        self.last_reward = None
+
+    def _settling_steps(self) -> int:
+        settling_steps = int(self.config.params.get("settling_steps", 5))
+        if settling_steps < 0:
+            raise ValueError("LIBERO simulator.params.settling_steps must be non-negative")
+        return settling_steps
 
     def _select_init_state(
         self,
