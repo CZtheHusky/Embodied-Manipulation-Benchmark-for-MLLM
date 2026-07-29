@@ -193,6 +193,12 @@ class RunAuditor:
         if summary is not None:
             report["success"] = summary.get("success")
             report["termination_reason"] = summary.get("termination_reason")
+            if not trajectory:
+                self.add(
+                    "error",
+                    "episode_has_no_model_steps",
+                    self.rel(episode_dir / "trajectory.jsonl"),
+                )
             summary_steps = summary.get("steps")
             report["counts"]["summary_steps"] = summary_steps
             if not _is_int(summary_steps):

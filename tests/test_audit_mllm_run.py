@@ -187,6 +187,31 @@ def test_requested_episode_count_mismatch_is_incomplete(monkeypatch, tmp_path):
     }
 
 
+def test_zero_step_episode_is_not_counted_as_model_trajectory(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_dir = run_dir / "episode_0000"
+    episode_summary = json.loads(
+        (episode_dir / "summary.json").read_text(encoding="utf-8")
+    )
+    episode_summary["steps"] = 0
+    _write_json(episode_dir / "summary.json", episode_summary)
+    run_summary = json.loads(
+        (run_dir / "run_summary.json").read_text(encoding="utf-8")
+    )
+    run_summary["episodes"][0]["steps"] = 0
+    _write_json(run_dir / "run_summary.json", run_summary)
+    (episode_dir / "trajectory.jsonl").write_text("", encoding="utf-8")
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert report["counts"]["steps"] == 0
+    assert "episode_has_no_model_steps" in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
 def test_prompt_privacy_checks_exact_keys_and_hidden_control_names(
     monkeypatch,
     tmp_path,
