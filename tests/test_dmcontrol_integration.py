@@ -274,6 +274,8 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
     assert "active controllable dimensions are: dx, dy" in baseline_prompt
     assert "only dx and dy are active and there is no dz or rotation command" in baseline_prompt
     assert "control dy is world z" in baseline_prompt
+    assert "positive direction projects toward image right" in baseline_prompt
+    assert "positive direction projects toward image up" in baseline_prompt
     assert "mapped magnitude-1 command requests a 0.03 m" in baseline_prompt
     assert "hand camera tracks the moving hand" in baseline_prompt
     assert "must not be applied to the hand view" in baseline_prompt
@@ -300,6 +302,8 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
     assert "remain fixed for the entire episode" in perturbed_prompt
     assert "magnitude 1 requests a 0.03 m" in perturbed_prompt
+    assert "world +x projects toward image right" in perturbed_prompt
+    assert "world +z projects toward image up" in perturbed_prompt
     assert "hand camera tracks the moving hand" in perturbed_prompt
     assert "joystick_0 ->" not in perturbed_prompt
     assert "mapping" not in perturbed_metadata
@@ -516,6 +520,8 @@ def test_dmcontrol_mllm_fake_client_preserves_history_rgb_and_privacy(
 
     request_text = "\n".join(_request_text(request) for request in client.requests)
     request_text_lower = request_text.lower()
+    assert "image right" in request_text
+    assert "image up" in request_text
     for forbidden in (
         "observation/",
         "arm_pos",

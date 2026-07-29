@@ -51,9 +51,9 @@ control_interface:
     or rotation command: before the hidden episode-fixed planar transform,
     control dx denotes world x and control dy denotes world z, and mapped
     magnitude 1 requests a 0.03 m Cartesian target displacement. In the fixed
-    camera world x is image horizontal and world z is image vertical. The hand
-    camera tracks the moving hand, so the fixed camera's image-axis relation
-    must not be applied to the hand view
+    camera world +x projects toward image right and world +z projects toward
+    image up. The hand camera tracks the moving hand, so the fixed camera's
+    image-axis relation must not be applied to the hand view
   gripper_open_command: 0
   gripper_closed_command: 1
   gripper_hold_command: 0.5

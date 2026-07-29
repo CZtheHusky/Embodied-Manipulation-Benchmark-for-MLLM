@@ -48,8 +48,9 @@ control_interface:
   frame_visible_to_agent: true
   control_frame_description: >-
     the 2D MuJoCo world x-z plane; only dx and dy are active and there is no dz
-    or rotation command: control dx is world x (image horizontal in the fixed
-    camera), control dy is world z (image vertical in the fixed camera), and a
+    or rotation command: control dx is world x, whose positive direction
+    projects toward image right in the fixed camera; control dy is world z,
+    whose positive direction projects toward image up in the fixed camera. A
     mapped magnitude-1 command requests a 0.03 m Cartesian target displacement.
     The hand camera tracks the moving hand, so the fixed camera's image-axis
     relation must not be applied to the hand view

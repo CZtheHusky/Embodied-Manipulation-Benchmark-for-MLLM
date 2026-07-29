@@ -22,19 +22,19 @@ Its public action is:
 dx, dy, gripper
 ```
 
-- `dx` is end-effector translation along MuJoCo world x, horizontal in the
-  fixed camera.
-- `dy` is end-effector translation along MuJoCo world z, vertical in the
-  fixed camera.
+- `dx` is end-effector translation along MuJoCo world x; world `+x` projects
+  image-right in the fixed camera.
+- `dy` is end-effector translation along MuJoCo world z; world `+z` projects
+  image-up in the fixed camera.
 - gripper `0` applies maximum opening effort, `0.5` applies no gripper effort,
   and `1` applies maximum closing effort.
 
 A mapped motion magnitude of `1` requests a `0.03 m` Cartesian target
 displacement before the Cartesian-impedance conversion. The upstream
-`manipulator.xml` defines the fixed camera with image x aligned to world x and
-image y aligned to world z. The `hand` camera uses MuJoCo `mode="track"` and
-moves with the hand, so the fixed camera's image-axis relation is never claimed
-for that view.
+`manipulator.xml` defines the fixed camera with its positive image-x axis
+aligned to world `+x` and positive image-y/up axis aligned to world `+z`. The
+`hand` camera uses MuJoCo `mode="track"` and moves with the hand, so the fixed
+camera's image-axis relation is never claimed for that view.
 
 The controller emits `DMControlPlanarEEFAction`, not a five-element native
 motor vector. At the simulator boundary, `DMControlSimAdapter` reads the
