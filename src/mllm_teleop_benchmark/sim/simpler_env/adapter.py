@@ -22,19 +22,21 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.last_native_obs: Any = None
         self.last_info: dict[str, Any] = {}
         self.last_reward: float | None = None
-        self.last_success = False
+        self.last_success: bool | None = None
         self.last_truncated = False
         self.last_render: Any = None
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
         self._ensure_env()
         self.step_id = 0
-        self.last_success = False
         self.last_truncated = False
-        native_obs, info = self._reset_native(seed)
+        native_obs, reset_info = self._reset_native(seed)
+        evaluator_info = self._evaluator_info()
+        reset_info.update(evaluator_info)
         self.last_native_obs = native_obs
-        self.last_info = self._jsonable_mapping(info)
+        self.last_info = reset_info
         self.last_reward = None
+        self.last_success = bool(evaluator_info["success"])
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
@@ -128,6 +130,26 @@ class SimplerEnvSimAdapter(SimAdapter):
         if isinstance(reset_result, tuple) and len(reset_result) == 2:
             return reset_result[0], self._jsonable_mapping(reset_result[1])
         return reset_result, {}
+
+    def _evaluator_info(self) -> dict[str, Any]:
+        get_info = None
+        get_wrapper_attr = getattr(self.env, "get_wrapper_attr", None)
+        if callable(get_wrapper_attr):
+            try:
+                get_info = get_wrapper_attr("get_info")
+            except AttributeError:
+                pass
+        if get_info is None:
+            get_info = getattr(self.env, "get_info", None)
+        if not callable(get_info):
+            raise RuntimeError(
+                "SimplerEnv environment does not expose the public get_info() evaluator path"
+            )
+
+        info = self._jsonable_mapping(get_info())
+        if "success" not in info:
+            raise RuntimeError("SimplerEnv get_info() did not return required success")
+        return info
 
     def _native_action(self, action: SimplerEnvAction) -> tuple[np.ndarray, dict[str, Any]]:
         values = np.asarray(action.values, dtype=np.float32)

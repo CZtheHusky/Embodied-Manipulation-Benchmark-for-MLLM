@@ -139,8 +139,11 @@ BACKENDS: dict[str, dict[str, object]] = {
         "smoke": [
             [
                 "python",
-                "-m",
-                "pytest",
+                "-c",
+                (
+                    "import simpler_env; import mani_skill2_real2sim; "
+                    "import pytest, sys; raise SystemExit(pytest.main(sys.argv[1:]))"
+                ),
                 "-q",
                 "tests/test_simpler_env_backend.py",
                 "tests/test_simpler_env_integration.py",

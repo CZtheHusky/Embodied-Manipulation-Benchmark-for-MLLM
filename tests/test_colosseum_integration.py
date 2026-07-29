@@ -13,6 +13,7 @@ import pytest
 from PIL import Image
 
 from mllm_teleop_benchmark import BenchmarkRunner
+from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.agents.base import AgentContext
 from mllm_teleop_benchmark.agents.model_client import (
     ModelClient,
@@ -122,6 +123,41 @@ class ColosseumFakeClient(ModelClient):
             attempts=1,
             request_bytes=len(request.encoded_body()),
         )
+
+
+class DeterministicTaskEnvironmentStub:
+    def __init__(self) -> None:
+        self.variation = 0
+        self.reset_complete = False
+        self.success_calls = 0
+        self._task = self
+
+    def variation_count(self):
+        return 2
+
+    def set_variation(self, variation):
+        self.variation = int(variation)
+
+    def reset(self):
+        sample = np.random.uniform(size=3)
+        self.reset_complete = True
+        observation = type(
+            "DeterministicColosseumObservation",
+            (),
+            {
+                "gripper_pose": np.asarray(
+                    [sample[0] * 0.2, sample[1] * 0.2, 0.9 + sample[2] * 0.2, 0, 0, 0, 1],
+                    dtype=np.float32,
+                ),
+                "task_low_dim_state": sample.astype(np.float32),
+            },
+        )()
+        return [f"variation={self.variation}"], observation
+
+    def success(self):
+        assert self.reset_complete
+        self.success_calls += 1
+        return False, False
 
 
 def _load_manage_conda_env():
@@ -271,12 +307,25 @@ def test_colosseum_mllm_configs_are_explicit_and_switchable(
     assert config.simulator.params["spreadsheet_idx"] == 2
     assert config.simulator.params["perturbation"] == "manip_obj_color"
     assert config.task.params["instruction"] == "Close the visible box lid."
+    assert config.task.params["reject_initial_success"] is True
     assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
     assert config.control_interface.gripper == "none"
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
+    frame_description = config.control_interface.control_frame_description or ""
+    assert "translation as the only active motion" in frame_description
+    assert "gripper is fixed open and is not controllable" in frame_description
+    assert "no joystick gripper channel exists" in frame_description
+    if visible:
+        assert "Colosseum/RLBench world Cartesian x, y, and z axes" in frame_description
+        assert "without sign compensation" in frame_description
+    else:
+        assert "hidden joystick mapping produces a controller-frame vector" in frame_description
+        assert "hidden episode-fixed 3D transform rotates that controller vector exactly once" in frame_description
+        assert "delta expressed in the Colosseum/RLBench world Cartesian" in frame_description
+        assert "without another transform or sign compensation" in frame_description
     assert config.controller.scales == {"dx": 0.02, "dy": 0.02, "dz": 0.02}
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
@@ -289,6 +338,100 @@ def test_colosseum_mllm_configs_are_explicit_and_switchable(
         "joystick_0",
         "joystick_1",
         "joystick_2",
+    )
+
+
+def test_colosseum_perturbed_controller_native_action_canary_is_nonzero():
+    config = load_config(
+        "configs/colosseum_close_box_mllm_reflection_perturbed.yaml"
+    )
+    mapping = build_mapping(config, seed=config.benchmark.seed)
+    controller = build_controller(
+        config,
+        mapping,
+        seed=config.benchmark.seed,
+    )
+    joystick_action = JoystickAction(
+        {
+            "joystick_0": 1.0,
+            "joystick_1": 0.0,
+            "joystick_2": 0.0,
+        }
+    )
+    mapped = mapping.map_action(joystick_action)
+    controller_vector = np.asarray(
+        [
+            mapped.get(dimension) * config.controller.scales[dimension]
+            for dimension in ("dx", "dy", "dz")
+        ]
+    )
+    rotation = np.asarray(controller.frame_transform.rotation_matrix)
+    expected_world_delta = rotation @ controller_vector
+
+    sim_action = controller.translate(joystick_action)
+
+    assert np.linalg.norm(controller_vector) > 0.0
+    assert np.linalg.norm(expected_world_delta) > 0.0
+    assert not np.allclose(expected_world_delta, controller_vector)
+    np.testing.assert_allclose(
+        sim_action.delta_position,
+        expected_world_delta,
+        atol=1e-12,
+    )
+    assert sim_action.delta_rotation_rpy == (0.0, 0.0, 0.0)
+    assert sim_action.gripper == 1.0
+
+    initial_pose = np.asarray([0.0, -0.2, 1.0, 0.0, 0.0, 0.0, 1.0])
+    adapter = ColosseumSimAdapter(config.simulator)
+    adapter.last_native_obs = type(
+        "FakeColosseumObservation",
+        (),
+        {"gripper_pose": initial_pose.copy()},
+    )()
+    native_action = adapter._native_action(sim_action)
+
+    assert native_action.shape == (8,)
+    assert np.linalg.norm(native_action[:3] - initial_pose[:3]) > 0.0
+    np.testing.assert_allclose(
+        native_action[:3] - initial_pose[:3],
+        expected_world_delta,
+        atol=1e-7,
+    )
+    assert native_action[7] == 1.0
+
+
+def test_colosseum_mllm_baseline_and_perturbed_same_seed_reset_pair_with_stub():
+    baseline = load_config("configs/colosseum_close_box_mllm_reflection.yaml")
+    perturbed = load_config(
+        "configs/colosseum_close_box_mllm_reflection_perturbed.yaml"
+    )
+
+    assert baseline.benchmark.seed == perturbed.benchmark.seed
+    assert baseline.simulator == perturbed.simulator
+    assert baseline.task == perturbed.task
+
+    snapshots = []
+    for config in (baseline, perturbed):
+        adapter = ColosseumSimAdapter(config.simulator)
+        task_environment = DeterministicTaskEnvironmentStub()
+        adapter.task = task_environment
+        observation = build_task(config).reset(adapter, seed=config.benchmark.seed)
+        snapshots.append((observation.state, task_environment.success_calls))
+
+    baseline_state, baseline_success_calls = snapshots[0]
+    perturbed_state, perturbed_success_calls = snapshots[1]
+    assert baseline_success_calls == perturbed_success_calls == 1
+    assert baseline_state["variation_index"] == perturbed_state["variation_index"]
+    assert baseline_state["descriptions"] == perturbed_state["descriptions"]
+    assert baseline_state["evaluator_metadata"] == perturbed_state["evaluator_metadata"]
+    assert baseline_state["success"] == perturbed_state["success"] is False
+    np.testing.assert_array_equal(
+        baseline_state["gripper_pose"],
+        perturbed_state["gripper_pose"],
+    )
+    np.testing.assert_array_equal(
+        baseline_state["task_low_dim_state"],
+        perturbed_state["task_low_dim_state"],
     )
 
 
@@ -414,6 +557,66 @@ def test_colosseum_runtime_reset_step_render_smoke_when_installed():
         sim.close()
 
 
+def test_colosseum_mllm_runtime_baseline_and_perturbed_same_seed_reset_pair_when_installed():
+    for module_name in ("colosseum", "rlbench", "pyrep"):
+        _require_runtime_module(module_name)
+
+    snapshots = []
+    try:
+        for config_path, *_ in MLLM_CONFIGS:
+            config = load_config(config_path)
+            sim = build_sim(config)
+            camera_manager = build_camera_manager(
+                config.camera,
+                config.benchmark.seed,
+            )
+            provider = build_observation_provider(config, camera_manager)
+            provider.configure_sim(sim)
+            try:
+                observation = build_task(config).reset(
+                    sim,
+                    seed=config.benchmark.seed,
+                )
+                snapshots.append(
+                    {
+                        "variation_index": observation.state["variation_index"],
+                        "descriptions": observation.state["descriptions"],
+                        "success": observation.state["success"],
+                        "gripper_pose": np.asarray(
+                            observation.state["gripper_pose"],
+                        ),
+                        "task_low_dim_state": np.asarray(
+                            observation.state["task_low_dim_state"],
+                        ),
+                        "front": np.asarray(sim.render(config.camera.cameras[0])).copy(),
+                    }
+                )
+            finally:
+                sim.close()
+    except (ImportError, RuntimeError) as exc:
+        if "already successful immediately after reset" in str(exc):
+            raise
+        if os.environ.get("MLLM_TELEOP_REQUIRE_COLOSSEUM") == "1":
+            raise
+        pytest.skip(f"Colosseum/CoppeliaSim runtime unavailable: {exc}")
+
+    baseline, perturbed = snapshots
+    assert baseline["variation_index"] == perturbed["variation_index"]
+    assert baseline["descriptions"] == perturbed["descriptions"]
+    assert baseline["success"] == perturbed["success"] is False
+    np.testing.assert_allclose(
+        baseline["gripper_pose"],
+        perturbed["gripper_pose"],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        baseline["task_low_dim_state"],
+        perturbed["task_low_dim_state"],
+        atol=1e-7,
+    )
+    np.testing.assert_array_equal(baseline["front"], perturbed["front"])
+
+
 @pytest.mark.parametrize(
     ("config_path", "mapping_strategy", "frame_transform", "visible"),
     MLLM_CONFIGS,
@@ -472,7 +675,9 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     assert "Task: Close the visible box lid." in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "Colosseum/RLBench world Cartesian x, y, and z axes" in request_text
-    assert "gripper held open" in request_text
+    assert "gripper is fixed open and is not controllable" in request_text
+    assert "no joystick gripper channel exists" in request_text
+    assert "A gripper channel is available" not in request_text
     if visible:
         assert "joystick_0 -> dx" in request_text
         assert "No additional control-frame rotation is applied" in request_text

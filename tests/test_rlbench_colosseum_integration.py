@@ -21,6 +21,7 @@ from mllm_teleop_benchmark.core.registry import (
     build_mapping,
     build_observation_provider,
     build_sim,
+    build_task,
     control_interface_metadata,
 )
 from mllm_teleop_benchmark.core.types import RLBenchAction
@@ -94,6 +95,48 @@ class RLBenchFakeClient:
         )
 
 
+class DeterministicTaskEnvironmentStub:
+    def __init__(
+        self,
+        *,
+        initial_success: bool = False,
+        initial_terminate: bool = False,
+    ) -> None:
+        self.variation = 0
+        self.reset_complete = False
+        self.success_calls = 0
+        self.initial_success = initial_success
+        self.initial_terminate = initial_terminate
+        self._task = self
+
+    def variation_count(self):
+        return 3
+
+    def set_variation(self, variation):
+        self.variation = int(variation)
+
+    def reset(self):
+        sample = np.random.uniform(size=3)
+        self.reset_complete = True
+        observation = type(
+            "DeterministicRLBenchObservation",
+            (),
+            {
+                "gripper_pose": np.asarray(
+                    [sample[0] * 0.2, sample[1] * 0.2, 0.9 + sample[2] * 0.2, 0, 0, 0, 1],
+                    dtype=np.float32,
+                ),
+                "task_low_dim_state": sample.astype(np.float32),
+            },
+        )()
+        return [f"variation={self.variation}"], observation
+
+    def success(self):
+        assert self.reset_complete
+        self.success_calls += 1
+        return self.initial_success, self.initial_terminate
+
+
 def test_rlbench_uv_input_pins_python_source_and_excludes_coppeliasim():
     requirement = ROOT.joinpath("envs/uv/rlbench.in").read_text()
 
@@ -147,6 +190,7 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
     assert config.task.params["instruction"] == (
         "Move the robot end-effector to the visible target."
     )
+    assert config.task.params["reject_initial_success"] is True
     assert config.control_interface.active_dimensions == ("dx", "dy", "dz")
     assert config.control_interface.gripper == "none"
     assert config.control_interface.mapping_strategy == mapping_strategy
@@ -159,12 +203,17 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
     assert "latest observed absolute gripper pose" in frame_description
     assert "configured workspace bounds" in frame_description
     assert "native absolute world-frame planning pose" in frame_description
+    assert "gripper is fixed open and is not controllable" in frame_description
+    assert "no joystick gripper channel exists" in frame_description
     assert "front camera pose comes from the TTT scene" in frame_description
     assert "does not assign world axes to image directions" in frame_description
     if visible:
         assert "without sign compensation" in frame_description
     else:
-        assert "without additional sign compensation" in frame_description
+        assert "hidden joystick mapping produces a controller-frame vector" in frame_description
+        assert "hidden episode-fixed 3D transform rotates that controller vector exactly once" in frame_description
+        assert "delta expressed in the RLBench world Cartesian" in frame_description
+        assert "without another transform or sign compensation" in frame_description
     assert config.controller.scales == {"dx": 0.02, "dy": 0.02, "dz": 0.02}
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
@@ -220,6 +269,8 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "clamps the target to the configured workspace bounds" in baseline_prompt
     assert "native absolute world-frame planning pose" in baseline_prompt
     assert "without sign compensation" in baseline_prompt
+    assert "gripper is fixed open and is not controllable" in baseline_prompt
+    assert "no joystick gripper channel exists" in baseline_prompt
     assert "front camera pose comes from the TTT scene" in baseline_prompt
     assert "does not assign world axes to image directions" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
@@ -240,10 +291,14 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "active controllable dimensions are: dx, dy, dz" in perturbed_prompt
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
-    assert "scaled to 0.02 meters before the hidden episode-fixed control transform" in perturbed_prompt
+    assert "hidden joystick mapping produces a controller-frame vector" in perturbed_prompt
+    assert "hidden episode-fixed 3D transform rotates that controller vector exactly once" in perturbed_prompt
+    assert "delta expressed in the RLBench world Cartesian" in perturbed_prompt
     assert "latest observed absolute gripper pose" in perturbed_prompt
-    assert "without additional sign compensation" in perturbed_prompt
+    assert "without another transform or sign compensation" in perturbed_prompt
     assert "native absolute world-frame planning pose" in perturbed_prompt
+    assert "gripper is fixed open and is not controllable" in perturbed_prompt
+    assert "no joystick gripper channel exists" in perturbed_prompt
     assert "front camera pose comes from the TTT scene" in perturbed_prompt
     assert "does not assign world axes to image directions" in perturbed_prompt
     assert (
@@ -400,6 +455,7 @@ def test_rlbench_reset_seeds_upstream_numpy_without_leaking_global_rng_state():
     class FakeTask:
         def __init__(self):
             self.sample = None
+            self._task = self
 
         def variation_count(self):
             return 1
@@ -410,6 +466,9 @@ def test_rlbench_reset_seeds_upstream_numpy_without_leaking_global_rng_state():
         def reset(self):
             self.sample = tuple(np.random.uniform(size=3))
             return ["Reach the target."], object()
+
+        def success(self):
+            return False, False
 
     def reset_sample(seed):
         adapter = RLBenchSimAdapter(config.simulator)
@@ -428,6 +487,96 @@ def test_rlbench_reset_seeds_upstream_numpy_without_leaking_global_rng_state():
     assert first == reset_sample(17)
     assert first != reset_sample(18)
     assert observed_next == expected_next
+
+
+def test_rlbench_reset_uses_native_success_oracle_after_reset():
+    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    adapter = RLBenchSimAdapter(config.simulator)
+    task_environment = DeterministicTaskEnvironmentStub(
+        initial_success=False,
+        initial_terminate=True,
+    )
+    adapter.task = task_environment
+
+    observation = build_task(config).reset(adapter, seed=17)
+
+    assert task_environment.success_calls == 1
+    assert observation.state["success"] is False
+    assert observation.state["terminate"] is True
+
+
+def test_rlbench_rejects_native_initial_success_without_taking_an_action():
+    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    adapter = RLBenchSimAdapter(config.simulator)
+    task_environment = DeterministicTaskEnvironmentStub(
+        initial_success=True,
+        initial_terminate=True,
+    )
+    adapter.task = task_environment
+
+    with pytest.raises(
+        RuntimeError,
+        match="already successful immediately after reset for seed 17",
+    ):
+        build_task(config).reset(adapter, seed=17)
+
+    assert task_environment.success_calls == 1
+    assert adapter.step_id == 0
+    assert adapter.get_state()["success"] is True
+
+
+def test_rlbench_reset_fails_loud_when_native_success_oracle_is_unavailable():
+    config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
+    adapter = RLBenchSimAdapter(config.simulator)
+
+    class TaskEnvironmentWithoutNativeTask:
+        def variation_count(self):
+            return 1
+
+        def set_variation(self, _variation):
+            pass
+
+        def reset(self):
+            return ["Reach the target."], object()
+
+    adapter.task = TaskEnvironmentWithoutNativeTask()
+
+    with pytest.raises(RuntimeError, match=r"native Task\.success\(\) oracle"):
+        adapter.reset(config.task, seed=17)
+
+
+def test_rlbench_mllm_baseline_and_perturbed_same_seed_reset_pair_with_stub():
+    baseline = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    perturbed = load_config(
+        "configs/rlbench_reach_target_mllm_reflection_perturbed.yaml"
+    )
+
+    assert baseline.benchmark.seed == perturbed.benchmark.seed
+    assert baseline.simulator == perturbed.simulator
+    assert baseline.task == perturbed.task
+
+    snapshots = []
+    for config in (baseline, perturbed):
+        adapter = RLBenchSimAdapter(config.simulator)
+        task_environment = DeterministicTaskEnvironmentStub()
+        adapter.task = task_environment
+        observation = build_task(config).reset(adapter, seed=config.benchmark.seed)
+        snapshots.append((observation.state, task_environment.success_calls))
+
+    baseline_state, baseline_success_calls = snapshots[0]
+    perturbed_state, perturbed_success_calls = snapshots[1]
+    assert baseline_success_calls == perturbed_success_calls == 1
+    assert baseline_state["variation_index"] == perturbed_state["variation_index"]
+    assert baseline_state["descriptions"] == perturbed_state["descriptions"]
+    assert baseline_state["success"] == perturbed_state["success"] is False
+    np.testing.assert_array_equal(
+        baseline_state["gripper_pose"],
+        perturbed_state["gripper_pose"],
+    )
+    np.testing.assert_array_equal(
+        baseline_state["task_low_dim_state"],
+        perturbed_state["task_low_dim_state"],
+    )
 
 
 def test_rlbench_rejected_planning_action_does_not_abort_episode_or_advance_sim():
@@ -546,6 +695,69 @@ def test_rlbench_runtime_reset_step_render_smoke_when_installed():
         sim.close()
 
 
+def test_rlbench_mllm_runtime_baseline_and_perturbed_same_seed_reset_pair_when_installed():
+    try:
+        __import__("rlbench")
+        __import__("pyrep")
+    except ImportError as exc:
+        pytest.skip(f"RLBench/PyRep are not installed in this environment: {exc}")
+
+    snapshots = []
+    try:
+        for config_path, *_ in MLLM_CONFIGS:
+            config = load_config(config_path)
+            sim = build_sim(config)
+            camera_manager = build_camera_manager(
+                config.camera,
+                config.benchmark.seed,
+            )
+            provider = build_observation_provider(config, camera_manager)
+            provider.configure_sim(sim)
+            try:
+                observation = build_task(config).reset(
+                    sim,
+                    seed=config.benchmark.seed,
+                )
+                snapshots.append(
+                    {
+                        "variation_index": observation.state["variation_index"],
+                        "descriptions": observation.state["descriptions"],
+                        "success": observation.state["success"],
+                        "gripper_pose": np.asarray(
+                            observation.state["gripper_pose"],
+                        ),
+                        "task_low_dim_state": np.asarray(
+                            observation.state["task_low_dim_state"],
+                        ),
+                        "front": np.asarray(sim.render(config.camera.cameras[0])).copy(),
+                    }
+                )
+            finally:
+                sim.close()
+    except RuntimeError as exc:
+        if "already successful immediately after reset" in str(exc):
+            raise
+        if os.environ.get("MLLM_TELEOP_REQUIRE_RLBENCH") == "1":
+            raise
+        pytest.skip(f"RLBench/CoppeliaSim runtime unavailable: {exc}")
+
+    baseline, perturbed = snapshots
+    assert baseline["variation_index"] == perturbed["variation_index"]
+    assert baseline["descriptions"] == perturbed["descriptions"]
+    assert baseline["success"] == perturbed["success"] is False
+    np.testing.assert_allclose(
+        baseline["gripper_pose"],
+        perturbed["gripper_pose"],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        baseline["task_low_dim_state"],
+        perturbed["task_low_dim_state"],
+        atol=1e-7,
+    )
+    np.testing.assert_array_equal(baseline["front"], perturbed["front"])
+
+
 @pytest.mark.parametrize(
     ("config_path", "mapping_strategy", "frame_transform", "visible"),
     MLLM_CONFIGS,
@@ -643,7 +855,9 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "RLBench world Cartesian x, y, and z axes" in request_text
-    assert "gripper" not in request_text
+    assert "gripper is fixed open and is not controllable" in request_text
+    assert "no joystick gripper channel exists" in request_text
+    assert "A gripper channel is available" not in request_text
     if visible:
         assert "joystick_0 -> dx" in request_text
         assert "No additional control-frame rotation is applied" in request_text

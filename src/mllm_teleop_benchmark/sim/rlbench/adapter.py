@@ -28,6 +28,7 @@ class RLBenchSimAdapter(SimAdapter):
         self.last_descriptions: tuple[str, ...] = ()
         self.last_reward: float | None = None
         self.last_terminate = False
+        self.last_success = False
         self.last_action_rejected = False
         self.variation_index: int | None = None
         self._camera_specs: tuple[CameraSpec, ...] = ()
@@ -46,13 +47,17 @@ class RLBenchSimAdapter(SimAdapter):
             self.step_id = 0
             self.last_reward = None
             self.last_terminate = False
+            self.last_success = False
             self.last_action_rejected = False
             self.variation_index = self._sample_variation(seed)
             descriptions, obs = self.task.reset()
+            native_success, native_terminate = self._native_task_success()
         finally:
             np.random.set_state(numpy_random_state)
         self.last_descriptions = tuple(str(item) for item in descriptions)
         self.last_native_obs = obs
+        self.last_success = native_success
+        self.last_terminate = native_terminate
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
@@ -81,6 +86,7 @@ class RLBenchSimAdapter(SimAdapter):
         self.last_native_obs = obs
         self.last_reward = float(reward)
         self.last_terminate = bool(terminate)
+        self.last_success = bool(reward)
         self.last_action_rejected = False
         return StepResult(
             observation=self._observation(),
@@ -108,7 +114,7 @@ class RLBenchSimAdapter(SimAdapter):
             "variation_index": self.variation_index,
             "reward": self.last_reward,
             "terminate": self.last_terminate,
-            "success": self.last_terminate,
+            "success": self.last_success,
             "action_rejected": self.last_action_rejected,
             "descriptions": list(self.last_descriptions),
         }
@@ -262,6 +268,21 @@ class RLBenchSimAdapter(SimAdapter):
             if variation is not None:
                 raise
         return int(variation) if variation is not None else None
+
+    def _native_task_success(self) -> tuple[bool, bool]:
+        native_task = getattr(self.task, "_task", None)
+        success = getattr(native_task, "success", None)
+        if not callable(success):
+            raise RuntimeError(
+                "Pinned RLBench TaskEnvironment does not expose its official "
+                "native Task.success() oracle"
+            )
+        result = success()
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise RuntimeError(
+                "RLBench native Task.success() must return (success, terminate)"
+            )
+        return bool(result[0]), bool(result[1])
 
     def _native_action(self, action: RLBenchAction) -> np.ndarray:
         pose = self._last_gripper_pose()

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -162,13 +163,24 @@ def _contact(other_uid, other_link=-1):
     return tuple(values)
 
 
-def _oracle_info(*, red_position, red_contacts, robot_contacts):
+def _oracle_info(
+    *,
+    red_position,
+    red_contacts,
+    robot_contacts,
+    drawer_state=0.0,
+):
     return {
         "robot_info": {
             "uid": 99,
             "contacts": list(robot_contacts),
         },
         "scene_info": {
+            "doors": {
+                "base__drawer": {
+                    "current_state": drawer_state,
+                }
+            },
             "fixed_objects": {
                 "table": {
                     "uid": 1,
@@ -220,6 +232,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     schema = build_action_space(config).schema()
 
     assert config.task.params["target_block_color"] == "red"
+    assert config.task.params["reject_initial_success"] is True
     assert config.task.params["instruction"] == (
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
@@ -300,7 +313,7 @@ def test_calvin_mllm_task_instruction_is_identical_across_control_conditions():
     assert baseline.task.params["instruction"] == perturbed.task.params["instruction"]
 
 
-def test_calvin_task_uses_official_strict_two_stage_oracle():
+def test_calvin_task_uses_official_strict_three_stage_oracle():
     pytest.importorskip("calvin_env")
     config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
     task = build_task(config)
@@ -309,18 +322,40 @@ def test_calvin_task_uses_official_strict_two_stage_oracle():
         red_contacts=(_contact(1, 0),),
         robot_contacts=(),
     )
+    opened_info = _oracle_info(
+        red_position=(0.1, -0.1, 0.46),
+        red_contacts=(_contact(1, 0),),
+        robot_contacts=(),
+        drawer_state=0.13,
+    )
     held_info = _oracle_info(
         red_position=(0.1, -0.1, 0.53),
         red_contacts=(_contact(99),),
         robot_contacts=(_contact(10),),
+        drawer_state=0.13,
     )
     placed_info = _oracle_info(
         red_position=(0.1, 0.0, 0.4),
         red_contacts=(_contact(1, 2),),
         robot_contacts=(),
+        drawer_state=0.13,
     )
 
     observation = task.reset(_StaticResetSim(reset_info), seed=42)
+    assert task._task_oracle.tasks["open_drawer"].args == (
+        "base__drawer",
+        0.12,
+    )
+    assert task._task_oracle.tasks["lift_red_block_table"].args == (
+        "block_red",
+        0.05,
+        "table",
+        "base_link",
+    )
+    assert task._task_oracle.tasks["place_in_drawer"].args == (
+        "table",
+        "drawer_link",
+    )
     recording_tasks = _RecordingTasks(task._task_oracle)
     task._task_oracle = recording_tasks
 
@@ -328,7 +363,8 @@ def test_calvin_task_uses_official_strict_two_stage_oracle():
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
     )
-    assert not task.is_success(observation, placed_info)
+    assert not task.is_success(observation, reset_info)
+    assert not task.is_success(observation, opened_info)
     assert not task.is_success(observation, held_info)
 
     held_info["robot_info"]["contacts"].clear()
@@ -336,11 +372,76 @@ def test_calvin_task_uses_official_strict_two_stage_oracle():
     assert task.is_success(observation, placed_info)
     assert task.is_success(observation, {})
     assert recording_tasks.filters == [
-        {"lift_red_block_table", "lift_red_block_slider"},
+        {"open_drawer"},
+        {"open_drawer"},
         {"lift_red_block_table", "lift_red_block_slider"},
         {"place_in_drawer"},
     ]
     assert all("push_into_drawer" not in task_filter for task_filter in recording_tasks.filters)
+
+
+def test_calvin_task_reset_invariant_accepts_valid_stub_initial_state():
+    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    task = build_task(config)
+    task._task_oracle = MagicMock()
+    task._task_oracle.get_task_info_for_set.return_value = set()
+    reset_info = _oracle_info(
+        red_position=(0.1, -0.1, 0.46),
+        red_contacts=(_contact(1, 0),),
+        robot_contacts=(),
+    )
+
+    observation = task.reset(_StaticResetSim(reset_info), seed=42)
+
+    assert task._reset_invariant_violations(reset_info) == ()
+    assert not task.is_success(observation, observation.state)
+    task._task_oracle.get_task_info_for_set.assert_called_once_with(
+        task._reset_info,
+        task._reset_info,
+        {"open_drawer"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("reset_info", "message"),
+    (
+        (
+            _oracle_info(
+                red_position=(0.1, -0.1, 0.46),
+                red_contacts=(_contact(1, 0),),
+                robot_contacts=(),
+                drawer_state=0.13,
+            ),
+            "drawer is not closed",
+        ),
+        (
+            _oracle_info(
+                red_position=(0.1, 0.0, 0.4),
+                red_contacts=(_contact(1, 2),),
+                robot_contacts=(),
+            ),
+            "red block is in contact with the drawer link",
+        ),
+        (
+            _oracle_info(
+                red_position=(0.1, -0.1, 0.53),
+                red_contacts=(_contact(99),),
+                robot_contacts=(_contact(10),),
+            ),
+            "red block is in contact with the robot",
+        ),
+    ),
+)
+def test_calvin_task_reset_invariant_rejects_invalid_stub_initial_state(
+    reset_info,
+    message,
+):
+    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    task = build_task(config)
+    task._task_oracle = MagicMock()
+
+    with pytest.raises(RuntimeError, match=message):
+        task.reset(_StaticResetSim(deepcopy(reset_info)), seed=42)
 
 
 def test_calvin_legacy_seed_fallback_syncs_scene_and_object_rngs():
@@ -372,6 +473,7 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
         control_interface_metadata(baseline, baseline.benchmark.seed),
         build_action_space(baseline).schema(),
     ).text
+    baseline_prompt = prompt
 
     assert (
         "active controllable dimensions are: dx, dy, dz, droll, dpitch, dyaw"
@@ -415,6 +517,24 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
     assert "mapping_strategy" not in metadata
     assert "frame_transform" not in metadata
     assert "rotation_matrix" not in str(metadata)
+
+    for public_prompt in (baseline_prompt, prompt):
+        assert (
+            "active controllable dimensions are: dx, dy, dz, droll, dpitch, dyaw"
+            in public_prompt
+        )
+        assert "The gripper is always the final virtual joystick" in public_prompt
+        assert "1 means open, 0 means closed" in public_prompt
+        for private_term in (
+            "base__drawer",
+            "drawer_link",
+            "open_drawer",
+            "place_in_drawer",
+            "reject_initial_success",
+            "robot_info",
+            "scene_info",
+        ):
+            assert private_term not in public_prompt
 
 
 def test_calvin_controller_translation():
@@ -742,6 +862,72 @@ def test_calvin_real_seeded_resets_are_reproducible_and_distinct():
         not np.allclose(first[name], different[name], rtol=0.0, atol=1e-2)
         for name in first
     )
+
+
+def test_calvin_mllm_seed_range_reset_canary_when_installed():
+    pytest.importorskip(
+        "calvin_env",
+        reason="pinned CALVIN reset canary requires calvin_env",
+    )
+    pytest.importorskip(
+        "pybullet",
+        reason="pinned CALVIN reset canary requires PyBullet",
+    )
+    pytest.importorskip(
+        "hydra",
+        reason="pinned CALVIN reset canary requires Hydra",
+    )
+    pytest.importorskip(
+        "omegaconf",
+        reason="pinned CALVIN reset canary requires OmegaConf",
+    )
+    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    sim = build_sim(config)
+    task = build_task(config)
+    camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
+    observation_provider = build_observation_provider(config, camera_manager)
+    observation_provider.configure_sim(sim)
+
+    try:
+        for seed in range(42, 52):
+            observation = task.reset(sim, seed)
+            reset_info = task._copy_oracle_info(observation.state)
+            robot_info = reset_info["robot_info"]
+            scene_info = reset_info["scene_info"]
+            table_info = scene_info["fixed_objects"]["table"]
+            red_info = scene_info["movable_objects"]["block_red"]
+            drawer_contact = (
+                table_info["uid"],
+                table_info["links"]["drawer_link"],
+            )
+
+            assert (
+                abs(scene_info["doors"]["base__drawer"]["current_state"])
+                <= task._DRAWER_CLOSED_ATOL
+            )
+            assert drawer_contact not in {
+                (contact[2], contact[4]) for contact in red_info["contacts"]
+            }
+            assert red_info["uid"] not in {
+                contact[2] for contact in robot_info["contacts"]
+            }
+            assert robot_info["uid"] not in {
+                contact[2] for contact in red_info["contacts"]
+            }
+            assert not task.is_success(observation, observation.state)
+
+            public_observation = observation_provider.get_observation(sim)
+            assert {"static", "gripper"}.issubset(public_observation.images)
+            assert all(
+                image.dtype == np.uint8
+                and image.ndim == 3
+                and image.shape[-1] == 3
+                and float(image.mean()) > 1.0
+                and float(image.std()) > 1.0
+                for image in public_observation.images.values()
+            )
+    finally:
+        sim.close()
 
 
 def test_calvin_randomized_camera_manager():

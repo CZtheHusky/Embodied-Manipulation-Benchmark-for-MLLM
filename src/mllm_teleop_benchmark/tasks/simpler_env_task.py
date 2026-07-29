@@ -18,6 +18,14 @@ class SimplerEnvTask(Task):
         instruction = observation.state.get("language_instruction")
         if instruction is not None:
             self._instruction = str(instruction)
+        if (
+            self.config.params.get("reject_initial_success", False)
+            and self.is_success(observation, sim.get_state())
+        ):
+            raise RuntimeError(
+                "SimplerEnv task is already successful immediately after reset "
+                f"for seed {seed}; choose an explicit nontrivial seed"
+            )
         return observation
 
     def instruction(self) -> str:
@@ -27,7 +35,9 @@ class SimplerEnvTask(Task):
         success_key = str(self.config.params.get("success_key", "success"))
         value = self._get_nested(sim_state, success_key)
         if value is None:
-            return False
+            raise RuntimeError(
+                f"SimplerEnv simulator state is missing success key {success_key!r}"
+            )
         if isinstance(value, bool):
             return value
         if isinstance(value, int | float):

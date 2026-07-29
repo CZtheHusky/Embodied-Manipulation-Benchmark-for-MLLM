@@ -15,6 +15,7 @@ task:
   params:
     instruction: pick coke can
     success_key: success
+    reject_initial_success: true
 
 camera:
   manager: fixed

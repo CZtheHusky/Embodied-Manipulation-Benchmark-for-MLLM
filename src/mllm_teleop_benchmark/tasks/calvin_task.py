@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,9 @@ from mllm_teleop_benchmark.tasks.base import Task
 
 class CalvinTask(Task):
     _BLOCK_COLORS = frozenset({"red", "blue", "pink"})
+    _DRAWER_JOINT = "base__drawer"
+    _DRAWER_CLOSED_STATE = 0.0
+    _DRAWER_CLOSED_ATOL = 1e-6
 
     def __init__(self, config: TaskConfig) -> None:
         super().__init__(config)
@@ -31,15 +35,24 @@ class CalvinTask(Task):
         )
         self._task_oracle: Any | None = None
         self._reset_info: dict[str, object] | None = None
+        self._opened_info: dict[str, object] | None = None
         self._held_info: dict[str, object] | None = None
         self._success = False
 
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
         self._reset_info = None
+        self._opened_info = None
         self._held_info = None
         self._success = False
         observation = sim.reset(self.config, seed)
         self._reset_info = self._copy_oracle_info(observation.state)
+        if self.config.params.get("reject_initial_success", False):
+            violations = self._reset_invariant_violations(self._reset_info)
+            if violations:
+                raise RuntimeError(
+                    f"CALVIN reset invariant failed for seed {seed}: "
+                    + "; ".join(violations)
+                )
         if self._task_oracle is None:
             self._task_oracle = self._load_official_task_oracle()
         return observation
@@ -54,9 +67,19 @@ class CalvinTask(Task):
             raise RuntimeError("CALVIN task success was checked before reset()")
 
         current_info = self._copy_oracle_info(sim_state)
-        if self._held_info is None:
+        if self._opened_info is None:
             achieved = self._task_oracle.get_task_info_for_set(
                 self._reset_info,
+                current_info,
+                {"open_drawer"},
+            )
+            if "open_drawer" in achieved:
+                self._opened_info = deepcopy(current_info)
+            return False
+
+        if self._held_info is None:
+            achieved = self._task_oracle.get_task_info_for_set(
+                self._opened_info,
                 current_info,
                 self._target_lift_tasks(),
             )
@@ -102,6 +125,70 @@ class CalvinTask(Task):
                 "scene_info": state["scene_info"],
             }
         )
+
+    def _reset_invariant_violations(
+        self, info: dict[str, object]
+    ) -> tuple[str, ...]:
+        try:
+            robot_info = info["robot_info"]
+            scene_info = info["scene_info"]
+            drawer_state = scene_info["doors"][self._DRAWER_JOINT]["current_state"]
+            table_info = scene_info["fixed_objects"]["table"]
+            target_info = scene_info["movable_objects"][
+                f"block_{self._target_color}"
+            ]
+            robot_uid = robot_info["uid"]
+            target_uid = target_info["uid"]
+            drawer_contact = (
+                table_info["uid"],
+                table_info["links"]["drawer_link"],
+            )
+            robot_contact_uids = self._contact_body_uids(robot_info["contacts"])
+            target_contact_uids = self._contact_body_uids(target_info["contacts"])
+            target_contact_pairs = self._contact_body_links(target_info["contacts"])
+        except (KeyError, TypeError) as exc:
+            raise RuntimeError(
+                "CALVIN reset invariant requires pinned scene_info and robot_info fields"
+            ) from exc
+
+        if not isinstance(drawer_state, Real) or isinstance(drawer_state, bool):
+            raise RuntimeError(
+                "CALVIN reset invariant requires a numeric base__drawer current_state"
+            )
+
+        violations = []
+        if (
+            abs(float(drawer_state) - self._DRAWER_CLOSED_STATE)
+            > self._DRAWER_CLOSED_ATOL
+        ):
+            violations.append(f"drawer is not closed (state={float(drawer_state):.6g})")
+        if drawer_contact in target_contact_pairs:
+            violations.append(
+                f"{self._target_color} block is in contact with the drawer link"
+            )
+        if target_uid in robot_contact_uids or robot_uid in target_contact_uids:
+            violations.append(
+                f"{self._target_color} block is in contact with the robot"
+            )
+        return tuple(violations)
+
+    @staticmethod
+    def _contact_body_uids(contacts: object) -> set[object]:
+        try:
+            return {contact[2] for contact in contacts}
+        except (IndexError, TypeError) as exc:
+            raise RuntimeError(
+                "CALVIN reset invariant requires PyBullet contact tuples"
+            ) from exc
+
+    @staticmethod
+    def _contact_body_links(contacts: object) -> set[tuple[object, object]]:
+        try:
+            return {(contact[2], contact[4]) for contact in contacts}
+        except (IndexError, TypeError) as exc:
+            raise RuntimeError(
+                "CALVIN reset invariant requires PyBullet contact tuples"
+            ) from exc
 
     @staticmethod
     def _load_official_task_oracle() -> Any:

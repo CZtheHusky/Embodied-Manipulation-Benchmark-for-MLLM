@@ -36,15 +36,15 @@ The uv lock intentionally does not contain Git URL requirements for the two upst
 
 SimplerEnv's upstream README lists CUDA and NVIDIA GPU prerequisites for practical SAPIEN rendering. Hosts without a working GPU driver, compatible CUDA/SAPIEN wheels, or required upstream assets should fail the runtime smoke rather than reporting runtime verification. Config/controller tests still pass when `simpler_env` is not installed.
 
-Verified on this branch on 2026-06-24:
+The smoke command imports both pinned source packages before starting pytest:
 
 ```bash
-python3 scripts/manage_uv_env.py lock simpler-env
-python3 scripts/manage_uv_env.py create simpler-env
-python3 scripts/manage_uv_env.py smoke simpler-env
+import simpler_env
+import mani_skill2_real2sim
 ```
 
-The smoke run passed `6 passed` and exercised `simpler_env` import, reset, RGB observation/render extraction, one zero action step, and close.
+This preflight makes a missing or broken package fail the smoke command instead
+of allowing all runtime tests to skip with exit status 0.
 
 Manual play uses the shared Pygame worker runtime:
 
@@ -62,6 +62,14 @@ The initial config targets upstream task name `google_robot_pick_coke_can`, whic
 import simpler_env
 env = simpler_env.make("google_robot_pick_coke_can")
 ```
+
+At the pinned commits, `BaseEnv.reset()` returns `(observation, {})`; success is
+not part of the reset observation. The public `BaseEnv.get_info()` method calls
+the task-specific `evaluate()` implementation and merges its result with
+`elapsed_steps`. PickCokeCan's evaluator returns `success` and
+`episode_stats`. After every reset, the adapter therefore calls `get_info()`
+through Gymnasium's public `get_wrapper_attr("get_info")` path and treats a
+missing evaluator or missing `success` as an integration error.
 
 ## Control
 
@@ -118,7 +126,12 @@ upstream `-1` and `1`.
 
 The observation provider first tries to extract RGB frames from the native observation dict, then falls back to SimplerEnv's official `get_image_from_maniskill2_obs_dict(env, obs)` helper, and finally to `env.render()`.
 
-The adapter stores the latest native observation, reward, info, `success`, `truncated`, and language instruction when `env.get_language_instruction()` is available. `simpler_env_generic` uses `task.params.success_key`, defaulting to `success`, for success and metrics.
+The adapter stores the latest native observation, reward, info, `success`,
+`truncated`, and language instruction when
+`env.get_language_instruction()` is available. Immediately after reset,
+`success` and evaluator diagnostics come from `env.get_info()`, not from a
+default value or the native observation. `simpler_env_generic` uses
+`task.params.success_key`, defaulting to `success`, for success and metrics.
 
 Some upstream task diagnostics contain `sapien.Pose` values. The adapter
 serializes those evaluator-only values as `position` and
@@ -148,7 +161,10 @@ fixed camera set; it does not make a robot-mounted upstream camera world-fixed.
 Both MLLM configurations use the shared `MLLMPolicy` and `SimAdapter` path,
 OpenAI-compatible Chat Completions, `action_with_reflection`,
 `reasoning_effort=low`, three historical RGB steps, and complete public action
-history. Video logging is disabled by default.
+history. Video logging is disabled by default. Both set
+`task.params.reject_initial_success: true`; if the public evaluator reports
+success immediately after reset, the task raises before the first model
+request rather than recording a zero-step model success.
 
 The baseline exposes the fixed joystick mapping and uses the identity
 benchmark frame transform. The perturbed configuration uses a hidden
@@ -166,13 +182,19 @@ PYTHONPATH=src .venvs/simpler-env/bin/python \
   tests/test_simpler_env_integration.py -q
 ```
 
-The tests perform real reset/step/render operations and run both MLLM
-configurations for four steps with an in-process fake model client. They check
-native action shape and bounds, RGB variance, image history, trajectory and
-run manifests, and privileged-information isolation. A no-simulator canary
-also verifies that benchmark `+/-1` commands reach the native 7D action as
-`+/-0.05 m` and `+/-0.1 rad` with their mapped signs unchanged. The tests do
-not access a model API.
+The runtime tests perform real reset/step/render operations and run both MLLM
+configurations for four steps with an in-process fake model client. A reset
+canary covers PickCokeCan seeds 42 through 51 and requires every initial
+evaluator result to be unsuccessful and both public RGB views to be non-black.
+These runtime tests explicitly skip when either pinned source package is not
+installed.
+
+A no-simulator Stub test supplies a native reset observation without
+`success`, exposes initial success only through `get_info()`, and verifies that
+the task rejects the episode with zero model-client calls. Another
+no-simulator canary verifies that benchmark `+/-1` commands reach the native
+7D action as `+/-0.05 m` and `+/-0.1 rad` with their mapped signs unchanged.
+No test accesses a real model API.
 
 ## Current Limitations
 

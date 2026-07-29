@@ -23,6 +23,7 @@ task:
   params:
     instruction: Move the robot end-effector to the visible target.
     success_key: success
+    reject_initial_success: true
 
 camera:
   manager: fixed
@@ -50,9 +51,10 @@ control_interface:
     delta. The benchmark adds that delta without sign compensation to the
     position from the latest observed absolute gripper pose, clamps the target
     to the configured workspace bounds, and sends a native absolute world-frame
-    planning pose. The front camera pose comes from the TTT scene; without
-    runtime extrinsics, this control contract does not assign world axes to
-    image directions
+    planning pose. The gripper is fixed open and is not controllable; no
+    joystick gripper channel exists. The front camera pose comes from the TTT
+    scene; without runtime extrinsics, this control contract does not assign
+    world axes to image directions
   params:
     scale_mode: rlbench_absolute_pose_target_from_delta_eef
 

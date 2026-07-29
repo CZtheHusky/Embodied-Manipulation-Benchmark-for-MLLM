@@ -94,8 +94,54 @@ class FakeSimplerEnvClient:
         )
 
 
+class FakeInitiallySuccessfulSimplerEnv:
+    def __init__(self) -> None:
+        self.reset_observation = {
+            "image": {
+                "base_camera": {
+                    "rgb": np.full((1, 4, 5, 3), 127, dtype=np.uint8),
+                }
+            }
+        }
+        self.get_info_calls = 0
+        self.evaluate_calls = 0
+        self.closed = False
+
+    def reset(self, seed):
+        return self.reset_observation, {}
+
+    def get_wrapper_attr(self, name):
+        if name != "get_info":
+            raise AttributeError(name)
+        return self.get_info
+
+    def get_info(self):
+        self.get_info_calls += 1
+        return {
+            "elapsed_steps": 0,
+            **self.evaluate(),
+        }
+
+    def evaluate(self):
+        self.evaluate_calls += 1
+        return {
+            "success": True,
+            "episode_stats": {"grasped": True},
+        }
+
+    def close(self):
+        self.closed = True
+
+
 def _require_simpler_env() -> None:
-    pytest.importorskip("simpler_env")
+    pytest.importorskip(
+        "mani_skill2_real2sim",
+        reason="pinned mani_skill2_real2sim runtime is not installed",
+    )
+    pytest.importorskip(
+        "simpler_env",
+        reason="pinned simpler_env runtime is not installed",
+    )
 
 
 @pytest.mark.parametrize(
@@ -119,6 +165,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert config.agent.history.action_window == "all"
     assert config.agent.history.image_window == 3
     assert config.logging.save_video is False
+    assert config.task.params["reject_initial_success"] is True
     assert config.agent.observation.cameras == PUBLIC_CAMERAS
     assert config.control_interface.active_dimensions == (
         "dx",
@@ -314,6 +361,47 @@ def test_simpler_env_adapter_serializes_pose_like_info():
     }
 
 
+def test_simpler_env_rejects_evaluator_success_before_model_request(
+    monkeypatch,
+    tmp_path,
+):
+    client = FakeSimplerEnvClient()
+    fake_env = FakeInitiallySuccessfulSimplerEnv()
+    monkeypatch.setenv("MLLM_TELEOP_MODEL", "fake-simpler-env-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://fake.invalid/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-api-key")
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.core.registry.OpenAICompatibleClient",
+        lambda **_kwargs: client,
+    )
+
+    def install_fake_env(adapter):
+        if adapter.env is None:
+            adapter.env = fake_env
+
+    monkeypatch.setattr(SimplerEnvSimAdapter, "_ensure_env", install_fake_env)
+    config = load_config(BASELINE_CONFIG)
+    config = replace(
+        config,
+        logging=replace(
+            config.logging,
+            output_dir=str(tmp_path / "initial-success"),
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="already successful immediately after reset",
+    ):
+        BenchmarkRunner(config).run((0,))
+
+    assert "success" not in fake_env.reset_observation
+    assert fake_env.get_info_calls == 1
+    assert fake_env.evaluate_calls == 1
+    assert fake_env.closed is True
+    assert client.requests == []
+
+
 def test_simpler_env_runtime_rgb_and_native_action_contract():
     _require_simpler_env()
     config = load_config(BASELINE_CONFIG)
@@ -367,6 +455,37 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
             float(np.asarray(next_observation.images[camera]).std()) > 1.0
             for camera in PUBLIC_CAMERAS
         )
+    finally:
+        sim.close()
+
+
+def test_simpler_env_pick_coke_can_seed_42_through_51_reset_canary():
+    _require_simpler_env()
+    config = load_config(BASELINE_CONFIG)
+    sim = build_sim(config)
+    provider = build_observation_provider(
+        config,
+        build_camera_manager(config.camera, config.benchmark.seed),
+    )
+
+    try:
+        for seed in range(42, 52):
+            sim.reset(config.task, seed=seed)
+            state = sim.get_state()
+            assert state["success"] is False, (
+                f"PickCokeCan seed {seed} is successful immediately after reset"
+            )
+
+            observation = provider.get_observation(sim)
+            assert set(PUBLIC_CAMERAS).issubset(observation.images)
+            for camera in PUBLIC_CAMERAS:
+                image = np.asarray(observation.images[camera])
+                assert image.ndim == 3
+                assert image.shape[-1] == 3
+                assert image.dtype == np.uint8
+                assert np.any(image != 0), (
+                    f"PickCokeCan seed {seed} camera {camera} is all black"
+                )
     finally:
         sim.close()
 

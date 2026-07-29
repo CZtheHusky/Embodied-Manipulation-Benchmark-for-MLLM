@@ -23,6 +23,7 @@ task:
   success_threshold: 1.0
   params:
     target_block_color: red
+    reject_initial_success: true
     instruction: Open the drawer, pick up the red block, and place the red block inside the drawer.
 
 camera:

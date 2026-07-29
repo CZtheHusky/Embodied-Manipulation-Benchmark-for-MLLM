@@ -25,6 +25,7 @@ task:
   params:
     instruction: Close the visible box lid.
     success_key: success
+    reject_initial_success: true
 
 camera:
   manager: fixed
@@ -47,16 +48,18 @@ control_interface:
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
   control_frame_description: >-
-    the Colosseum/RLBench world Cartesian x, y, and z axes, with translation
-    as the only active motion and the gripper held open. A magnitude-1 mapped
-    translation is scaled to 0.02 meters before the hidden episode-fixed
-    control transform. The benchmark adds the resulting world-frame delta to
-    the position from the latest observed absolute gripper pose without
-    additional sign compensation, clamps the target to the configured
-    workspace bounds, and sends a native absolute world-frame planning pose.
-    The front camera pose comes from the official task scene; without runtime
-    extrinsics, this control contract does not assign world axes to image
-    directions
+    a hidden controller Cartesian frame, with translation as the only active
+    motion. The hidden joystick mapping produces a controller-frame vector. A
+    magnitude-1 mapped component is scaled to 0.02 meters, then the hidden
+    episode-fixed 3D transform rotates that controller vector exactly once into
+    a delta expressed in the Colosseum/RLBench world Cartesian x, y, and z axes.
+    The benchmark adds this world-frame delta to the position from the latest
+    observed absolute gripper pose without another transform or sign
+    compensation, clamps the target to the configured workspace bounds, and
+    sends a native absolute world-frame planning pose. The gripper is fixed open
+    and is not controllable; no joystick gripper channel exists. The front
+    camera pose comes from the official task scene; without runtime extrinsics,
+    this control contract does not assign world axes to image directions
   params:
     scale_mode: rlbench_absolute_pose_target_from_delta_eef
 

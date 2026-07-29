@@ -179,12 +179,37 @@ hidden mapping and frame rotation produce `delta_world`; the adapter still adds
 that result directly, without another sign change, before workspace clamping.
 Rotation stays inactive, and the gripper is held open with
 `controller.params.default_gripper: 1.0` because the native action mode still
-expects a gripper value.
+expects a gripper value. The gripper is not controllable in these MLLM
+conditions, and no joystick gripper channel is added.
 
 Episode variation selection is deterministic. When a config does not provide
 an explicit variation, the adapter selects `episode_seed % variation_count`
 and calls RLBench `set_variation()` before reset. The selected variation stays
 in evaluator state and is excluded from model input.
+
+Neither pinned RLBench `TaskEnvironment` exposes a public success-query method,
+and PyRep has no task-level success oracle. Both pinned RLBench implementations
+do, however, retain the official native `Task` as `TaskEnvironment._task`.
+`Task.success() -> (success, terminate)` is the authoritative oracle that each
+pin's `TaskEnvironment.step()` calls after an action. The adapter calls that
+same native oracle immediately after `TaskEnvironment.reset()` completes. This
+does not send a no-op action or advance CoppeliaSim. The adapter fails loudly if
+the pinned native oracle is unavailable; it does not infer reset success from
+reward, termination, geometry, or observations.
+
+All four MLLM configs set `task.params.reject_initial_success: true`.
+`RLBenchTask.reset()` therefore rejects an episode before the first model call
+when the native reset oracle reports success. `success` and `terminate` are
+stored separately because native task failure conditions may terminate without
+succeeding.
+
+The baseline and perturbed configs in each backend intentionally have identical
+benchmark seed, simulator config, and task config. Deterministic stub tests
+prove that same-seed resets produce the same variation, descriptions, native
+low-dimensional state, gripper pose, and reset success. Optional real-runtime
+tests assert the same pairing, including the front RGB frame; they skip when
+the pinned simulator runtime is unavailable. Those runtime pairing tests were
+not executed while preparing this change.
 
 RLBench planning can reject an otherwise valid bounded command when no path is
 available. The adapter treats RLBench `InvalidActionError` as a rejected
@@ -224,6 +249,13 @@ history. The official perturbation name/index, RLBench variation, seed,
 simulator state, reward, native action, and sampled hidden control transform
 remain evaluator-only.
 
+A no-simulator Colosseum canary sends a nonzero joystick command through the
+perturbed mapping and controller. It independently reconstructs the scaled
+controller-frame vector and episode-fixed rotation, verifies the resulting
+world delta is nonzero, then verifies that `ColosseumSimAdapter._native_action`
+adds exactly that world delta to the latest observed absolute pose. The native
+gripper field remains fixed at open.
+
 The shared invalid-action handler first imports
 `rlbench.backend.exceptions.InvalidActionError`, as required by the official
 Colosseum RLBench pin, and falls back to the legacy
@@ -247,10 +279,13 @@ optional hidden frame rotation.
 The baseline exposes the fixed joystick mapping and identity frame. The
 perturbed condition uses an episode-fixed hidden `permuted_sign_flipped`
 mapping and `random_rotation_3d` transform over the same three translation
-dimensions. The prompt describes the RLBench world Cartesian frame but never
-includes the sampled permutation, signs, rotation matrix, target pose,
-end-effector pose, task low-dimensional state, reward, success oracle,
-variation index, seed, or native simulator action.
+dimensions. Its prompt states the order without disclosing sampled values: the
+hidden mapping produces a controller-frame vector, component scaling is applied
+there, and one hidden episode-fixed 3D rotation converts that vector into the
+RLBench world-frame delta. The prompt never includes the sampled permutation,
+signs, rotation matrix, target pose, end-effector pose, task low-dimensional
+state, reward, success oracle, variation index, seed, or native simulator
+action.
 
 The local Fake Client validation runs four real CoppeliaSim steps for each
 condition and verifies:
@@ -259,6 +294,8 @@ condition and verifies:
 - native actions are finite absolute poses inside configured workspace bounds
 - a no-simulator canary verifies direct `0.02 m` scaling, accumulation from the
   latest observed absolute gripper pose, and workspace clamping
+- a Colosseum perturbed canary verifies a nonzero controller vector is rotated
+  exactly once into the native world-frame pose delta
 - quaternion and gripper fields satisfy the RLBench action contract
 - prompt v2, reflection history, and three-image-turn behavior
 - hidden state and API-key sentinels do not enter requests or artifacts

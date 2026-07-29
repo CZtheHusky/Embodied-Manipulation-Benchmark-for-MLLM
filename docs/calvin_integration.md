@@ -24,7 +24,8 @@ Verified again on 2026-07-29 with the pinned `.venvs/calvin` environment:
 - Every parsed action was valid and translated to a finite seven-value native action with six bounded relative pose commands and a native gripper command in `{-1, 1}`.
 - The run manifest records Chat Completions, `action_with_reflection`, reasoning `low`, image history `3`, all action history, and prompt version `mllm_joystick_reflection_v2`.
 - Sentinel state, reward, success, distance, object/EEF pose, simulator action, seed, and sampled hidden-control values did not enter the model request.
-- Task success uses the pinned CALVIN `Tasks.get_task_info_for_set()` API. It first requires the configured target block to satisfy its table/slider lift task, saves a deep copy of that held state, and then requires `place_in_drawer`. Success remains sticky and never uses `push_into_drawer`.
+- Task success uses the pinned CALVIN `Tasks.get_task_info_for_set()` API. It requires `open_drawer`, then the configured target block's table/slider lift task, and finally `place_in_drawer`, deep-copying the state at each completed phase. Success remains sticky and never uses `push_into_drawer`.
+- Both MLLM configurations enable `reject_initial_success`. The reset check uses absolute scene state: the drawer joint must be closed, the red block must not contact the drawer link, and the red block and robot must not contact each other.
 - Legacy `PlayTableSimEnv.seed(seed)` resets now propagate its new RNG to the scene and every movable object. Real resets reproduce the same layout for the same seed and sample different layouts for different seeds.
 
 The validation command was:
@@ -33,7 +34,7 @@ The validation command was:
 PYTHONPATH=src .venvs/calvin/bin/python -m pytest tests/test_calvin_integration.py -q
 ```
 
-It completed with `16 passed`, no skips, and five upstream Hydra/CALVIN compatibility warnings. No real model API or network access was used.
+That historical run completed with `16 passed`, no skips, and five upstream Hydra/CALVIN compatibility warnings. No real model API or network access was used.
 
 ## Design
 
@@ -143,7 +144,23 @@ The verified `PlayTableSimEnv` uses the old `gym` API:
 
 `CalvinSimAdapter` normalizes these into the benchmark reset/step/render interfaces. It also supports newer Gymnasium-style `(obs, info)` reset and 5-value step results for compatibility with wrappers.
 
-The plain play-table environment does not emit a language-task success key, so `CalvinTask` evaluates the pinned official task definitions directly. For the configured red target, phase one filters only `lift_red_block_table` and `lift_red_block_slider` against the reset info. Phase two filters only `place_in_drawer` against the deep-copied held info. Moving or pushing a block into the drawer without first satisfying the target lift cannot complete the task.
+The plain play-table environment does not emit a language-task success key, so `CalvinTask` evaluates the pinned official task definitions directly. At commit `797142c588c21e76717268b7b430958dbd13bf48`, `conf/tasks/new_playtable_tasks.yaml` defines `open_drawer` as a positive `base__drawer` movement over `0.12`, separate target-specific lift tasks, and `place_in_drawer` as placement on `table/drawer_link`. The evaluator therefore uses three ordered phases:
+
+1. Filter only `open_drawer` against reset info and deep-copy the first opened state.
+2. Filter only `lift_red_block_table` and `lift_red_block_slider` against that opened state and deep-copy the first held state.
+3. Filter only `place_in_drawer` against the held state.
+
+Moving or pushing a block into the drawer, lifting it before the drawer phase, or opening the drawer without the later target lift cannot complete the task. The model receives only the unchanged task instruction and public control prompt; phase state and oracle inputs are evaluator-private.
+
+## Reset Invariant
+
+The pinned `config_data_collection.yaml` selects `calvin_scene_D`. Its scene configuration sets `base__drawer.initial_state` to `0`, and movable blocks with `initial_pos: any` are sampled only from the configured table and slider surfaces. `CalvinTask` additionally checks the authoritative reset info rather than treating a no-op task transition as an initial-state oracle:
+
+- `scene_info.doors.base__drawer.current_state` must be `0` within `1e-6`.
+- The red block must not contact the table's `drawer_link`, matching CALVIN's destination-contact semantics.
+- Neither the robot's contacts nor the red block's contacts may contain the other body UID.
+
+The baseline and perturbed MLLM configs set `reject_initial_success: true`, so a violated invariant raises before any model call. A real reset canary covers seeds `42..51`, rechecks these predicates, confirms the three-stage evaluator is false at reset, and requires non-black uint8 RGB from both `static` and `gripper`. It skips explicitly when CALVIN, PyBullet, Hydra, or OmegaConf is unavailable.
 
 Pinned CALVIN uses the old Gym fallback: `env.seed(seed)` replaces `env.np_random`, while the already-created scene and movable objects retain their previous RNG references. `CalvinSimAdapter` synchronizes those references before `reset()`. PyBullet can introduce sub-millimeter post-reset settling differences, so the real-environment regression checks same-seed layout reproducibility at a 1 mm tolerance while requiring different seeds to differ by more than 1 cm for at least one block.
 

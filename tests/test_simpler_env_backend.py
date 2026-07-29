@@ -1,4 +1,5 @@
 import importlib.util
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,6 +13,23 @@ from mllm_teleop_benchmark.core.types import SimplerEnvAction
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
 from mllm_teleop_benchmark.sim.simpler_env.adapter import SimplerEnvSimAdapter
 from mllm_teleop_benchmark.sim.simpler_env.observation import SimplerEnvObservationProvider
+
+
+def test_simpler_env_smoke_imports_runtime_dependencies_before_pytest():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "manage_uv_env.py"
+    spec = importlib.util.spec_from_file_location("manage_uv_env", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    command = module.BACKENDS["simpler-env"]["smoke"][0]
+    assert command[:2] == ["python", "-c"]
+    preflight = command[2]
+    assert preflight.index("import simpler_env") < preflight.index("import pytest")
+    assert preflight.index("import mani_skill2_real2sim") < preflight.index(
+        "import pytest"
+    )
 
 
 def test_simpler_env_config_builds_without_simpler_env_install():
