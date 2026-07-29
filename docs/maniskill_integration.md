@@ -90,12 +90,11 @@ camera metadata, and sampled mapping/frame values remain outside the request.
 They may still exist in simulator state and benchmark logs for evaluation.
 
 The shared `ControlInstructionBuilder` states the motion joystick values, 3D
-translation/rotation semantics, fixed mapping, identity-frame behavior, and
-whether mapping/frame complexity exists. It does not state the direct
-gripper's `[0, 1]` semantics. The two ManiSkill task instructions supply that
-missing public rule. A shared solution would need `ControlInstructionBuilder`
-to derive the gripper range and endpoint meanings from the action schema and
-controller convention; no shared prompt file is changed by this integration.
+translation/rotation semantics, physical controller frame, fixed mapping or
+hidden-complexity rule, identity-frame behavior, and configured public gripper
+commands. Hidden mapping and frame samples remain fixed within an episode. The
+task instruction therefore contains only the task objective instead of
+duplicating backend control prose.
 
 ## Human Play
 

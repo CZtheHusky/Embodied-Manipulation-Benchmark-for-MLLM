@@ -338,6 +338,8 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
     assert '"joystick_3":{"kind":"continuous","max":1.0,"min":0.0}' in request_text
     assert "direct control" in request_text
     assert "final virtual joystick" in request_text
+    assert "0 means open, 1 means closed, 0.5 means hold" in request_text
+    assert "robosuite OSC world x, y, and z axes" in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
         assert "joystick_1 -> dy" in request_text
@@ -346,6 +348,10 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
     else:
         assert "exact joystick-to-dimension mapping is not disclosed" in request_text
         assert "exact physical-frame transform is not disclosed" in request_text
+        assert (
+            "hidden joystick mapping and control-frame transform remain fixed "
+            "for the entire episode"
+        ) in request_text
 
     for forbidden in (
         *PRIVATE_SENTINELS.values(),

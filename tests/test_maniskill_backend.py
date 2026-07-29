@@ -104,12 +104,16 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
+    assert config.agent.model.reasoning_effort == "low"
     assert config.agent.history.image_window == 3
     assert config.agent.history.action_window == "all"
     assert config.agent.observation.cameras == ("base_camera",)
     assert config.camera.visible_metadata is False
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
+    assert config.control_interface.control_frame_description
+    assert config.control_interface.gripper_open_command == 0.0
+    assert config.control_interface.gripper_closed_command == 1.0
     assert tuple(action_space.channels) == tuple(f"joystick_{index}" for index in range(7))
     assert action_space.schema()["joystick_6"] == {
         "kind": "continuous",
@@ -218,8 +222,9 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
         "dx, dy, and dz denote end-effector translation along the control frame's "
         "x, y, and z axes"
     ) in request_text
-    assert "final joystick_6 directly controls the gripper in [0, 1]" in request_text
-    assert "0 is fully open and 1 is fully closed" in request_text
+    assert "gripper is always the final virtual joystick" in request_text
+    assert "0 means open, 1 means closed" in request_text
+    assert "ManiSkill end-effector delta-pose controller" in request_text
     assert request_text.count('"role":"assistant"') == 1
     for forbidden in (
         "PRIVATE_STATE",
@@ -246,8 +251,12 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
         assert "joystick_0 -> dx" in request_text
         assert "No additional control-frame rotation is applied" in request_text
     else:
-        assert "undisclosed permutation and sign pattern" in request_text
-        assert "undisclosed 3D frame rotation" in request_text
+        assert "exact joystick-to-dimension mapping is not disclosed" in request_text
+        assert "exact physical-frame transform is not disclosed" in request_text
+        assert (
+            "hidden joystick mapping and control-frame transform remain fixed "
+            "for the entire episode"
+        ) in request_text
         assert "joystick_0 ->" not in request_text
         assert "rotation_matrix" not in request_text
         assert "quaternion" not in request_text

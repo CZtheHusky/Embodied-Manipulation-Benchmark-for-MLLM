@@ -25,6 +25,7 @@ class ControlInstructionBuilder:
         mapping_complexity = bool(interface.get("mapping_complexity_present", False))
         frame_complexity = bool(interface.get("frame_complexity_present", False))
         mapping_summary = _mapping_summary(interface.get("mapping"))
+        control_frame_description = str(interface.get("control_frame_description", "")).strip()
 
         text_lines = [
             f"You control the robot with {len(channels)} virtual joystick channel(s).",
@@ -44,6 +45,9 @@ class ControlInstructionBuilder:
             dimension_semantics = _dimension_semantics(dimensions)
             if dimension_semantics:
                 text_lines.append(dimension_semantics)
+            if control_frame_description:
+                text_lines.append(f"The physical controller frame is {control_frame_description}.")
+                panel_lines.append(f"controller frame: {control_frame_description}")
             panel_lines.append(f"active dims: {', '.join(str(v) for v in dimensions)}")
             if mapping_summary:
                 text_lines.append(f"The visible joystick mapping is: {mapping_summary}.")
@@ -55,6 +59,15 @@ class ControlInstructionBuilder:
                 text_lines.append("Frame complexity is present, so the exact physical-frame transform is not disclosed.")
             else:
                 text_lines.append("No additional control-frame rotation is applied.")
+            hidden_components = []
+            if mapping_complexity:
+                hidden_components.append("joystick mapping")
+            if frame_complexity:
+                hidden_components.append("control-frame transform")
+            if hidden_components:
+                noun = " and ".join(hidden_components)
+                verb = "remain" if len(hidden_components) > 1 else "remains"
+                text_lines.append(f"The hidden {noun} {verb} fixed for the entire episode.")
         else:
             text_lines.append("The joystick-to-dimension mapping is not visible.")
             panel_lines.append("active dims: hidden")
@@ -62,6 +75,9 @@ class ControlInstructionBuilder:
 
         if gripper != "none":
             text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick.")
+            gripper_semantics = _gripper_semantics(interface.get("gripper_commands"))
+            if gripper_semantics:
+                text_lines.append(gripper_semantics)
             panel_lines.append(f"gripper: {gripper}, final joystick")
         else:
             panel_lines.append("gripper: none")
@@ -107,3 +123,21 @@ def _dimension_semantics(dimensions: list[object]) -> str:
         + ". A positive mapped value commands the positive direction, a negative "
         "value commands the opposite direction, and zero commands no change."
     )
+
+
+def _gripper_semantics(commands: object) -> str:
+    if not isinstance(commands, dict):
+        return ""
+    parts = [
+        f"{_format_number(value)} means {name}"
+        for name, value in commands.items()
+        if name in {"open", "closed", "hold"}
+    ]
+    if not parts:
+        return ""
+    return "For the final gripper joystick, " + ", ".join(parts) + "."
+
+
+def _format_number(value: object) -> str:
+    number = float(value)
+    return str(int(number)) if number.is_integer() else str(number)

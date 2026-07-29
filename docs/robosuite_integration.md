@@ -131,21 +131,10 @@ in the fixed condition, and the fact that the gripper is the final
 direct-control joystick. It does not serialize simulator state or exact
 perturbation values.
 
-Three backend-independent wording requirements remain in the shared
-`ControlInstructionBuilder` and are intentionally not patched by this
-robosuite-only integration:
-
-1. Bind the named control frame to robosuite OSC world x/y/z axes; the shared
-   prompt now says that no additional rotation is applied but does not identify
-   the backend frame.
-2. State explicitly that gripper `0` means open, `0.5` means hold, and `1`
-   means close; the JSON schema currently supplies only the `[0, 1]` range.
-3. State that hidden mapping and frame transforms are constant within an
-   episode while continuing to withhold their sampled values.
-
-Until those shared sentences are added through an approved core change, the
-YAML schema and this backend document are complete, but the model-facing prose
-does not fully state all robosuite control semantics.
+The shared `ControlInstructionBuilder` also identifies the robosuite OSC world
+frame, states that gripper `0` opens, `0.5` holds, and `1` closes, and tells the
+model that hidden mapping/frame samples remain constant within an episode. The
+sampled permutation, signs, quaternion, and matrix remain undisclosed.
 
 ## Local verification
 
@@ -164,4 +153,3 @@ MLLM condition.
 
 - Initial support is focused on Lift.
 - The adapter is intentionally lightweight and should be hardened as more robosuite tasks are added.
-- The remaining public-prompt wording requirements above require a shared-core change.

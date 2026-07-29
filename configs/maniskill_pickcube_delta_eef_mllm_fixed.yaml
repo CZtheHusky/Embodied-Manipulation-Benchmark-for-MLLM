@@ -22,10 +22,7 @@ task:
   success_threshold: 1.0
   params:
     instruction: >-
-      Pick up the visible cube and move it to the visible goal marker using only
-      RGB observations. The final joystick_6 directly controls the gripper in
-      [0, 1], where 0 is fully open and 1 is fully closed; it is never permuted,
-      sign-flipped, or frame-rotated.
+      Pick up the visible cube and move it to the visible goal marker.
     success_key: success
 
 camera:
@@ -54,6 +51,9 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: the ManiSkill end-effector delta-pose controller x, y, and z axes
+  gripper_open_command: 0
+  gripper_closed_command: 1
   params:
     scale_mode: maniskill_normalized_pd_ee_delta_pose
 
@@ -88,9 +88,9 @@ agent:
     retry_backoff_seconds: 1
     retry_backoff_max_seconds: 30
     retry_until_success: true
-    reasoning_effort: medium
+    reasoning_effort: low
     temperature: 0
-    max_output_tokens: 128
+    max_output_tokens: 192
     response_format: json_object
     stream: false
   observation:
@@ -106,6 +106,11 @@ logging:
   output_dir: outputs/maniskill_pickcube_delta_eef_mllm_fixed
   save_images: false
   save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
   save_trajectory: true
   save_config_snapshot: true
 

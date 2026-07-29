@@ -126,6 +126,10 @@ def test_control_instruction_does_not_reveal_complex_mapping_or_signs():
     assert "dx, dy, and dz denote end-effector translation" in text
     assert "positive mapped value commands the positive direction" in text
     assert "No additional control-frame rotation is applied" not in text
+    assert (
+        "hidden joystick mapping and control-frame transform remain fixed "
+        "for the entire episode"
+    ) in text
     assert "permuted_sign_flipped" not in text
     assert "random_rotation_3d" not in text
     assert "joystick_0 ->" not in text

@@ -118,6 +118,7 @@ def test_pusher_fake_client_closes_public_visual_loop(
     assert len(client.requests) == 2
     request_text = client.requests[-1].encoded_body().decode("utf-8")
     assert "dx, dy, and dz denote end-effector translation" in request_text
+    assert "Gymnasium Pusher world x, y, and z axes" in request_text
     assert "Move the white cylinder to the red goal disk" in request_text
     for forbidden in (
         "object_goal_distance",

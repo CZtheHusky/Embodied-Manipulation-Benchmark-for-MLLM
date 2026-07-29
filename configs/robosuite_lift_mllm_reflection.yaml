@@ -43,6 +43,10 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: the robosuite OSC world x, y, and z axes
+  gripper_open_command: 0
+  gripper_closed_command: 1
+  gripper_hold_command: 0.5
   params:
     scale_mode: robosuite_osc_world_xyz
 

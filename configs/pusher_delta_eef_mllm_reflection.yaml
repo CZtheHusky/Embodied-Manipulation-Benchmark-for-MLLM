@@ -52,6 +52,7 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: the Gymnasium Pusher world x, y, and z axes
   params:
     scale_mode: uniform_env_eef_step_scale_0.025m
 

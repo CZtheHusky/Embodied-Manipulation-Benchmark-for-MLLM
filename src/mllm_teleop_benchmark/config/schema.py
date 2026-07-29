@@ -163,6 +163,10 @@ class ControlInterfaceConfig:
     mapping_visible_to_agent: bool = True
     frame_transform: str = "identity"
     frame_visible_to_agent: bool = True
+    control_frame_description: str | None = None
+    gripper_open_command: float | None = None
+    gripper_closed_command: float | None = None
+    gripper_hold_command: float | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -188,6 +192,26 @@ class ControlInterfaceConfig:
             mapping_visible_to_agent=bool(data.get("mapping_visible_to_agent", data.get("visible_metadata", True))),
             frame_transform=str(data.get("frame_transform", "identity")),
             frame_visible_to_agent=bool(data.get("frame_visible_to_agent", data.get("visible_metadata", True))),
+            control_frame_description=(
+                str(data["control_frame_description"])
+                if "control_frame_description" in data
+                else None
+            ),
+            gripper_open_command=(
+                float(data["gripper_open_command"])
+                if "gripper_open_command" in data
+                else None
+            ),
+            gripper_closed_command=(
+                float(data["gripper_closed_command"])
+                if "gripper_closed_command" in data
+                else None
+            ),
+            gripper_hold_command=(
+                float(data["gripper_hold_command"])
+                if "gripper_hold_command" in data
+                else None
+            ),
             params=dict(data.get("params", {})),
         )
 
@@ -270,6 +294,19 @@ class ControlInterfaceConfig:
             "mapping_complexity_present": self.mapping_strategy != "fixed",
             "frame_complexity_present": self.frame_transform != "identity",
         }
+        if self.control_frame_description:
+            visible["control_frame_description"] = self.control_frame_description
+        gripper_commands = {
+            name: value
+            for name, value in (
+                ("open", self.gripper_open_command),
+                ("closed", self.gripper_closed_command),
+                ("hold", self.gripper_hold_command),
+            )
+            if value is not None
+        }
+        if gripper_commands:
+            visible["gripper_commands"] = gripper_commands
         return visible
 
 
