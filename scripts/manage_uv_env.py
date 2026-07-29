@@ -136,7 +136,17 @@ BACKENDS: dict[str, dict[str, object]] = {
                 "target_backend": "simpler-env",
             },
         ],
-        "smoke": [["python", "-m", "pytest", "-q", "tests/test_simpler_env_backend.py", "-rs"]],
+        "smoke": [
+            [
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "tests/test_simpler_env_backend.py",
+                "tests/test_simpler_env_integration.py",
+                "-rs",
+            ]
+        ],
     },
     "calvin": {
         "python": "3.10",

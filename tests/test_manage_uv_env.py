@@ -71,6 +71,16 @@ def test_uv_source_backends_declare_exact_source_commits():
         module.validate_source_config(source)
 
 
+def test_simpler_env_smoke_includes_mllm_integration_contract():
+    module = load_manage_uv_env()
+
+    smoke_commands = module.BACKENDS["simpler-env"]["smoke"]
+
+    assert len(smoke_commands) == 1
+    assert "tests/test_simpler_env_backend.py" in smoke_commands[0]
+    assert "tests/test_simpler_env_integration.py" in smoke_commands[0]
+
+
 def test_source_config_rejects_branch_or_tag_refs():
     module = load_manage_uv_env()
     source = {
