@@ -177,3 +177,18 @@ python3 scripts/manage_uv_env.py run robocasa -- python scripts/play_benchmark.p
 ```
 
 The Fake Client tests run both MLLM configs against the real simulator without reading `.env.model-api.local` or making a network request. They verify request history counts, prompt v2, private-state exclusion, native Dict shapes and bounds, all three RGB streams, non-black PNG artifacts, trajectory reflections, and the run manifest.
+
+## MLLM Control Timing
+
+The 100-decision MLLM protocol uses the upstream PandaOmron accumulated-goal
+controller. A zero motion command holds the desired controller goal; it is not
+an instantaneous brake, so the arm can continue moving toward the previous
+goal. The binary gripper command is also applied incrementally: repeated close
+commands may be required before the fingers are visually closed.
+
+These timing properties explain why full-scale discrete corrections can
+overshoot and why a one-step close command may not produce a grasp. They do not
+change the verified channel order, base-frame axis signs, gripper polarity, or
+native action scale. The current baseline and perturbed MLLM pair intentionally
+keeps one unchanged prompt contract; future prompt revisions that expose these
+timing details must be versioned and evaluated as a separate protocol.
