@@ -26,19 +26,15 @@ task:
     success_key: success
 
 camera:
-  manager: maniskill_randomized
+  manager: fixed
   visible_metadata: false
   cameras:
-    - name: base_camera
-      type: maniskill_rgb
-      width: 320
-      height: 240
-      pose: [0.7, 0.0, 0.6, 0.7071, 0.0, 0.7071, 0.0]
+    - name: render_camera
+      type: maniskill_human_rgb
+      width: 512
+      height: 512
       params:
-        position_ranges:
-          - [0.55, 0.85]
-          - [-0.25, 0.25]
-          - [0.45, 0.75]
+        source: human_render
 
 control_interface:
   mode: eef_delta_pose
@@ -96,7 +92,7 @@ agent:
     response_format: json_object
     stream: false
   observation:
-    cameras: [base_camera]
+    cameras: [render_camera]
     image_max_side: 512
   history:
     action_window: all

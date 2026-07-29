@@ -75,7 +75,10 @@ PickCube has two standalone MLLM configurations:
 
 Both use the OpenAI-compatible Chat Completions API,
 `action_with_reflection`, `image_window: 3`, and `action_window: all`. They
-send one `base_camera` RGB stream. Select either YAML directly:
+send the official `render_camera` RGB stream. ManiSkill sensor observations
+intentionally hide the green PickCube goal site, so the benchmark uses the
+human render camera where both the red cube and green goal marker are public.
+Select either YAML directly:
 
 ```bash
 python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml

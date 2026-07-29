@@ -17,6 +17,7 @@ from mllm_teleop_benchmark.config.schema import FrameTransformConfig
 from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.core.registry import (
     build_action_space,
+    build_camera_manager,
     build_controller,
     build_mapping,
     control_interface_metadata,
@@ -28,8 +29,8 @@ from mllm_teleop_benchmark.core.types import (
     ValidationResult,
 )
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
-from mllm_teleop_benchmark.observation.camera import RandomizedManiSkillCameraManager
 from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
+from mllm_teleop_benchmark.sim.maniskill.camera import maniskill_sensor_config
 from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservationProvider
 
 
@@ -107,7 +108,9 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.history.image_window == 3
     assert config.agent.history.action_window == "all"
-    assert config.agent.observation.cameras == ("base_camera",)
+    assert config.agent.observation.cameras == ("render_camera",)
+    assert config.camera.manager == "fixed"
+    assert config.camera.cameras[0].params["source"] == "human_render"
     assert config.camera.visible_metadata is False
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
@@ -165,7 +168,7 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
     action_space = build_action_space(config)
     previous = Observation(
         step_id=0,
-        images={"base_camera": np.full((12, 16, 3), 64, dtype=np.uint8)},
+        images={"render_camera": np.full((12, 16, 3), 64, dtype=np.uint8)},
         state={
             "state": "PRIVATE_STATE",
             "reward": "PRIVATE_REWARD",
@@ -179,7 +182,7 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
     )
     current = Observation(
         step_id=1,
-        images={"base_camera": np.full((12, 16, 3), 128, dtype=np.uint8)},
+        images={"render_camera": np.full((12, 16, 3), 128, dtype=np.uint8)},
         state={"state": "PRIVATE_NEXT_STATE"},
         metadata={"camera_randomization": "PRIVATE_NEXT_CAMERA_RANDOMIZATION"},
     )
@@ -326,26 +329,19 @@ def test_maniskill_delta_eef_controller_applies_frame_rotation():
     assert abs(sim_action.values[2]) < 1e-9
 
 
-def test_maniskill_camera_randomization_is_episode_level_and_deterministic():
+def test_maniskill_human_render_camera_is_not_forwarded_as_sensor_config():
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
-    manager = RandomizedManiSkillCameraManager(config.camera)
+    manager = build_camera_manager(config.camera, seed=5)
+    camera = manager.get_active_cameras()[0]
 
-    manager.reset(5)
-    first = manager.get_active_cameras()[0].pose
-    repeated_without_reset = manager.get_active_cameras()[0].pose
-    manager.reset(5)
-    second = manager.get_active_cameras()[0].pose
-    manager.reset(6)
-    third = manager.get_active_cameras()[0].pose
-
-    assert first == repeated_without_reset
-    assert first == second
-    assert first != third
+    assert camera.name == "render_camera"
+    assert camera.params["source"] == "human_render"
+    assert maniskill_sensor_config(manager.get_active_cameras()) == {}
 
 
 def test_maniskill_observation_provider_extracts_rgb_images():
     config = load_config("configs/maniskill_pickcube_delta_eef.yaml")
-    provider = ManiSkillObservationProvider(RandomizedManiSkillCameraManager(config.camera))
+    provider = ManiSkillObservationProvider(build_camera_manager(config.camera, seed=5))
     frame = np.zeros((1, 4, 5, 4), dtype=np.uint8)
     frame[..., 1] = 255
 
@@ -428,9 +424,21 @@ def test_maniskill_pickcube_cpu_rgb_and_fake_client_smoke(
     assert len(image_urls) == 1
     image_bytes = base64.b64decode(image_urls[0].split(",", 1)[1])
     rgb = np.asarray(Image.open(BytesIO(image_bytes)).convert("RGB"))
-    assert rgb.shape == (240, 320, 3)
+    assert rgb.shape == (512, 512, 3)
     assert rgb.dtype == np.uint8
     assert np.any(rgb != 0)
+    red_object_pixels = (
+        (rgb[:, :, 0] > 140)
+        & (rgb[:, :, 1] < 80)
+        & (rgb[:, :, 2] < 80)
+    )
+    green_goal_pixels = (
+        (rgb[:, :, 1] > 70)
+        & (rgb[:, :, 0] < 80)
+        & (rgb[:, :, 2] < 80)
+    )
+    assert np.count_nonzero(red_object_pixels) > 100
+    assert np.count_nonzero(green_goal_pixels) > 5
     request_text = "\n".join(
         request.encoded_body().decode("utf-8")
         for request in client.requests

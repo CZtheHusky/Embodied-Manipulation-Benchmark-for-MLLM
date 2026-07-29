@@ -25,9 +25,22 @@ class ManiSkillObservationProvider(ObservationProvider):
         if not isinstance(sim, ManiSkillSimAdapter):
             raise TypeError(f"ManiSkillObservationProvider requires ManiSkillSimAdapter, got {type(sim).__name__}")
         state = sim.get_state()
-        images = self._extract_images(sim.last_native_obs)
-        if not images:
-            images = {camera.name: sim.render(camera) for camera in self.camera_manager.get_active_cameras()}
+        sensor_images = self._extract_images(sim.last_native_obs)
+        images: dict[str, Any] = {}
+        for camera in self.camera_manager.get_active_cameras():
+            source = str(camera.params.get("source", "sensor"))
+            if source == "human_render":
+                images[camera.name] = sim.render(camera)
+            elif source == "sensor":
+                if camera.name not in sensor_images:
+                    raise RuntimeError(
+                        f"ManiSkill observation is missing configured sensor camera: {camera.name}"
+                    )
+                images[camera.name] = sensor_images[camera.name]
+            else:
+                raise ValueError(
+                    f"Unsupported ManiSkill camera source for {camera.name}: {source}"
+                )
         return Observation(
             step_id=int(state.get("step_id", 0)),
             images=images,

@@ -9,10 +9,18 @@ def maniskill_sensor_config(cameras: tuple[CameraSpec, ...], sampled_pose_config
     configs: dict[str, Any] = {}
     pose_config = sampled_pose_config or {}
     for camera in cameras:
+        params = dict(camera.params)
+        source = str(params.pop("source", "sensor"))
+        if source == "human_render":
+            continue
+        if source != "sensor":
+            raise ValueError(
+                f"Unsupported ManiSkill camera source for {camera.name}: {source}"
+            )
         entry = {
             "width": int(camera.width),
             "height": int(camera.height),
-            **dict(camera.params),
+            **params,
         }
         if camera.pose:
             if len(camera.pose) == 7:
@@ -24,4 +32,4 @@ def maniskill_sensor_config(cameras: tuple[CameraSpec, ...], sampled_pose_config
         if camera.name in pose_config and isinstance(pose_config[camera.name], dict):
             entry.update(pose_config[camera.name])
         configs[camera.name] = entry
-    return {"sensor_configs": configs}
+    return {"sensor_configs": configs} if configs else {}
