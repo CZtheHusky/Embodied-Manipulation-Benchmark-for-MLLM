@@ -34,7 +34,7 @@ camera:
 control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz]
-  gripper: direct
+  gripper: none
   channel_kind: discrete
   channel_values: [-1, 0, 1]
   mapping_strategy: permuted_sign_flipped
@@ -43,8 +43,6 @@ control_interface:
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
   control_frame_description: the Meta-World end-effector controller x, y, and z axes
-  gripper_open_command: 0
-  gripper_closed_command: 1
   params:
     scale_mode: metaworld_normalized_box
 
@@ -57,8 +55,6 @@ controller:
     dz: 1.0
   params:
     dimensions: [dx, dy, dz, gripper]
-    gripper_open_value: -1.0
-    gripper_closed_value: 1.0
     default_gripper_value: 1.0
 
 agent:
