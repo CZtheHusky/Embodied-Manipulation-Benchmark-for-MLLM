@@ -182,23 +182,22 @@ def test_dmcontrol_manipulator_native_action_is_actuator_space():
     assert actuator_names != ["dx", "dy", "dz", "droll", "gripper"]
 
 
-def test_dmcontrol_legacy_controller_translation_is_shape_compatible():
+def test_dmcontrol_example_uses_planar_eef_controller():
     config = load_config("configs/dmcontrol_example.yaml")
     controller = build_controller(config, build_mapping(config))
     action = JoystickAction(
         channels={
             "joystick_0": 1.0,
             "joystick_1": 0.0,
-            "joystick_2": -1.0,
-            "joystick_3": 0.5,
-            "joystick_4": 1.0,
+            "joystick_2": 0.5,
         }
     )
 
     sim_action = controller.translate(action)
 
-    assert isinstance(sim_action, DMControlAction)
-    assert sim_action.values == (0.1, 0.0, -0.1, 0.05, 1.0)
+    assert isinstance(sim_action, DMControlPlanarEEFAction)
+    assert sim_action.delta_xy == (0.01, 0.0)
+    assert sim_action.gripper == 0.5
 
 
 @pytest.mark.parametrize(
@@ -237,11 +236,11 @@ def test_dmcontrol_mllm_config_is_planar_eef_not_native_motor_aliases(
     assert config.control_interface.gripper_closed_command == 1.0
     assert config.simulator.params["action_repeat"] == 4
     assert config.control_interface.params["scale_mode"] == (
-        "dmcontrol_world_xz_cartesian_impedance_target_0_03m"
+        "dmcontrol_world_xz_cartesian_impedance_target_0_01m"
     )
     assert config.controller.scales == {
-        "dx": 0.03,
-        "dy": 0.03,
+        "dx": 0.01,
+        "dy": 0.01,
         "gripper": 1.0,
     }
     assert tuple(schema) == ("joystick_0", "joystick_1", "joystick_2")
@@ -274,7 +273,7 @@ def test_dmcontrol_planar_controller_applies_mapping_and_rotation():
         )
     )
     assert isinstance(baseline_action, DMControlPlanarEEFAction)
-    np.testing.assert_allclose(baseline_action.delta_xy, (0.03, 0.0), atol=1e-12)
+    np.testing.assert_allclose(baseline_action.delta_xy, (0.01, 0.0), atol=1e-12)
     assert baseline_action.gripper == 0.25
 
     perturbed = load_config(PERTURBED_MLLM_CONFIG)
@@ -286,7 +285,7 @@ def test_dmcontrol_planar_controller_applies_mapping_and_rotation():
     )
     mapped = mapping.map_action(joystick)
     expected = transform.transform_delta_position(
-        (mapped.get("dx") * 0.03, mapped.get("dy") * 0.03, 0.0)
+        (mapped.get("dx") * 0.01, mapped.get("dy") * 0.01, 0.0)
     )
     perturbed_action = build_controller(
         perturbed,
@@ -322,7 +321,7 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
     assert "control frame's x and y axes" not in baseline_prompt
     assert "world +x projects toward image right" in baseline_prompt
     assert "world +z projects toward image up" in baseline_prompt
-    assert "mapped magnitude-1 command requests a 0.03 m" in baseline_prompt
+    assert "mapped magnitude-1 command requests a 0.01 m" in baseline_prompt
     assert "hand camera tracks the moving hand" in baseline_prompt
     assert "must not be applied to the hand view" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
@@ -348,7 +347,7 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
     assert "remain fixed for the entire episode" in perturbed_prompt
-    assert "magnitude 1 requests a 0.03 m" in perturbed_prompt
+    assert "magnitude 1 requests a 0.01 m" in perturbed_prompt
     assert "world +x projects toward image right" in perturbed_prompt
     assert "world +z projects toward image up" in perturbed_prompt
     assert "hand camera tracks the moving hand" in perturbed_prompt

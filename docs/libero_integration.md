@@ -92,7 +92,11 @@ The native action order is fixed:
 [dx, dy, dz, droll, dpitch, dyaw, gripper]
 ```
 
-The legacy human-play config applies benchmark-side scales of `0.05` for translation and `0.1` for rotation. The MLLM configs instead send normalized `[-1, 1]` pose commands because robosuite's `OSC_POSE` controller performs its own scaling from normalized input to physical deltas: translation output is bounded at `0.05 m` and the axis-angle rotation-vector output at `0.5 rad` per controller command. Applying both scales would make MLLM motion unintentionally small.
+All LIBERO configs use benchmark-side normalized scales of `0.2` for
+translation and `0.0628318530717959` for rotation. Robosuite's `OSC_POSE`
+controller then applies its native gains of `0.05 m` and `0.5 rad`, producing
+the benchmark-standard physical step of `0.01 m` and
+`0.0314159265358979 rad` (`1.8 degrees`) for a magnitude-1 command.
 
 The six pose deltas use the MuJoCo world Cartesian frame. This follows
 robosuite `OSC_POSE`: translation deltas are added to the current world-space

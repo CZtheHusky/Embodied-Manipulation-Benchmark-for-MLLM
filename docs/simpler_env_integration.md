@@ -89,8 +89,9 @@ The rotation slots are passed into SimplerEnv's delta rotation action fields.
 For the current Google Robot controller, `normalize_action=false`: these are
 physical deltas rather than normalized native commands. The MLLM configs map
 benchmark motion values `-1`, `0`, and `1` to translation deltas of
-`-0.05 m`, `0`, and `+0.05 m`, and rotation-vector components of `-0.1 rad`,
-`0`, and `+0.1 rad`. The benchmark does not compensate any signs after that
+`-0.01 m`, `0`, and `+0.01 m`, and rotation-vector components of
+`-0.0314159265358979 rad`, `0`, and `+0.0314159265358979 rad`
+(`+/-1.8 degrees`). The benchmark does not compensate any signs after that
 mapping and scaling. The adapter only clips the final 7D action against the
 native environment action space when available.
 
@@ -110,8 +111,8 @@ not coincide.
 For a current TCP pose `(p_tcp, R_tcp)`, the upstream composition is:
 
 ```text
-delta_p_base = 0.05 m * mapped_translation
-delta_theta_base = 0.1 rad * mapped_rotation
+delta_p_base = 0.01 m * mapped_translation
+delta_theta_base = 0.0314159265358979 rad * mapped_rotation
 R_delta = Exp(delta_theta_base)
 p_target = p_tcp + delta_p_base
 R_target = R_delta * R_tcp
@@ -222,7 +223,8 @@ A no-simulator Stub test supplies a native reset observation without
 `success`, exposes initial success only through `get_info()`, and verifies that
 the task rejects the episode with zero model-client calls. Another
 no-simulator canary verifies that benchmark `+/-1` commands reach the native
-7D action as `+/-0.05 m` and `+/-0.1 rad` with their mapped signs unchanged.
+7D action as `+/-0.01 m` and `+/-0.0314159265358979 rad`
+(`+/-1.8 degrees`) with their mapped signs unchanged.
 No test accesses a real model API.
 
 ## Current Limitations

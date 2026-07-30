@@ -25,6 +25,10 @@ def test_scale_application_and_direct_gripper():
             }
         )
     )
-    assert sim_action.delta_position == (0.02, -0.02, 0.0)
-    assert sim_action.delta_rotation_rpy == (0.05, 0.0, -0.05)
+    assert sim_action.delta_position == (0.01, -0.01, 0.0)
+    assert sim_action.delta_rotation_rpy == (
+        0.0314159265358979,
+        0.0,
+        -0.0314159265358979,
+    )
     assert sim_action.gripper == 0.7

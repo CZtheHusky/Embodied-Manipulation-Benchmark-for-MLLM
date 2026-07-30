@@ -161,9 +161,9 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.control_frame_description == (
         "the robosuite 1.4.1 OSC MuJoCo world x, y, and z axes; "
-        "translation-only commands are normalized world-frame inputs with "
-        "native +/-1 mapping to +/-0.05 m, and in upright agentview image "
-        "right is approximately +world y while image up is approximately "
+        "translation-only commands are normalized world-frame inputs. A mapped "
+        "magnitude-1 benchmark command produces +/-0.01 m translation, and in "
+        "upright agentview image right is approximately +world y while image up is approximately "
         "-0.706 world x +0.708 world z. robot0_eye_in_hand is rigidly "
         "wrist-mounted and moves with the wrist, so its image-plane basis has "
         "no fixed world-axis projection. The Panda gripper treats values below "
@@ -181,12 +181,12 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.gripper_hold_command == 0.5
     assert config.controller.frame == "world_xyz"
     assert config.controller.scales == {
-        "dx": 1.0,
-        "dy": 1.0,
-        "dz": 1.0,
-        "droll": 0.1,
-        "dpitch": 0.1,
-        "dyaw": 0.1,
+        "dx": 0.2,
+        "dy": 0.2,
+        "dz": 0.2,
+        "droll": 0.0628318530717959,
+        "dpitch": 0.0628318530717959,
+        "dyaw": 0.0628318530717959,
         "gripper": 1.0,
     }
 
@@ -208,7 +208,7 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
         action_schema,
     ).text
     assert "translation-only commands are normalized world-frame inputs" in prompt
-    assert "native +/-1 mapping to +/-0.05 m" in prompt
+    assert "magnitude-1 benchmark command produces +/-0.01 m" in prompt
     assert "image right is approximately +world y" in prompt
     assert "image up is approximately -0.706 world x +0.708 world z" in prompt
     assert "robot0_eye_in_hand is rigidly wrist-mounted" in prompt
@@ -494,13 +494,13 @@ def test_robosuite_controller_translation_and_mllm_native_gain():
         )
     )
 
-    # Physical scaling belongs to upstream OSC_POSE, so the benchmark emits 1.0.
+    # The benchmark emits 0.2; upstream OSC_POSE maps native 1.0 to 0.05 m.
     normalized_translation = np.asarray(normalized_action.values[:3])
-    np.testing.assert_allclose(normalized_translation, [1.0, 0.0, 0.0])
+    np.testing.assert_allclose(normalized_translation, [0.2, 0.0, 0.0])
     np.testing.assert_allclose(
         normalized_translation
         * mllm_config.control_interface.params["native_translation_gain_m"],
-        [0.05, 0.0, 0.0],
+        [0.01, 0.0, 0.0],
     )
 
 
@@ -614,7 +614,7 @@ def test_robosuite_fake_client_closes_public_rgb_loop_without_private_state(
     assert "values above 0.5 as closed" in request_text
     assert "robosuite 1.4.1 OSC MuJoCo world x, y, and z axes" in request_text
     assert "translation-only commands are normalized world-frame inputs" in request_text
-    assert "native +/-1 mapping to +/-0.05 m" in request_text
+    assert "magnitude-1 benchmark command produces +/-0.01 m" in request_text
     assert "uniformly rescaled by the largest absolute component" in request_text
     assert "preserves direction but can reduce step length" in request_text
     if mapping_strategy == "fixed":

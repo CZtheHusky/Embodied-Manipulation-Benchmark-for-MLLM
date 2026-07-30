@@ -58,17 +58,21 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: >-
+    the CALVIN PyBullet world frame. A mapped magnitude-1 benchmark command
+    produces a 0.01-meter Cartesian target delta or a
+    0.0314159265358979-radian (1.8-degree) XYZ Euler-parameter increment
 
 controller:
   type: calvin_delta_eef
   frame: pybullet_world_xyz
   scales:
-    dx: 0.1
-    dy: 0.1
-    dz: 0.1
-    droll: 0.1
-    dpitch: 0.1
-    dyaw: 0.1
+    dx: 0.5
+    dy: 0.5
+    dz: 0.5
+    droll: 0.628318530717959
+    dpitch: 0.628318530717959
+    dyaw: 0.628318530717959
   params:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: 1.0

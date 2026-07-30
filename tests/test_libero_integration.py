@@ -169,7 +169,18 @@ def test_libero_delta_eef_controller_outputs_7d_action():
 
     assert isinstance(sim_action, LiberoAction)
     assert len(sim_action.values) == 7
-    np.testing.assert_allclose(sim_action.values, [0.05, -0.05, 0.025, 0.1, 0.0, -0.1, 1.0])
+    np.testing.assert_allclose(
+        sim_action.values,
+        [
+            0.2,
+            -0.2,
+            0.1,
+            0.0628318530717959,
+            0.0,
+            -0.0628318530717959,
+            1.0,
+        ],
+    )
 
     mllm_config = load_config("configs/libero_spatial_task0_mllm_reflection.yaml")
     mllm_controller = build_controller(
@@ -193,16 +204,19 @@ def test_libero_delta_eef_controller_outputs_7d_action():
 
     # The upstream OSC applies the physical gains after normalized input.
     normalized_pose = np.asarray(normalized_action.values[:6])
-    np.testing.assert_allclose(normalized_pose, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+    np.testing.assert_allclose(
+        normalized_pose,
+        [0.2, 0.0, 0.0, 0.0628318530717959, 0.0, 0.0],
+    )
     np.testing.assert_allclose(
         normalized_pose[:3]
         * mllm_config.control_interface.params["native_translation_gain_m"],
-        [0.05, 0.0, 0.0],
+        [0.01, 0.0, 0.0],
     )
     np.testing.assert_allclose(
         normalized_pose[3:]
         * mllm_config.control_interface.params["native_rotation_gain_rad"],
-        [0.5, 0.0, 0.0],
+        [0.0314159265358979, 0.0, 0.0],
     )
 
 
@@ -457,9 +471,10 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
     assert interface.control_frame_description == (
         "the LIBERO MuJoCo world Cartesian x, y, and z axes used by robosuite's "
         "OSC_POSE controller; translation deltas and right-hand axis-angle "
-        "rotation-vector commands are applied in this world frame, normalized "
-        "native +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign compensation, "
-        "and in upright agentview image right is approximately +world y while "
+        "rotation-vector commands are applied in this world frame. A mapped "
+        "magnitude-1 benchmark command produces +/-0.01 m translation or "
+        "+/-0.0314159265358979 rad (1.8 degrees) rotation, and in upright "
+        "agentview image right is approximately +world y while "
         "image up is approximately -0.628 world x +0.778 world z. "
         "robot0_eye_in_hand moves with the wrist, so it has no fixed world-axis "
         "projection"
@@ -477,12 +492,12 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
     assert interface.gripper_hold_command is None
     assert config.controller.frame == "world"
     assert config.controller.scales == {
-        "dx": 1.0,
-        "dy": 1.0,
-        "dz": 1.0,
-        "droll": 1.0,
-        "dpitch": 1.0,
-        "dyaw": 1.0,
+        "dx": 0.2,
+        "dy": 0.2,
+        "dz": 0.2,
+        "droll": 0.0628318530717959,
+        "dpitch": 0.0628318530717959,
+        "dyaw": 0.0628318530717959,
         "gripper": 1.0,
     }
     agentview = next(
@@ -511,7 +526,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v3" in group
+    assert "prompt-mllm_joystick_reflection_v4" in group
     assert "output-action_with_reflection" in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -542,8 +557,8 @@ def test_libero_mllm_public_prompt_matches_normalized_osc_pose_contract():
     assert "droll, dpitch, and dyaw denote end-effector rotation" in prompt
     assert "LIBERO MuJoCo world Cartesian x, y, and z axes" in prompt
     assert "right-hand axis-angle rotation-vector commands are applied" in prompt
-    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in prompt
-    assert "with no sign compensation" in prompt
+    assert "magnitude-1 benchmark command produces +/-0.01 m translation" in prompt
+    assert "1.8 degrees" in prompt
     assert "image right is approximately +world y" in prompt
     assert "image up is approximately -0.628 world x +0.778 world z" in prompt
     assert "robot0_eye_in_hand moves with the wrist" in prompt
@@ -566,8 +581,11 @@ def test_libero_mllm_public_prompt_matches_normalized_osc_pose_contract():
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
     assert "exact physical-frame transform is not disclosed" in perturbed_prompt
     assert "right-hand axis-angle rotation-vector commands are applied" in perturbed_prompt
-    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in perturbed_prompt
-    assert "with no sign compensation" in perturbed_prompt
+    assert (
+        "magnitude-1 benchmark command produces +/-0.01 m translation"
+        in perturbed_prompt
+    )
+    assert "1.8 degrees" in perturbed_prompt
     assert "robot0_eye_in_hand moves with the wrist" in perturbed_prompt
     assert "no fixed world-axis projection" in perturbed_prompt
     assert (
@@ -792,14 +810,17 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
     assert f"Task: {TASK_TEXT}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
     assert "LIBERO MuJoCo world Cartesian x, y, and z axes" in request_text
     assert "right-hand axis-angle rotation-vector commands are applied" in request_text
-    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in request_text
-    assert "with no sign compensation" in request_text
+    assert (
+        "magnitude-1 benchmark command produces +/-0.01 m translation"
+        in request_text
+    )
+    assert "1.8 degrees" in request_text
     assert "robot0_eye_in_hand moves with the wrist" in request_text
     assert "no fixed world-axis projection" in request_text
     assert "0 means open, 1 means closed" in request_text
@@ -870,7 +891,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

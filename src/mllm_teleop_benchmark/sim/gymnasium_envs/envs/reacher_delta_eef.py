@@ -81,7 +81,7 @@ class ReacherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
         *,
         render_mode: str | None = None,
         camera_configuration: dict[str, Any] | None = None,
-        eef_step_scale: float = 0.02,
+        eef_step_scale: float = 0.01,
         link1_len: float = 0.1,
         link2_len: float = 0.11,
         goal_distance_threshold: float = 0.015,

@@ -50,7 +50,7 @@ control_interface:
   control_frame_description: >-
     a hidden controller Cartesian frame, with translation as the only active
     motion. The hidden joystick mapping produces a controller-frame vector. A
-    magnitude-1 mapped component is scaled to 0.02 meters, then the hidden
+    magnitude-1 mapped component is scaled to 0.01 meters, then the hidden
     episode-fixed 3D transform rotates that controller vector exactly once into
     a delta expressed in the Colosseum/RLBench world Cartesian x, y, and z axes.
     The benchmark adds this world-frame delta to the position from the latest
@@ -69,9 +69,9 @@ controller:
   type: rlbench_delta_eef
   frame: controller
   scales:
-    dx: 0.02
-    dy: 0.02
-    dz: 0.02
+    dx: 0.01
+    dy: 0.01
+    dz: 0.01
   params:
     dimensions: [dx, dy, dz]
     default_gripper: 1.0

@@ -71,8 +71,9 @@ control_interface:
   control_frame_description: >-
     the LIBERO MuJoCo world Cartesian x, y, and z axes used by robosuite's
     OSC_POSE controller; translation deltas and right-hand axis-angle
-    rotation-vector commands are applied in this world frame, normalized native
-    +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and in
+    rotation-vector commands are applied in this world frame. A mapped
+    magnitude-1 benchmark command produces +/-0.01 m translation or
+    +/-0.0314159265358979 rad (1.8 degrees) rotation, and in
     upright agentview image right is approximately +world y while image up is
     approximately -0.628 world x +0.778 world z. robot0_eye_in_hand moves with
     the wrist, so it has no fixed world-axis projection
@@ -90,12 +91,12 @@ controller:
   type: libero_delta_eef
   frame: world
   scales:
-    dx: 1.0
-    dy: 1.0
-    dz: 1.0
-    droll: 1.0
-    dpitch: 1.0
-    dyaw: 1.0
+    dx: 0.2
+    dy: 0.2
+    dz: 0.2
+    droll: 0.0628318530717959
+    dpitch: 0.0628318530717959
+    dyaw: 0.0628318530717959
     gripper: 1.0
   params:
     gripper_open_value: -1.0

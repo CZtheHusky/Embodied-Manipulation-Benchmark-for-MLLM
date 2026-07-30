@@ -1,6 +1,6 @@
 benchmark:
   name: calvin_delta_eef_mllm_reflection_perturbed_v0
-  num_episodes: 1
+  num_episodes: 10
   seed: 42
 
 simulator:
@@ -51,11 +51,11 @@ control_interface:
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
   control_frame_description: >-
-    CALVIN's PyBullet world frame: dx, dy, and dz are normalized
-    Cartesian-relative world-coordinate translations, where native magnitude 1
-    advances the target by 0.02 m; droll, dpitch, and dyaw are normalized
-    increments of the target pose's PyBullet XYZ Euler parameters, where native
-    magnitude 1 changes that parameter by 0.05 rad, and are not an axis-angle
+    CALVIN's PyBullet world frame: dx, dy, and dz are Cartesian-relative
+    world-coordinate translations, where mapped benchmark magnitude 1 advances
+    the target by 0.01 m; droll, dpitch, and dyaw are increments of the target
+    pose's PyBullet XYZ Euler parameters, where mapped benchmark magnitude 1
+    changes that parameter by 0.0314159265358979 rad (1.8 degrees), and are not an axis-angle
     vector; the hidden 3D frame transform applies only to translation because
     Euler parameters are not a rotatable vector. If the rotated translation has
     a component outside [-1, 1], all three translation components are uniformly
@@ -74,12 +74,12 @@ controller:
   type: calvin_delta_eef
   frame: pybullet_world_xyz
   scales:
-    dx: 1.0
-    dy: 1.0
-    dz: 1.0
-    droll: 1.0
-    dpitch: 1.0
-    dyaw: 1.0
+    dx: 0.5
+    dy: 0.5
+    dz: 0.5
+    droll: 0.628318530717959
+    dpitch: 0.628318530717959
+    dyaw: 0.628318530717959
   params:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: 1.0
@@ -119,7 +119,7 @@ agent:
 logging:
   output_dir: outputs/calvin_delta_eef_mllm
   save_images: false
-  save_video: false
+  save_video: true
   video:
     fps: 2
     step_hold_seconds: 1

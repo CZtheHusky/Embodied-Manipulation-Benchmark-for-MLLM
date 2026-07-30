@@ -434,7 +434,8 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert "+x points right in topview" in request_text
     assert "+y points toward the far edge of the table" in request_text
     assert "+z points upward away from the tabletop" in request_text
-    assert "gripper" not in request_text
+    assert "-> gripper" not in request_text
+    assert "joystick_3" not in request_text
     if mapping_strategy == "fixed":
         assert "joystick_0 -> dx" in request_text
         assert "No additional control-frame rotation is applied" in request_text
@@ -503,7 +504,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

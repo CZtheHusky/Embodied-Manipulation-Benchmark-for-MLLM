@@ -174,7 +174,7 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert (
         group_dir.name
         == f"model-fake-model__reasoning-default__api-chat_completions"
-        f"__prompt-mllm_joystick_v3"
+        f"__prompt-mllm_joystick_v4"
         f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
     )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
@@ -211,7 +211,7 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
 
     assert make_experiment_group(config) == (
         "model-fake-model__reasoning-default__api-chat_completions"
-        "__prompt-mllm_joystick_v3"
+        "__prompt-mllm_joystick_v4"
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
@@ -258,11 +258,11 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         "joystick_0 may control horizontal motion"
     )
     run_dir = episode_dir.parent
-    assert "__prompt-mllm_joystick_reflection_v3__" in run_dir.parent.name
+    assert "__prompt-mllm_joystick_reflection_v4__" in run_dir.parent.name
     assert run_dir.parent.name.endswith("__output-action_with_reflection")
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
 
 
 def test_responses_experiment_group_records_prompt_version(tmp_path):
@@ -278,7 +278,7 @@ def test_responses_experiment_group_records_prompt_version(tmp_path):
     group = make_experiment_group(config)
 
     assert group is not None
-    assert "__api-responses__prompt-mllm_joystick_responses_v3__history-full__" in group
+    assert "__api-responses__prompt-mllm_joystick_responses_v4__history-full__" in group
 
 
 def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):

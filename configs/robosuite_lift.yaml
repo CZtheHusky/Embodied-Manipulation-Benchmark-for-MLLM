@@ -35,16 +35,19 @@ control_interface:
   gripper: direct
   mapping_strategy: fixed
   frame_transform: identity
+  control_frame_description: >-
+    the robosuite OSC MuJoCo world frame. A mapped magnitude-1 translation
+    command produces an approximately 0.01-meter end-effector target delta
 
 controller:
   type: robosuite_osc
   scales:
-    dx: 0.05
-    dy: 0.05
-    dz: 0.05
-    droll: 0.1
-    dpitch: 0.1
-    dyaw: 0.1
+    dx: 0.2
+    dy: 0.2
+    dz: 0.2
+    droll: 0.0628318530717959
+    dpitch: 0.0628318530717959
+    dyaw: 0.0628318530717959
     gripper: 1.0
 
 agent:

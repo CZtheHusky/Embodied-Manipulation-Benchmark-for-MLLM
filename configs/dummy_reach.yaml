@@ -43,12 +43,12 @@ controller:
   type: ee_delta_pose
   frame: base
   scales:
-    dx: 0.02
-    dy: 0.02
-    dz: 0.02
-    droll: 0.05
-    dpitch: 0.05
-    dyaw: 0.05
+    dx: 0.01
+    dy: 0.01
+    dz: 0.01
+    droll: 0.0314159265358979
+    dpitch: 0.0314159265358979
+    dyaw: 0.0314159265358979
 
 agent:
   type: scripted

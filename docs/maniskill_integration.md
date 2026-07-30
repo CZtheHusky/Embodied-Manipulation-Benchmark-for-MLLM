@@ -72,7 +72,10 @@ the table toward the render-camera side, and `+z` points upward. The public
 prompt states that both translation and rotation-vector axes are root-aligned,
 not tool-local.
 
-The pinned `PDEEPoseController` scales a positive normalized rotation input by
+The benchmark scales a magnitude-1 translation command to `0.01 m` and a
+magnitude-1 rotation command to `1.8 degrees` before the pinned
+`PDEEPoseController` applies its native range. The pinned controller scales a
+positive normalized rotation input by
 its negative `rot_lower` bound. `ManiSkillDeltaEEFController` therefore applies
 the explicit configured `rotation_input_sign: -1` after the benchmark frame
 transform. This makes a public positive `droll`, `dpitch`, or `dyaw` command

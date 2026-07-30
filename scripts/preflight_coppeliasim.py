@@ -791,9 +791,9 @@ def _closebox_control_contract(
             failures.append(
                 "controller dx/dy/dz scales must be equal positive values"
             )
-        elif not np.isclose(scale, 0.02, rtol=0.0, atol=1e-12):
+        elif not np.isclose(scale, 0.01, rtol=0.0, atol=1e-12):
             failures.append(
-                "controller dx/dy/dz scales must equal the 0.02-meter "
+                "controller dx/dy/dz scales must equal the 0.01-meter "
                 "benchmark control step"
             )
     default_gripper = getattr(controller, "params", {}).get("default_gripper")

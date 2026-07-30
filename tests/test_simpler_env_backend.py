@@ -75,7 +75,15 @@ def test_simpler_env_delta_eef_controller_maps_pose_and_gripper_to_7d_action():
     sim_action = controller.translate(action)
 
     assert isinstance(sim_action, SimplerEnvAction)
-    assert sim_action.values == (0.05, -0.05, 0.0, 0.1, 0.0, -0.1, 1.0)
+    assert sim_action.values == (
+        0.01,
+        -0.01,
+        0.0,
+        0.0314159265358979,
+        0.0,
+        -0.0314159265358979,
+        1.0,
+    )
     assert sim_action.metadata["action_order"] == ("dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper")
 
 
@@ -104,7 +112,15 @@ def test_simpler_env_mllm_control_output_canary_preserves_scaled_signs():
 
     np.testing.assert_allclose(
         sim_action.values,
-        [0.05, -0.05, 0.05, -0.1, 0.1, -0.1, 0.0],
+        [
+            0.01,
+            -0.01,
+            0.01,
+            -0.0314159265358979,
+            0.0314159265358979,
+            -0.0314159265358979,
+            0.0,
+        ],
     )
 
     adapter = SimplerEnvSimAdapter(config.simulator)
@@ -122,7 +138,15 @@ def test_simpler_env_mllm_control_output_canary_preserves_scaled_signs():
     native, metadata = adapter._native_action(sim_action)
     np.testing.assert_allclose(
         native,
-        [0.05, -0.05, 0.05, -0.1, 0.1, -0.1, 0.0],
+        [
+            0.01,
+            -0.01,
+            0.01,
+            -0.0314159265358979,
+            0.0314159265358979,
+            -0.0314159265358979,
+            0.0,
+        ],
     )
     assert metadata["clipped"] is False
 
@@ -148,7 +172,7 @@ def test_simpler_env_delta_eef_controller_applies_frame_rotation():
         )
     )
 
-    np.testing.assert_allclose(sim_action.values[:3], [0.0, 0.05, 0.0], atol=1e-12)
+    np.testing.assert_allclose(sim_action.values[:3], [0.0, 0.01, 0.0], atol=1e-12)
     assert sim_action.values[-1] == -1.0
 
 

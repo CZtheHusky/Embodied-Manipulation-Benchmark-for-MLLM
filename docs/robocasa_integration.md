@@ -47,9 +47,11 @@ The public joystick has six discrete motion channels followed by one binary grip
 - `droll`, `dpitch`, and `dyaw` form an axis-angle rotation vector in the same
   moving base frame.
 - Motion commands use the official normalized `[-1, 1]` OSC input. Upstream
-  maps the endpoints to approximately `0.05 m` translation and `0.5 rad`
-  rotation, so the benchmark controller scales remain `1.0`; using `0.05` or
-  `0.1` here would apply a second unintended scale.
+  maps native magnitude `1` to approximately `0.05 m` translation and
+  `0.5 rad` rotation. The benchmark therefore uses normalized scales of `0.2`
+  and `0.0628318530717959`, producing physical magnitude-1 steps of `0.01 m`
+  and `0.0314159265358979 rad` (`1.8 degrees`) without modifying the upstream
+  controller gains.
 - The baseline applies no backend sign compensation. Positive and negative
   commands are passed with their stated base-frame signs; the perturbed
   condition's explicit hidden sign flips are benchmark perturbations.

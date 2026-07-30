@@ -34,25 +34,33 @@ camera:
       height: 240
 
 control_interface:
-  mode: eef_delta_pose
-  active_dimensions: [dx, dy, dz, droll]
-  gripper: direct
+  mode: planar_eef_delta_gripper
+  active_dimensions: [dx, dy]
+  gripper: effort
   channel_kind: discrete
   channel_values: [-1, 0, 1]
   mapping_strategy: fixed
   visible_metadata: true
+  mapping_visible_to_agent: true
   frame_transform: identity
+  frame_visible_to_agent: true
+  control_frame_description: >-
+    the 2D MuJoCo world x-z plane. A mapped magnitude-1 command requests a
+    0.01-meter Cartesian end-effector target displacement
+  gripper_open_command: 0
+  gripper_closed_command: 1
+  gripper_neutral_command: 0.5
+  params:
+    scale_mode: dmcontrol_world_xz_cartesian_impedance_target_0_01m
 
 controller:
-  type: dmcontrol
+  type: dmcontrol_planar_eef
   scales:
-    dx: 0.1
-    dy: 0.1
-    dz: 0.1
-    droll: 0.1
+    dx: 0.01
+    dy: 0.01
     gripper: 1.0
   params:
-    dimensions: [dx, dy, dz, droll, gripper]
+    dimensions: [dx, dy, gripper]
 
 agent:
   type: random

@@ -85,7 +85,7 @@ class PusherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
         *,
         render_mode: str | None = None,
         camera_configuration: dict[str, Any] | None = None,
-        eef_step_scale: float = 0.025,
+        eef_step_scale: float = 0.01,
         workspace_low: tuple[float, float, float] = (0.1, -0.65, -0.25),
         workspace_high: tuple[float, float, float] = (0.95, 0.35, 0.25),
         goal_distance_threshold: float = 0.08,

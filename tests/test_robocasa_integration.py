@@ -276,9 +276,10 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert interface.control_frame_description == (
         "the PandaOmron OSC robot0_right_center control frame, which is the "
         "robot-base frame and moves with the mobile base; translation and "
-        "axis-angle rotation-vector commands use this moving base frame, "
-        "normalized native +/-1 maps to +/-0.05 m and +/-0.5 rad with no sign "
-        "compensation, and the robot0_agentview cameras are base-attached rather "
+        "axis-angle rotation-vector commands use this moving base frame. A mapped "
+        "magnitude-1 benchmark command produces +/-0.01 m translation or "
+        "+/-0.0314159265358979 rad (1.8 degrees) rotation, and the "
+        "robot0_agentview cameras are base-attached rather "
         "than fixed in world. In both agentview cameras, base +y projects "
         "approximately toward image left, base +z toward image up, and base +x "
         "mainly along viewing depth with an upward image component; base +x is "
@@ -300,12 +301,12 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert interface.gripper_hold_command is None
     assert interface.gripper_closed_command == 1.0
     assert config.controller.scales == {
-        "dx": 1.0,
-        "dy": 1.0,
-        "dz": 1.0,
-        "droll": 1.0,
-        "dpitch": 1.0,
-        "dyaw": 1.0,
+        "dx": 0.2,
+        "dy": 0.2,
+        "dz": 0.2,
+        "droll": 0.0628318530717959,
+        "dpitch": 0.0628318530717959,
+        "dyaw": 0.0628318530717959,
         "gripper": 1.0,
     }
     cameras = {camera.name: camera for camera in config.camera.cameras}
@@ -322,8 +323,8 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert "PandaOmron OSC robot0_right_center control frame" in prompt
     assert "robot-base frame and moves with the mobile base" in prompt
     assert "axis-angle rotation-vector commands use this moving base frame" in prompt
-    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in prompt
-    assert "with no sign compensation" in prompt
+    assert "magnitude-1 benchmark command produces +/-0.01 m translation" in prompt
+    assert "1.8 degrees" in prompt
     assert "robot0_agentview cameras are base-attached rather than fixed in world" in prompt
     assert "base +y projects approximately toward image left" in prompt
     assert "base +z toward image up" in prompt
@@ -343,7 +344,7 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v3" in group
+    assert "prompt-mllm_joystick_reflection_v4" in group
     assert "output-action_with_reflection" in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -495,11 +496,11 @@ def test_robocasa_mllm_controller_matches_official_normalized_dict_contract():
 
     np.testing.assert_allclose(
         sim_action.values["action.end_effector_position"],
-        [1.0, -1.0, 0.0],
+        [0.2, -0.2, 0.0],
     )
     np.testing.assert_allclose(
         sim_action.values["action.end_effector_rotation"],
-        [-1.0, 1.0, 0.0],
+        [-0.0628318530717959, 0.0628318530717959, 0.0],
     )
     np.testing.assert_allclose(
         sim_action.values["action.gripper_close"],
@@ -517,11 +518,11 @@ def test_robocasa_mllm_controller_matches_official_normalized_dict_contract():
     rotation_gain = config.control_interface.params["native_rotation_gain_rad"]
     np.testing.assert_allclose(
         sim_action.values["action.end_effector_position"] * translation_gain,
-        [0.05, -0.05, 0.0],
+        [0.01, -0.01, 0.0],
     )
     np.testing.assert_allclose(
         sim_action.values["action.end_effector_rotation"] * rotation_gain,
-        [-0.5, 0.5, 0.0],
+        [-0.0314159265358979, 0.0314159265358979, 0.0],
     )
     assert all(
         np.all(np.abs(np.asarray(values, dtype=float)) <= 1.0)
@@ -727,15 +728,18 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
     assert f"Task: {public_instructions[0]}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
     assert "PandaOmron OSC robot0_right_center control frame" in request_text
     assert "robot-base frame and moves with the mobile base" in request_text
     assert "axis-angle rotation-vector commands use this moving base frame" in request_text
-    assert "native +/-1 maps to +/-0.05 m and +/-0.5 rad" in request_text
-    assert "with no sign compensation" in request_text
+    assert (
+        "magnitude-1 benchmark command produces +/-0.01 m translation"
+        in request_text
+    )
+    assert "1.8 degrees" in request_text
     assert "base-attached rather than fixed in world" in request_text
     assert "base +y projects approximately toward image left" in request_text
     assert "base +z toward image up" in request_text
@@ -836,7 +840,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

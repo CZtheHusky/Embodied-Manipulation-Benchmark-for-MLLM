@@ -328,7 +328,7 @@ def test_colosseum_mllm_configs_are_explicit_and_switchable(
         assert "hidden episode-fixed 3D transform rotates that controller vector exactly once" in frame_description
         assert "delta expressed in the Colosseum/RLBench world Cartesian" in frame_description
         assert "without another transform or sign compensation" in frame_description
-    assert config.controller.scales == {"dx": 0.02, "dy": 0.02, "dz": 0.02}
+    assert config.controller.scales == {"dx": 0.01, "dy": 0.01, "dz": 0.01}
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
@@ -673,7 +673,7 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     ] == [0, 1, 2, 3]
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
     assert "Task: Close the visible box lid." in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "Colosseum/RLBench world Cartesian x, y, and z axes" in request_text

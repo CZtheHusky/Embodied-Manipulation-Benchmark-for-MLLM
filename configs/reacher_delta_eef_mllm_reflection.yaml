@@ -11,7 +11,7 @@ simulator:
   params:
     max_episode_steps: 500
   env_kwargs:
-    eef_step_scale: 0.02
+    eef_step_scale: 0.01
     goal_distance_threshold: 0.02
     goal_hold_steps: 3
     random_goal: true
@@ -47,6 +47,9 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: >-
+    the Gymnasium Reacher world x-y plane. A mapped magnitude-1 translation
+    command moves the end-effector target by 0.01 meters per decision
 
 controller:
   type: reacher_delta_eef

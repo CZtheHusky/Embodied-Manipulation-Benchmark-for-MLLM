@@ -87,7 +87,7 @@ def _restricted_closebox_config(*, max_steps=100, scales=None):
         ),
         controller=SimpleNamespace(
             type="rlbench_delta_eef",
-            scales=scales or {"dx": 0.02, "dy": 0.02, "dz": 0.02},
+            scales=scales or {"dx": 0.01, "dy": 0.01, "dz": 0.01},
             params={"default_gripper": 1.0},
         ),
     )
@@ -309,7 +309,7 @@ def test_nonzero_planning_probe_fails_when_every_action_is_rejected():
         SimpleNamespace(),
         (SimpleNamespace(name="front"),),
         tuple(range(3)),
-        planning_delta=(0.02, 0.0, 0.0),
+        planning_delta=(0.01, 0.0, 0.0),
     )
 
     assert report["status"] == "fail"
@@ -336,7 +336,7 @@ def test_nonzero_planning_probe_passes_with_measured_eef_displacement():
         SimpleNamespace(),
         (SimpleNamespace(name="front"),),
         tuple(range(3)),
-        planning_delta=(0.02, 0.0, 0.0),
+        planning_delta=(0.01, 0.0, 0.0),
     )
 
     assert report["status"] == "pass"
@@ -346,10 +346,10 @@ def test_nonzero_planning_probe_passes_with_measured_eef_displacement():
     assert report["planning_probe"]["moving_acceptances"] == 2
     assert report["planning_probe"][
         "displacement_magnitudes_meters"
-    ] == pytest.approx([0.02, 0.02])
+    ] == pytest.approx([0.01, 0.01])
     assert report["seeds"][0]["planning"][
         "eef_displacement_magnitude_meters"
-    ] == pytest.approx(0.02)
+    ] == pytest.approx(0.01)
 
 
 def test_nonzero_planning_probe_requires_motion_beyond_float_noise():
@@ -367,7 +367,7 @@ def test_nonzero_planning_probe_requires_motion_beyond_float_noise():
         SimpleNamespace(),
         (SimpleNamespace(name="front"),),
         tuple(range(3)),
-        planning_delta=(0.02, 0.0, 0.0),
+        planning_delta=(0.01, 0.0, 0.0),
     )
 
     # Planner acceptance and float jitter do not prove the arm executed the target.
@@ -397,7 +397,7 @@ def test_nonzero_accepted_probe_fails_without_post_step_pose_evidence():
         SimpleNamespace(),
         (SimpleNamespace(name="front"),),
         (0,),
-        planning_delta=(0.02, 0.0, 0.0),
+        planning_delta=(0.01, 0.0, 0.0),
     )
 
     assert report["planning_probe"]["acceptances"] == 1
@@ -463,7 +463,7 @@ def test_closebox_scripted_success_uses_only_restricted_benchmark_actions():
         seed=11,
     )
 
-    allowed_components = {-0.02, 0.0, 0.02}
+    allowed_components = {-0.01, 0.0, 0.01}
     assert sim.actions
     assert all(
         isinstance(action, RLBenchAction)
@@ -476,9 +476,9 @@ def test_closebox_scripted_success_uses_only_restricted_benchmark_actions():
     assert report["status"] == "pass"
     assert report["method"] == "official_waypoint_positions_via_rlbench_action"
     assert report["waypoint_count"] == 2
-    assert report["actions_attempted"] == 5
+    assert report["actions_attempted"] == 9
     assert report["planning_rejections"] == 1
-    assert report["planning_rejection_rate"] == pytest.approx(0.2)
+    assert report["planning_rejection_rate"] == pytest.approx(1.0 / 9.0)
     assert report["adapter_native_success_checks"] >= len(sim.actions) + 1
     assert report["final_native_success"] is True
     assert report["official_live_demo_called"] is False
@@ -520,8 +520,8 @@ def test_closebox_scripted_success_exhaustion_reports_planning_rejections():
             "dx/dy/dz scales must be equal",
         ),
         (
-            {"dx": 0.01, "dy": 0.01, "dz": 0.01},
-            "must equal the 0.02-meter benchmark control step",
+            {"dx": 0.02, "dy": 0.02, "dz": 0.02},
+            "must equal the 0.01-meter benchmark control step",
         ),
     ],
 )

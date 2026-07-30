@@ -51,11 +51,13 @@ motion channels control `dx`, `dy`, `dz`, `droll`, `dpitch`, and `dyaw`; the
 seventh channel is a binary gripper command where `0` is open and `1` is
 closed.
 
-Controller scales remain `1.0`. The normalized upstream endpoints represent
-approximately `0.05 m` translation and `0.5 rad` rotation, so applying the
-legacy `0.05` or `0.1` controller scales would scale the command twice. The
-native RoboCasa action also contains a four-value `action.base_motion` fixed at
-zero and `action.control_mode: [1.0]`.
+The normalized upstream endpoints represent approximately `0.05 m`
+translation and `0.5 rad` rotation. Benchmark controller scales are `0.2` for
+translation and `0.0628318530717959` for rotation, yielding physical
+magnitude-1 steps of `0.01 m` and `0.0314159265358979 rad` (`1.8 degrees`)
+without changing RoboCasa's native controller gains. The native RoboCasa
+action also contains a four-value `action.base_motion` fixed at zero and
+`action.control_mode: [1.0]`.
 
 The public prompt contains the dynamic task instruction, control semantics,
 three RGB views, and the model's own permitted history. It does not contain

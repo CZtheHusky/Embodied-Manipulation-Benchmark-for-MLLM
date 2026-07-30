@@ -13,8 +13,8 @@ from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, Agent
 from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_name
 
 
-PROMPT_VERSION = "mllm_joystick_v3"
-REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v3"
+PROMPT_VERSION = "mllm_joystick_v4"
+REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v4"
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"

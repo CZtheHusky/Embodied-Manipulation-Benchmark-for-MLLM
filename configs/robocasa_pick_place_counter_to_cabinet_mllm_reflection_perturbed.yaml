@@ -56,8 +56,9 @@ control_interface:
   control_frame_description: >-
     the PandaOmron OSC robot0_right_center control frame, which is the robot-base
     frame and moves with the mobile base; translation and axis-angle
-    rotation-vector commands use this moving base frame, normalized native +/-1
-    maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and the
+    rotation-vector commands use this moving base frame. A mapped magnitude-1
+    benchmark command produces +/-0.01 m translation or
+    +/-0.0314159265358979 rad (1.8 degrees) rotation, and the
     robot0_agentview cameras are base-attached rather than fixed in world. In
     both agentview cameras, base +y projects approximately toward image left,
     base +z toward image up, and base +x mainly along viewing depth with an
@@ -79,12 +80,12 @@ control_interface:
 controller:
   type: robocasa_osc
   scales:
-    dx: 1.0
-    dy: 1.0
-    dz: 1.0
-    droll: 1.0
-    dpitch: 1.0
-    dyaw: 1.0
+    dx: 0.2
+    dy: 0.2
+    dz: 0.2
+    droll: 0.0628318530717959
+    dpitch: 0.0628318530717959
+    dyaw: 0.0628318530717959
     gripper: 1.0
   params:
     control_mode: 1.0

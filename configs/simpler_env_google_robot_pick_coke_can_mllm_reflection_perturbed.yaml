@@ -47,9 +47,10 @@ control_interface:
     Upstream gives the robot base a fixed 180-degree yaw in the world frame, so
     base +x is world -x, base +y is world -y, and base +z is world +z.
     normalize_action is false: mapped magnitude-1 translation and rotation
-    commands are scaled to 0.05 meters and 0.1 radians respectively. After the
-    hidden mapping and frame transform, no additional sign compensation is
-    applied. overhead_camera is mounted to link_camera, whose pose remains fixed
+    commands are scaled to 0.01 meters and 0.0314159265358979 radians
+    (1.8 degrees) respectively. After the hidden mapping and frame transform,
+    no additional sign compensation is applied. overhead_camera is mounted to
+    link_camera, whose pose remains fixed
     for this arm-only benchmark: base +y projects approximately toward image
     left, base +x mainly away from the camera with an upward image component,
     and base +z toward image up while pointing partly toward the camera
@@ -70,12 +71,12 @@ controller:
   type: simpler_env_delta_eef
   frame: ee_align
   scales:
-    dx: 0.05
-    dy: 0.05
-    dz: 0.05
-    droll: 0.1
-    dpitch: 0.1
-    dyaw: 0.1
+    dx: 0.01
+    dy: 0.01
+    dz: 0.01
+    droll: 0.0314159265358979
+    dpitch: 0.0314159265358979
+    dyaw: 0.0314159265358979
   params:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: -1.0

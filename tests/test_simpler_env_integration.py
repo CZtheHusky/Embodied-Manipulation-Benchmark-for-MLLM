@@ -216,7 +216,11 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert "base +y is world -y" in frame_description
     assert "base +z is world +z" in frame_description
     assert "normalize_action is false" in frame_description
-    assert "scaled to 0.05 meters and 0.1 radians respectively" in frame_description
+    assert (
+        "scaled to 0.01 meters and 0.0314159265358979 radians"
+        in frame_description
+    )
+    assert "1.8 degrees" in frame_description
     assert "overhead_camera is mounted to link_camera" in frame_description
     assert "pose remains fixed for this arm-only benchmark" in frame_description
     assert "base +y projects approximately toward image left" in frame_description
@@ -235,12 +239,12 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert control["params"]["rotation_representation"] == "axis_angle"
     assert config.controller.frame == "ee_align"
     assert config.controller.scales == {
-        "dx": 0.05,
-        "dy": 0.05,
-        "dz": 0.05,
-        "droll": 0.1,
-        "dpitch": 0.1,
-        "dyaw": 0.1,
+        "dx": 0.01,
+        "dy": 0.01,
+        "dz": 0.01,
+        "droll": 0.0314159265358979,
+        "dpitch": 0.0314159265358979,
+        "dyaw": 0.0314159265358979,
     }
 
     group = make_experiment_group(config)
@@ -290,7 +294,11 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "base +y is world -y" in baseline_prompt
     assert "base +z is world +z" in baseline_prompt
     assert "normalize_action is false" in baseline_prompt
-    assert "scaled to 0.05 meters and 0.1 radians respectively" in baseline_prompt
+    assert (
+        "scaled to 0.01 meters and 0.0314159265358979 radians"
+        in baseline_prompt
+    )
+    assert "1.8 degrees" in baseline_prompt
     assert "with no sign compensation" in baseline_prompt
     assert "overhead_camera is mounted to link_camera" in baseline_prompt
     assert "pose remains fixed for this arm-only benchmark" in baseline_prompt
@@ -313,7 +321,11 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "control origin at the TCP, not the tool frame" in perturbed_prompt
     assert "axis-angle rotation vectors both use robot-base axes" in perturbed_prompt
     assert "rotation is pre-multiplied about the TCP origin" in perturbed_prompt
-    assert "scaled to 0.05 meters and 0.1 radians respectively" in perturbed_prompt
+    assert (
+        "scaled to 0.01 meters and 0.0314159265358979 radians"
+        in perturbed_prompt
+    )
+    assert "1.8 degrees" in perturbed_prompt
     assert "no additional sign compensation is applied" in perturbed_prompt
     assert "fixed 180-degree yaw" in perturbed_prompt
     assert "overhead_camera is mounted to link_camera" in perturbed_prompt
@@ -859,7 +871,7 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
     assert manifest["simulator"]["type"] == "simpler_env"
     assert manifest["history"]["action_window"] == "all"
     assert manifest["history"]["image_window"] == 3

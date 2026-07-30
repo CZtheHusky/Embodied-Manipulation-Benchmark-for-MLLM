@@ -98,7 +98,8 @@ matching frame perturbation for Lift.
 robosuite 1.4.1's `OSC_POSE` controller adds its scaled translation delta to
 the current end-effector position, so its Cartesian action is expressed along
 MuJoCo world x/y/z axes. Its input is already normalized: upstream maps native
-`-1` and `1` to approximately `-0.05 m` and `0.05 m`. Both translation-only
+The benchmark scales `-1` and `1` to normalized `-0.2` and `0.2`, which the
+native controller maps to approximately `-0.01 m` and `0.01 m`. Both translation-only
 MLLM configs therefore use benchmark `dx/dy/dz` scales of `1.0`. A benchmark
 scale of `0.05` would apply a second scale and reduce a full command to an
 upstream input of `0.05`, or approximately `0.0025 m` after native OSC scaling.
@@ -179,7 +180,7 @@ perturbation values.
 
 The shared `ControlInstructionBuilder` also identifies the robosuite OSC world
 frame, states that the control is normalized translation-only with native
-`+/-1 -> +/-0.05 m`, gives the approximate `agentview` image-plane basis, states
+`+/-1 -> +/-0.01 m`, gives the approximate `agentview` image-plane basis, states
 that gripper `0` opens, `0.5` holds, and `1` closes, and tells the model that
 hidden mapping/frame samples remain constant within an episode. The sampled
 permutation, signs, quaternion, and matrix remain undisclosed.

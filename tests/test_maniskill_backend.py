@@ -44,8 +44,9 @@ MANISKILL_CONTROL_FRAME = (
     "+x points from the robot base toward the table center, +y runs laterally "
     "across the table toward the render_camera side, and +z points upward; "
     "translation deltas and rotation-vector axes are root-aligned rather than "
-    "tool-local. A mapped magnitude-1 translation command is 0.1 meters and a "
-    "mapped magnitude-1 rotation-vector command is 0.1 radians. render_camera "
+    "tool-local. A mapped magnitude-1 translation command is 0.01 meters and a "
+    "mapped magnitude-1 rotation-vector command is 0.0314159265358979 radians "
+    "(1.8 degrees). render_camera "
     "is a fixed external human-render camera that views the workspace from the "
     "+x,+y quadrant and does not move with the wrist"
 )
@@ -244,8 +245,8 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
     assert "Panda root/base frame" in request_text
     assert "+x points from the robot base toward the table center" in request_text
     assert "root-aligned rather than tool-local" in request_text
-    assert "magnitude-1 translation command is 0.1 meters" in request_text
-    assert "rotation-vector command is 0.1 radians" in request_text
+    assert "magnitude-1 translation command is 0.01 meters" in request_text
+    assert "rotation-vector command is 0.0314159265358979 radians" in request_text
     assert "render_camera is a fixed external human-render camera" in request_text
     assert "does not move with the wrist" in request_text
     assert request_text.count('"role":"assistant"') == 1
@@ -338,7 +339,18 @@ def test_maniskill_delta_eef_controller_maps_pose_and_gripper():
     sim_action = controller.translate(action)
 
     assert isinstance(sim_action, ManiSkillAction)
-    assert sim_action.values == (1.0, -1.0, 0.0, -1.0, 0.0, 1.0, 1.0)
+    np.testing.assert_allclose(
+        sim_action.values,
+        (
+            0.1,
+            -0.1,
+            0.0,
+            -0.314159265358979,
+            0.0,
+            0.314159265358979,
+            1.0,
+        ),
+    )
 
 
 def test_maniskill_delta_eef_controller_applies_frame_rotation():
@@ -363,7 +375,7 @@ def test_maniskill_delta_eef_controller_applies_frame_rotation():
     )
 
     assert abs(sim_action.values[0]) < 1e-9
-    assert abs(sim_action.values[1] - 1.0) < 1e-9
+    assert abs(sim_action.values[1] - 0.1) < 1e-9
     assert abs(sim_action.values[2]) < 1e-9
 
 
@@ -547,8 +559,8 @@ def test_maniskill_rotation_sign_matches_pinned_upstream_controller_when_install
     finally:
         sim.close()
 
-    assert processed[0, 0].item() == pytest.approx(0.1)
-    assert processed[0, 3].item() == pytest.approx(0.1)
+    assert processed[0, 0].item() == pytest.approx(0.01)
+    assert processed[0, 3].item() == pytest.approx(0.0314159265358979)
 
 
 def test_sim_adapter_worker_maniskill_reset_step_shutdown_when_installed():

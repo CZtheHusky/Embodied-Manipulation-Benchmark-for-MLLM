@@ -44,6 +44,9 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: >-
+    the RLBench world Cartesian frame. A mapped magnitude-1 translation
+    command is a 0.01-meter end-effector target delta
   params:
     scale_mode: rlbench_absolute_pose_target_from_delta_eef
 
@@ -51,9 +54,9 @@ controller:
   type: rlbench_delta_eef
   frame: controller
   scales:
-    dx: 0.02
-    dy: 0.02
-    dz: 0.02
+    dx: 0.01
+    dy: 0.01
+    dz: 0.01
   params:
     dimensions: [dx, dy, dz]
     default_gripper: 1.0

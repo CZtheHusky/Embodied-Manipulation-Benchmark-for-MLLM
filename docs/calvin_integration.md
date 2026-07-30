@@ -22,19 +22,25 @@ Verified again on 2026-07-29 with the pinned `.venvs/calvin` environment:
 - Every model request used public `static` and `gripper` RGB images. The per-request image counts were `2, 4, 6, 8`, matching three historical turns plus the current turn.
 - All eight model-input PNGs per condition were valid, non-black RGB images.
 - Every parsed action was valid and translated to a finite seven-value native action with six bounded relative pose commands and a native gripper command in `{-1, 1}`.
-- The run manifest records Chat Completions, `action_with_reflection`, reasoning `low`, image history `3`, all action history, and prompt version `mllm_joystick_reflection_v2`.
+- The run manifest records Chat Completions, `action_with_reflection`, reasoning `low`, image history `3`, all action history, and prompt version `mllm_joystick_reflection_v4`.
 - Sentinel state, reward, success, distance, object/EEF pose, simulator action, seed, and sampled hidden-control values did not enter the model request.
 - Task success uses the pinned CALVIN `Tasks.get_task_info_for_set()` API. It requires `open_drawer`, then the configured target block's table/slider lift task, and finally `place_in_drawer`, deep-copying the state at each completed phase. Success remains sticky and never uses `push_into_drawer`.
 - Both MLLM configurations enable `reject_initial_success`. The reset check uses absolute scene state: the drawer joint must be closed, the red block must not contact the drawer link, and the red block and robot must not contact each other.
 - Legacy `PlayTableSimEnv.seed(seed)` resets now propagate its new RNG to the scene and every movable object. Real resets reproduce the same layout for the same seed and sample different layouts for different seeds.
 
-The validation command was:
+The strict runtime validation command is:
 
 ```bash
-PYTHONPATH=src .venvs/calvin/bin/python -m pytest tests/test_calvin_integration.py -q
+MLLM_TELEOP_REQUIRE_CALVIN=1 \
+python3 scripts/manage_uv_env.py run calvin -- \
+  python -m pytest -q tests/test_calvin_integration.py -rs \
+  --junitxml=/tmp/calvin-gate.xml
 ```
 
-That historical run completed with `16 passed`, no skips, and five upstream Hydra/CALVIN compatibility warnings. No real model API or network access was used.
+The gate must collect 29 tests and report zero skips, failures, and errors.
+The MLLM loop uses a local Fake Client and does not call a real model API.
+It also requires the system `ffmpeg` binary and verifies that each four-step
+MLLM condition produces a non-empty review video.
 
 ## Design
 
@@ -57,10 +63,10 @@ Pinned CALVIN treats the first three normalized values as PyBullet-world
 Cartesian-relative target increments and multiplies native magnitude `1` by
 `0.02 m`. The next three values are increments of the target pose's PyBullet
 XYZ Euler parameters, not an axis-angle vector, and native magnitude `1` changes
-the corresponding parameter by `0.05 rad`. MLLM configs therefore use controller
-scales of `1.0` and record the controller frame as `pybullet_world_xyz`;
-applying another benchmark-side `0.1` scale would accidentally reduce the
-effective motion to `0.002 m / 0.005 rad`.
+the corresponding parameter by `0.05 rad`. These upstream gains are left
+unchanged. Benchmark configs use normalized controller scales of `0.5` for
+translation and `0.628318530717959` for rotation, producing the standardized
+physical step of `0.01 m` and `0.0314159265358979 rad` (`1.8 degrees`).
 
 ## MLLM Evaluation Configurations
 
@@ -77,7 +83,7 @@ Both configurations use:
 - `max_output_tokens: 192`.
 - `image_window: 3` and `action_window: all`.
 - the default-position `static` and `gripper` public RGB cameras.
-- video disabled by default.
+- ten episodes and review video enabled by default.
 
 The MLLM configurations intentionally use the fixed CALVIN camera manager. The
 legacy human-play configuration's broad static-camera randomization can sample
@@ -166,7 +172,7 @@ The pinned `config_data_collection.yaml` selects `calvin_scene_D`. Its scene con
 - The red block must not contact the table's `drawer_link`, matching CALVIN's destination-contact semantics.
 - Neither the robot's contacts nor the red block's contacts may contain the other body UID.
 
-The baseline and perturbed MLLM configs set `reject_initial_success: true`, so a violated invariant raises before any model call. A real reset canary covers seeds `42..51`, rechecks these predicates, confirms the three-stage evaluator is false at reset, and requires non-black uint8 RGB from both `static` and `gripper`. It skips explicitly when CALVIN, PyBullet, Hydra, or OmegaConf is unavailable.
+The baseline and perturbed MLLM configs set `reject_initial_success: true`, so a violated invariant raises before any model call. A real reset canary covers seeds `42..51`, rechecks these predicates, confirms the three-stage evaluator is false at reset, and requires non-black uint8 RGB from both `static` and `gripper`. Optional core-only runs skip when CALVIN, PyBullet, Hydra, or OmegaConf is unavailable; `MLLM_TELEOP_REQUIRE_CALVIN=1` converts every such missing dependency or worker runtime error into a hard gate failure.
 
 Pinned CALVIN uses the old Gym fallback: `env.seed(seed)` replaces `env.np_random`, while the already-created scene and movable objects retain their previous RNG references. `CalvinSimAdapter` synchronizes those references before `reset()`. PyBullet can introduce sub-millimeter post-reset settling differences, so the real-environment regression checks same-seed layout reproducibility at a 1 mm tolerance while requiring different seeds to differ by more than 1 cm for at least one block.
 

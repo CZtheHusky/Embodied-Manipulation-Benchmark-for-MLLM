@@ -166,7 +166,7 @@ adapter in that chain and launches official `EnvironmentExt`; the
 For the MLLM `ReachTarget` configs, translation is the only active motion:
 
 ```text
-delta_scaled = 0.02 m * mapped_translation
+delta_scaled = 0.01 m * mapped_translation
 delta_world = episode_frame_transform(delta_scaled)
 position_target = workspace_clamp(latest_observed_gripper_position + delta_world)
 ```
@@ -174,7 +174,7 @@ position_target = workspace_clamp(latest_observed_gripper_position + delta_world
 The adapter sends `position_target` with the latest observed quaternion as an
 absolute world-frame pose to `EndEffectorPoseViaPlanning`. It applies no sign
 compensation. `episode_frame_transform` is identity in the baseline, so `+1` on
-`dx` adds `+0.02 m` to world x. In the perturbed condition, the episode-fixed
+`dx` adds `+0.01 m` to world x. In the perturbed condition, the episode-fixed
 hidden mapping and frame rotation produce `delta_world`; the adapter still adds
 that result directly, without another sign change, before workspace clamping.
 Rotation stays inactive, and the gripper is held open with
@@ -279,7 +279,7 @@ They use `action_with_reflection`, OpenAI-compatible Chat Completions, reasoning
 effort `low`, three historical image turns, all textual action history, and the
 public `front` RGB camera. The public control surface contains only `dx`, `dy`,
 and `dz`; it does not expose rotation or gripper channels because `ReachTarget`
-does not need them. A magnitude-1 mapped translation is `0.02 m` before the
+does not need them. A magnitude-1 mapped translation is `0.01 m` before the
 optional hidden frame rotation.
 
 The baseline exposes the fixed joystick mapping and identity frame. The
@@ -298,7 +298,7 @@ condition and verifies:
 
 - the `front` camera is non-black `320x240` RGB
 - native actions are finite absolute poses inside configured workspace bounds
-- a no-simulator canary verifies direct `0.02 m` scaling, accumulation from the
+- a no-simulator canary verifies direct `0.01 m` scaling, accumulation from the
   latest observed absolute gripper pose, and workspace clamping
 - a Colosseum perturbed canary verifies a nonzero controller vector is rotated
   exactly once into the native world-frame pose delta
@@ -348,7 +348,7 @@ Run the common 10-seed reset canary in the matching pinned environment:
 python3 scripts/manage_conda_env.py run rlbench -- \
   python scripts/preflight_coppeliasim.py reset-canary \
   --config configs/rlbench_reach_target_mllm_reflection.yaml \
-  --planning-delta 0.02 0 0 \
+  --planning-delta 0.01 0 0 \
   --output outputs/preflight/rlbench_reach_target.json
 ```
 
@@ -356,7 +356,7 @@ python3 scripts/manage_conda_env.py run rlbench -- \
 python3 scripts/manage_conda_env.py run colosseum -- \
   python scripts/preflight_coppeliasim.py reset-canary \
   --config configs/colosseum_close_box_mllm_reflection.yaml \
-  --planning-delta 0.02 0 0 \
+  --planning-delta 0.01 0 0 \
   --output outputs/preflight/colosseum_close_box.json
 ```
 
@@ -400,8 +400,8 @@ python3 scripts/manage_conda_env.py run colosseum -- \
 Every actual motion is sent through `sim.step(RLBenchAction)`. Before launch,
 the command requires the baseline config to expose exactly discrete
 `[dx, dy, dz]`, no gripper channel, fixed mapping, identity frame transform,
-equal `0.02`-meter controller scales, and `default_gripper: 1.0`. Each emitted
-translation component is therefore one of `-0.02`, `0`, or `0.02`;
+equal `0.01`-meter controller scales, and `default_gripper: 1.0`. Each emitted
+translation component is therefore one of `-0.01`, `0`, or `0.01`;
 `delta_rotation_rpy` is always zero and the gripper is always open. The default
 action budget is `task.max_steps` (100 for the current config), and an explicit
 `--max-actions` override cannot exceed it.

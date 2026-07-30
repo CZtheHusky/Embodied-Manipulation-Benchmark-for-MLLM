@@ -161,7 +161,7 @@ def test_responses_projection_excludes_privileged_state_and_uses_current_frame()
 
     decision = policy.act(_context(0))
 
-    assert PROMPT_VERSION == "mllm_joystick_responses_v3"
+    assert PROMPT_VERSION == "mllm_joystick_responses_v4"
     body = client.requests[0].encoded_body().decode("utf-8")
     assert "PRIVATE_TARGET" not in body
     assert "PRIVATE_DISTANCE" not in body

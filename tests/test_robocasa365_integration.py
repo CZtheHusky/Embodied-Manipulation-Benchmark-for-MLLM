@@ -45,12 +45,12 @@ ASSET_REVISIONS = {
 }
 ACTIVE_DIMENSIONS = ("dx", "dy", "dz", "droll", "dpitch", "dyaw")
 CONTROLLER_SCALES = {
-    "dx": 1.0,
-    "dy": 1.0,
-    "dz": 1.0,
-    "droll": 1.0,
-    "dpitch": 1.0,
-    "dyaw": 1.0,
+    "dx": 0.2,
+    "dy": 0.2,
+    "dz": 0.2,
+    "droll": 0.0628318530717959,
+    "dpitch": 0.0628318530717959,
+    "dyaw": 0.0628318530717959,
     "gripper": 1.0,
 }
 
@@ -229,11 +229,11 @@ def test_robocasa365_action_channels_and_native_base_contract_are_exact():
     }
     np.testing.assert_allclose(
         sim_action.values["action.end_effector_position"],
-        [1.0, -1.0, 0.0],
+        [0.2, -0.2, 0.0],
     )
     np.testing.assert_allclose(
         sim_action.values["action.end_effector_rotation"],
-        [1.0, 0.0, -1.0],
+        [0.0628318530717959, 0.0, -0.0628318530717959],
     )
     np.testing.assert_allclose(
         sim_action.values["action.gripper_close"],

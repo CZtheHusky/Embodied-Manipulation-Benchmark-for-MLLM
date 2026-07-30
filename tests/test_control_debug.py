@@ -19,7 +19,7 @@ def test_control_debug_recorder_uses_session_path_and_tags(tmp_path):
         validation=ValidationResult(True),
         sim_action=GymBoxAction(values=(-1.0, 0.0, 0.0), metadata={"controller": "pusher_delta_eef", "dimensions": ("dx", "dy", "dz")}),
         state_before={"step_id": 0, "fingertip_position": [1.0, 2.0, 3.0], "ee_target_xyz": [1.0, 2.0, 3.0]},
-        state_after={"step_id": 1, "fingertip_position": [0.9, 2.0, 3.0], "ee_target_xyz": [0.975, 2.0, 3.0]},
+        state_after={"step_id": 1, "fingertip_position": [0.9, 2.0, 3.0], "ee_target_xyz": [0.99, 2.0, 3.0]},
     )
     recorder.record(record)
 
@@ -31,7 +31,7 @@ def test_control_debug_recorder_uses_session_path_and_tags(tmp_path):
     assert data["actor"] == "human_keyboard"
     assert data["env_slug"] == "mllmteleop_pusherdeltaeef_v0"
     assert data["control_slug"] == "eef_delta_pose_dx_dy_dz"
-    assert data["expected_behavior"]["expected_delta_eef"]["dx"] == -0.025
+    assert data["expected_behavior"]["expected_delta_eef"]["dx"] == -0.01
     assert (session.root_dir / "manifest.json").exists()
 
 

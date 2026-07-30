@@ -220,7 +220,7 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
         assert "hidden episode-fixed 3D transform rotates that controller vector exactly once" in frame_description
         assert "delta expressed in the RLBench world Cartesian" in frame_description
         assert "without another transform or sign compensation" in frame_description
-    assert config.controller.scales == {"dx": 0.02, "dy": 0.02, "dz": 0.02}
+    assert config.controller.scales == {"dx": 0.01, "dy": 0.01, "dz": 0.01}
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
@@ -238,7 +238,7 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v3" in group
+    assert "prompt-mllm_joystick_reflection_v4" in group
     assert "output-action_with_reflection" in group
     if visible:
         assert "__mapping-" not in group
@@ -313,7 +313,7 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "dx, dy, and dz denote end-effector translation" in baseline_prompt
     assert "RLBench world Cartesian x, y, and z axes" in baseline_prompt
     assert "translation as the only active motion" in baseline_prompt
-    assert "0.02-meter world-frame delta" in baseline_prompt
+    assert "0.01-meter world-frame delta" in baseline_prompt
     assert "latest observed absolute gripper pose" in baseline_prompt
     assert "clamps the target to the configured workspace bounds" in baseline_prompt
     assert "native absolute world-frame planning pose" in baseline_prompt
@@ -390,7 +390,7 @@ def test_rlbench_perturbation_only_changes_translation_channels():
     assert np.all(np.isfinite(sim_action.delta_position))
     np.testing.assert_allclose(
         np.linalg.norm(sim_action.delta_position),
-        0.02,
+        0.01,
         atol=1e-12,
     )
     assert sim_action.delta_rotation_rpy == (0.0, 0.0, 0.0)
@@ -404,7 +404,7 @@ def test_rlbench_delta_eef_controller_maps_delta_position_and_default_gripper():
     sim_action = controller.translate(JoystickAction({"joystick_0": 1.0, "joystick_1": -1.0, "joystick_2": 0.0}))
 
     assert isinstance(sim_action, RLBenchAction)
-    assert sim_action.delta_position == (0.02, -0.02, 0.0)
+    assert sim_action.delta_position == (0.01, -0.01, 0.0)
     assert sim_action.delta_rotation_rpy == (0.0, 0.0, 0.0)
     assert sim_action.gripper == 1.0
 
@@ -426,7 +426,7 @@ def test_rlbench_mllm_baseline_control_output_canary_uses_latest_absolute_pose()
         )
     )
 
-    np.testing.assert_allclose(sim_action.delta_position, [0.02, -0.02, 0.02])
+    np.testing.assert_allclose(sim_action.delta_position, [0.01, -0.01, 0.01])
 
     adapter = RLBenchSimAdapter(config.simulator)
     adapter.last_native_obs = type(
@@ -442,7 +442,7 @@ def test_rlbench_mllm_baseline_control_output_canary_uses_latest_absolute_pose()
     native = adapter._native_action(sim_action)
     np.testing.assert_allclose(
         native,
-        [0.12, -0.22, 1.02, 0.0, 0.0, 0.0, 1.0, 1.0],
+        [0.11, -0.21, 1.01, 0.0, 0.0, 0.0, 1.0, 1.0],
     )
 
     adapter.last_native_obs.gripper_pose = np.asarray(
@@ -465,7 +465,7 @@ def test_rlbench_delta_eef_controller_applies_frame_rotation():
 
     sim_action = controller.translate(JoystickAction({"joystick_0": 1.0, "joystick_1": 0.0, "joystick_2": 0.0}))
 
-    np.testing.assert_allclose(sim_action.delta_position, [0.0, 0.02, 0.0], atol=1e-12)
+    np.testing.assert_allclose(sim_action.delta_position, [0.0, 0.01, 0.0], atol=1e-12)
 
 
 def test_rlbench_adapter_converts_delta_to_absolute_pose_action():
@@ -903,7 +903,7 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
     assert "Task: reach the " in request_text
     assert " target\nControl:" in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
@@ -982,7 +982,7 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
     assert manifest["observation"]["cameras"] == ["front"]
     assert manifest["history"] == {
         "action_window": "all",

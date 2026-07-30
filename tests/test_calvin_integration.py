@@ -1,6 +1,8 @@
 from copy import deepcopy
 from dataclasses import replace
+import importlib
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -59,6 +61,21 @@ PRIVATE_SENTINELS = {
     "hidden_mapping_sample": "PRIVATE_CALVIN_MAPPING_SAMPLE_SENTINEL",
     "hidden_rotation_sample": "PRIVATE_CALVIN_ROTATION_SAMPLE_SENTINEL",
 }
+
+
+def _require_module(name: str, reason: str | None = None):
+    try:
+        return importlib.import_module(name)
+    except ImportError as exc:
+        if os.environ.get("MLLM_TELEOP_REQUIRE_CALVIN") == "1":
+            raise
+        pytest.skip(reason or f"CALVIN dependency is unavailable: {exc}")
+
+
+def _runtime_unavailable(message: str) -> None:
+    if os.environ.get("MLLM_TELEOP_REQUIRE_CALVIN") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 class CalvinFakeClient:
@@ -231,6 +248,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     config = load_config(config_path)
     schema = build_action_space(config).schema()
 
+    assert config.benchmark.num_episodes == 10
     assert config.task.params["target_block_color"] == "red"
     assert config.task.params["reject_initial_success"] is True
     assert config.task.params["instruction"] == (
@@ -252,9 +270,10 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.frame_visible_to_agent is visible
     control_description = config.control_interface.control_frame_description or ""
     assert "CALVIN's PyBullet world frame" in control_description
-    assert "native magnitude 1 advances the target by 0.02 m" in control_description
+    assert "mapped benchmark magnitude 1 advances the target by 0.01 m" in control_description
     assert "PyBullet XYZ Euler parameters" in control_description
-    assert "native magnitude 1 changes that parameter by 0.05 rad" in control_description
+    assert "mapped benchmark magnitude 1" in control_description
+    assert "0.0314159265358979 rad (1.8 degrees)" in control_description
     assert "not an axis-angle vector" in control_description
     assert "gripper camera moves with the wrist" in control_description
     assert "values at or above 0.5 map to open" in control_description
@@ -268,12 +287,12 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
         == "xyz_euler_parameters"
     )
     assert config.controller.scales == {
-        "dx": 1.0,
-        "dy": 1.0,
-        "dz": 1.0,
-        "droll": 1.0,
-        "dpitch": 1.0,
-        "dyaw": 1.0,
+        "dx": 0.5,
+        "dy": 0.5,
+        "dz": 0.5,
+        "droll": 0.628318530717959,
+        "dpitch": 0.628318530717959,
+        "dyaw": 0.628318530717959,
     }
     assert config.controller.frame == "pybullet_world_xyz"
     assert config.controller.params["transform_rotation"] is False
@@ -289,7 +308,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert config.agent.observation.cameras == ("static", "gripper")
     assert config.camera.manager == "fixed"
     assert config.camera.visible_metadata is False
-    assert config.logging.save_video is False
+    assert config.logging.save_video is True
     assert tuple(schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
         schema[f"joystick_{index}"]
@@ -323,7 +342,7 @@ def test_calvin_mllm_task_instruction_is_identical_across_control_conditions():
 
 
 def test_calvin_task_uses_official_strict_three_stage_oracle():
-    pytest.importorskip("calvin_env")
+    _require_module("calvin_env")
     config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
     task = build_task(config)
     reset_info = _oracle_info(
@@ -497,7 +516,8 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
     assert "CALVIN's PyBullet world frame" in prompt
     assert "PyBullet XYZ Euler parameters" in prompt
     assert "not an axis-angle vector" in prompt
-    assert "native magnitude 1 advances the target by 0.02 m" in prompt
+    assert "mapped benchmark magnitude 1 advances the target by 0.01 m" in prompt
+    assert "0.0314159265358979 rad (1.8 degrees)" in prompt
     assert "joystick_0 -> dx" in prompt
     assert "joystick_5 -> dyaw" in prompt
     assert "joystick_6 -> gripper" in prompt
@@ -575,7 +595,15 @@ def test_calvin_controller_translation():
     sim_action = controller.translate(action)
 
     assert isinstance(sim_action, CalvinAction)
-    expected_values = [0.1, 0.0, -0.1, 0.0, 0.05, 0.0, 1.0]
+    expected_values = [
+        0.5,
+        0.0,
+        -0.5,
+        0.0,
+        0.3141592653589795,
+        0.0,
+        1.0,
+    ]
     np.testing.assert_allclose(sim_action.values, expected_values)
 
     mapping.map_action.return_value = {
@@ -618,7 +646,7 @@ def test_calvin_controller_applies_frame_rotation_to_position_and_rotation():
 
     sim_action = controller.translate(JoystickAction(channels={"joystick_0": 1.0}))
 
-    np.testing.assert_allclose(sim_action.values[:3], [0.0, 0.1, 0.0], atol=1e-12)
+    np.testing.assert_allclose(sim_action.values[:3], [0.0, 0.5, 0.0], atol=1e-12)
     assert abs(sim_action.values[3]) < 1e-12
 
 
@@ -656,8 +684,12 @@ def test_calvin_mllm_controller_uses_native_scale_and_does_not_rotate_euler_para
         JoystickAction(channels={"joystick_0": 1.0})
     )
 
-    np.testing.assert_allclose(sim_action.values[:3], [0.0, 1.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(sim_action.values[3:6], [1.0, 0.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(sim_action.values[:3], [0.0, 0.5, 0.0], atol=1e-12)
+    np.testing.assert_allclose(
+        sim_action.values[3:6],
+        [0.628318530717959, 0.0, 0.0],
+        atol=1e-12,
+    )
     assert controller.metadata()["transform_rotation"] is False
 
 
@@ -696,12 +728,16 @@ def test_calvin_hidden_rotation_preserves_direction_within_native_action_bounds(
         JoystickAction(channels={"joystick_0": 1.0})
     )
 
-    np.testing.assert_allclose(sim_action.values[:3], [0.0, 1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(
+        sim_action.values[:3],
+        [0.0, 0.7071067811865475, 0.0],
+        atol=1e-12,
+    )
     assert np.max(np.abs(sim_action.values[:3])) <= 1.0
 
 
 def test_calvin_mllm_normalized_action_reaches_pinned_native_step_size():
-    pytest.importorskip("calvin_env")
+    _require_module("calvin_env")
     from types import SimpleNamespace
 
     from calvin_env.robot.robot import Robot
@@ -746,7 +782,7 @@ def test_calvin_mllm_normalized_action_reaches_pinned_native_step_size():
 
 
 def test_calvin_static_camera_projection_matches_public_prompt():
-    calvin_env = pytest.importorskip("calvin_env")
+    calvin_env = _require_module("calvin_env")
     from omegaconf import OmegaConf
 
     camera_config = OmegaConf.load(
@@ -807,7 +843,7 @@ def test_calvin_perturbation_only_changes_motion_channels():
 
 def test_calvin_sim_adapter_reset_step_smoke():
     """Run reset+step when real calvin_env is installed; otherwise skip cleanly."""
-    pytest.importorskip("calvin_env")
+    _require_module("calvin_env")
     config = load_config("configs/calvin_delta_eef.yaml")
     sim = build_sim(config)
     camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
@@ -870,7 +906,7 @@ def test_calvin_sim_adapter_rejects_invalid_native_actions(values, message):
 
 
 def test_calvin_real_seeded_resets_are_reproducible_and_distinct():
-    pytest.importorskip("calvin_env")
+    _require_module("calvin_env")
     config = load_config("configs/calvin_delta_eef.yaml")
     sim = build_sim(config)
 
@@ -900,21 +936,21 @@ def test_calvin_real_seeded_resets_are_reproducible_and_distinct():
 
 
 def test_calvin_mllm_seed_range_reset_canary_when_installed():
-    pytest.importorskip(
+    _require_module(
         "calvin_env",
-        reason="pinned CALVIN reset canary requires calvin_env",
+        "pinned CALVIN reset canary requires calvin_env",
     )
-    pytest.importorskip(
+    _require_module(
         "pybullet",
-        reason="pinned CALVIN reset canary requires PyBullet",
+        "pinned CALVIN reset canary requires PyBullet",
     )
-    pytest.importorskip(
+    _require_module(
         "hydra",
-        reason="pinned CALVIN reset canary requires Hydra",
+        "pinned CALVIN reset canary requires Hydra",
     )
-    pytest.importorskip(
+    _require_module(
         "omegaconf",
-        reason="pinned CALVIN reset canary requires OmegaConf",
+        "pinned CALVIN reset canary requires OmegaConf",
     )
     config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
     sim = build_sim(config)
@@ -1008,7 +1044,7 @@ def test_calvin_randomized_camera_manager():
 
 
 def test_calvin_sim_adapter_worker_reset_step_shutdown():
-    pytest.importorskip("calvin_env")
+    _require_module("calvin_env")
 
     config = load_config("configs/calvin_delta_eef.yaml")
     context = mp.get_context("spawn")
@@ -1021,7 +1057,9 @@ def test_calvin_sim_adapter_worker_reset_step_shutdown():
         initial = result_queue.get(timeout=30)
         assert isinstance(initial, PlayerRuntimeResult)
         if initial.error:
-            pytest.skip(f"CALVIN runtime unavailable: {initial.error}")
+            _runtime_unavailable(
+                f"CALVIN runtime unavailable: {initial.error}"
+            )
         assert initial.observation is not None
         assert np.asarray(initial.frame).ndim == 3
 
@@ -1043,7 +1081,9 @@ def test_calvin_sim_adapter_worker_reset_step_shutdown():
         stepped = result_queue.get(timeout=30)
         assert isinstance(stepped, PlayerRuntimeResult)
         if stepped.error:
-            pytest.skip(f"CALVIN runtime step unavailable: {stepped.error}")
+            _runtime_unavailable(
+                f"CALVIN runtime step unavailable: {stepped.error}"
+            )
         assert stepped.observation is not None
         assert np.asarray(stepped.frame).shape[-1] == 3
         assert stepped.step_result is not None
@@ -1067,7 +1107,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     frame_transform,
     visible,
 ):
-    pytest.importorskip("calvin_env")
+    _require_module("calvin_env")
     client = CalvinFakeClient()
     monkeypatch.setenv("MLLM_TELEOP_MODEL", "fake-calvin-model")
     monkeypatch.setenv("OPENAI_BASE_URL", "http://fake-calvin.invalid/v1")
@@ -1092,7 +1132,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
         logging=replace(
             config.logging,
             output_dir=str(tmp_path),
-            save_video=False,
+            save_video=True,
         ),
     )
 
@@ -1100,6 +1140,9 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
 
     assert episode.steps == 4
     assert episode.termination_reason == "max_steps"
+    videos = list(tmp_path.rglob("review/model_view.mp4"))
+    assert len(videos) == 1
+    assert videos[0].stat().st_size > 0
     assert len(client.requests) == 4
     assert [_image_count(request) for request in client.requests] == [2, 4, 6, 8]
     assert [
@@ -1120,7 +1163,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
     assert (
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
@@ -1134,7 +1177,8 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     assert "CALVIN's PyBullet world frame" in request_text
     assert "PyBullet XYZ Euler parameters" in request_text
     assert "not an axis-angle vector" in request_text
-    assert "native magnitude 1 advances the target by 0.02 m" in request_text
+    assert "mapped benchmark magnitude 1 advances the target by 0.01 m" in request_text
+    assert "0.0314159265358979 rad (1.8 degrees)" in request_text
     assert "1 means open, 0 means closed" in request_text
     assert "values at or above 0.5 map to open" in request_text
     if mapping_strategy == "fixed":
@@ -1205,7 +1249,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

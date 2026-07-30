@@ -38,6 +38,10 @@ control_interface:
   mapping_visible_to_agent: true
   frame_transform: identity
   frame_visible_to_agent: true
+  control_frame_description: >-
+    the Google Robot robot-base Cartesian frame. A mapped magnitude-1
+    translation command is 0.01 meters and a mapped magnitude-1 axis-angle
+    rotation command is 0.0314159265358979 radians (1.8 degrees)
   params:
     scale_mode: simpler_env_delta_eef
 
@@ -45,12 +49,12 @@ controller:
   type: simpler_env_delta_eef
   frame: controller
   scales:
-    dx: 0.05
-    dy: 0.05
-    dz: 0.05
-    droll: 0.1
-    dpitch: 0.1
-    dyaw: 0.1
+    dx: 0.01
+    dy: 0.01
+    dz: 0.01
+    droll: 0.0314159265358979
+    dpitch: 0.0314159265358979
+    dyaw: 0.0314159265358979
   params:
     dimensions: [dx, dy, dz, droll, dpitch, dyaw, gripper]
     gripper_open_value: -1.0

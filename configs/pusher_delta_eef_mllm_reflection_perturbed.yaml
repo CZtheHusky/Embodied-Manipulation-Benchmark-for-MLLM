@@ -11,7 +11,7 @@ simulator:
   params:
     max_episode_steps: 500
   env_kwargs:
-    eef_step_scale: 0.025
+    eef_step_scale: 0.01
     goal_distance_threshold: 0.08
     goal_hold_steps: 3
     workspace_low: [0.1, -0.65, -0.25]
@@ -54,12 +54,12 @@ control_interface:
   frame_visible_to_agent: false
   control_frame_description: >-
     the Gymnasium Pusher world x, y, and z axes. A mapped magnitude-1
-    translation command moves the end-effector target by 0.025 meters. The
+    translation command moves the end-effector target by 0.01 meters. The
     front camera pose is randomly sampled at episode reset and then remains
     fixed for that episode, so image directions do not have a fixed world-axis
     projection across episodes
   params:
-    scale_mode: uniform_env_eef_step_scale_0.025m
+    scale_mode: uniform_env_eef_step_scale_0.01m
 
 controller:
   type: pusher_delta_eef

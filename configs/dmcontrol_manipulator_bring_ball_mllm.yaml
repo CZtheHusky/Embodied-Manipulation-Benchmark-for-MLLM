@@ -49,7 +49,7 @@ control_interface:
   frame_visible_to_agent: true
   control_frame_description: >-
     the 2D MuJoCo world x-z plane; only dx and dy are active and there is no dz
-    or rotation command. A mapped magnitude-1 command requests a 0.03 m
+    or rotation command. A mapped magnitude-1 command requests a 0.01 m
     Cartesian target displacement. In the fixed camera world +x projects toward
     image right and world +z projects toward image up. The hand camera tracks
     the moving hand, so the fixed camera's image-axis relation must not be
@@ -68,13 +68,13 @@ control_interface:
   gripper_closed_command: 1
   gripper_neutral_command: 0.5
   params:
-    scale_mode: dmcontrol_world_xz_cartesian_impedance_target_0_03m
+    scale_mode: dmcontrol_world_xz_cartesian_impedance_target_0_01m
 
 controller:
   type: dmcontrol_planar_eef
   scales:
-    dx: 0.03
-    dy: 0.03
+    dx: 0.01
+    dy: 0.01
     gripper: 1.0
   params:
     dimensions: [dx, dy, gripper]

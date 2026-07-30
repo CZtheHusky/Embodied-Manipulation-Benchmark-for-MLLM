@@ -49,7 +49,7 @@ control_interface:
   frame_visible_to_agent: true
   control_frame_description: >-
     the Colosseum/RLBench world Cartesian x, y, and z axes, with translation
-    as the only active motion. A mapped magnitude-1 command is a 0.02-meter
+    as the only active motion. A mapped magnitude-1 command is a 0.01-meter
     world-frame delta. The benchmark adds that delta without sign compensation
     to the position from the latest observed absolute gripper pose, clamps the
     target to the configured workspace bounds, and sends a native absolute
@@ -65,9 +65,9 @@ controller:
   type: rlbench_delta_eef
   frame: controller
   scales:
-    dx: 0.02
-    dy: 0.02
-    dz: 0.02
+    dx: 0.01
+    dy: 0.01
+    dz: 0.01
   params:
     dimensions: [dx, dy, dz]
     default_gripper: 1.0

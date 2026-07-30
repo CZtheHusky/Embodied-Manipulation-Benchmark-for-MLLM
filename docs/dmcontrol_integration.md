@@ -33,7 +33,7 @@ The gripper is effort-controlled: `0.5` is neutral and does not hold an
 aperture. The model must sustain `0` or `1` until the desired aperture is
 visibly reached.
 
-A mapped motion magnitude of `1` requests a `0.03 m` Cartesian target
+A mapped motion magnitude of `1` requests a `0.01 m` Cartesian target
 displacement before the Cartesian-impedance conversion. The upstream
 `manipulator.xml` defines the fixed camera with its positive image-x axis
 aligned to world `+x` and positive image-y/up axis aligned to world `+z`. The

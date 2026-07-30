@@ -47,8 +47,9 @@ control_interface:
   frame_visible_to_agent: false
   control_frame_description: >-
     the robosuite 1.4.1 OSC MuJoCo world x, y, and z axes; translation-only
-    commands are normalized world-frame inputs with native +/-1 mapping to
-    +/-0.05 m, and in upright agentview image right is approximately +world y
+    commands are normalized world-frame inputs. A mapped magnitude-1 benchmark
+    command produces +/-0.01 m translation, and in upright agentview image
+    right is approximately +world y
     while image up is approximately -0.706 world x +0.708 world z.
     robot0_eye_in_hand is rigidly wrist-mounted and moves with the wrist, so its
     image-plane basis has no fixed world-axis projection. The Panda gripper
@@ -68,12 +69,12 @@ controller:
   type: robosuite_osc
   frame: world_xyz
   scales:
-    dx: 1.0
-    dy: 1.0
-    dz: 1.0
-    droll: 0.1
-    dpitch: 0.1
-    dyaw: 0.1
+    dx: 0.2
+    dy: 0.2
+    dz: 0.2
+    droll: 0.0628318530717959
+    dpitch: 0.0628318530717959
+    dyaw: 0.0628318530717959
     gripper: 1.0
 
 agent:
