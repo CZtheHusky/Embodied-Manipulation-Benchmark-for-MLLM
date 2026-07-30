@@ -511,7 +511,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v2" in group
+    assert "prompt-mllm_joystick_reflection_v3" in group
     assert "output-action_with_reflection" in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -792,7 +792,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v2" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
     assert f"Task: {TASK_TEXT}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -870,7 +870,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

@@ -819,7 +819,7 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
     assert manifest["history"]["action_window"] == "all"
     assert manifest["history"]["image_window"] == 3
     assert manifest["control_interface"]["mapping_strategy"] == mapping_strategy

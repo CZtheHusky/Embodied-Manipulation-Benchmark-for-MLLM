@@ -493,7 +493,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v2"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v3"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

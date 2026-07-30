@@ -23,9 +23,9 @@ success-oracle data, simulator actions, transition info, seeds, camera
 randomization values, or other simulator metadata. Those values remain
 available to evaluators and debug logs, but not to the model client.
 
-Strict Chat Completions uses prompt version `mllm_joystick_v2`. Reflection
-Chat Completions uses `mllm_joystick_reflection_v2`. Responses uses
-`mllm_joystick_responses_v2`. Static system text, task text, control
+Strict Chat Completions uses prompt version `mllm_joystick_v3`. Reflection
+Chat Completions uses `mllm_joystick_reflection_v3`. Responses uses
+`mllm_joystick_responses_v3`. Static system text, task text, control
 instructions, and schema are placed before episode turns. Request IDs,
 timestamps, and other per-call values are not inserted into prompt text.
 
@@ -292,8 +292,8 @@ agent trace. The server does not expose arbitrary files: image routes are
 restricted to PNG artifacts named in request manifests, and evaluator
 state/info are not returned by its API.
 
-`mllm_joystick_v2`, `mllm_joystick_reflection_v2`, and
-`mllm_joystick_responses_v2` are prompt contract versions, not model versions.
+`mllm_joystick_v3`, `mllm_joystick_reflection_v3`, and
+`mllm_joystick_responses_v3` are prompt contract versions, not model versions.
 They identify the system instruction, public-input projection, history layout,
 image policy, and joystick response schema. A behavior-changing prompt update
 must use a new version so results remain attributable and comparable.

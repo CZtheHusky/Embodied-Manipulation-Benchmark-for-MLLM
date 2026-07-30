@@ -13,8 +13,8 @@ from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, Agent
 from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_name
 
 
-PROMPT_VERSION = "mllm_joystick_v2"
-REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v2"
+PROMPT_VERSION = "mllm_joystick_v3"
+REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v3"
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
@@ -436,10 +436,10 @@ def _static_instruction(
             "The object must contain only the top-level key channels. "
         )
     return (
-        f"Prompt version: {prompt_version}. "
-        f"Task: {context.task_instruction} "
-        f"Control: {control.text} "
-        f"Action schema: {schema}. "
+        f"Prompt version: {prompt_version}.\n"
+        f"Task: {context.task_instruction}\n"
+        f"Control: {control.text}\n"
+        f"Action schema: {schema}.\n"
         f"{format_requirement}"
         f"Return valid JSON using this required output shape: {example}"
     )

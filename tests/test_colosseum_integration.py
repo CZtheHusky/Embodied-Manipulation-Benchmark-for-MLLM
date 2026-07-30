@@ -671,7 +671,7 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     ] == [0, 1, 2, 3]
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v2" in request_text
+    assert "Prompt version: mllm_joystick_reflection_v3" in request_text
     assert "Task: Close the visible box lid." in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "Colosseum/RLBench world Cartesian x, y, and z axes" in request_text
