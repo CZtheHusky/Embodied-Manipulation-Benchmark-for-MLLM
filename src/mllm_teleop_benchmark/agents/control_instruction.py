@@ -51,7 +51,7 @@ class ControlInstructionBuilder:
                     str(interface.get("rotation_representation", "")),
                 )
             if dimension_semantics:
-                text_lines.append(dimension_semantics)
+                text_lines.append(_sentence(dimension_semantics))
             if control_frame_description:
                 text_lines.append(f"The physical controller frame is {control_frame_description}.")
                 panel_lines.append(f"controller frame: {control_frame_description}")
@@ -95,7 +95,7 @@ class ControlInstructionBuilder:
                     interface.get("gripper_commands")
                 )
             if gripper_semantics:
-                text_lines.append(gripper_semantics)
+                text_lines.append(_sentence(gripper_semantics))
             panel_lines.append(f"gripper: {gripper}, final joystick")
         else:
             panel_lines.append("gripper: none")
@@ -119,6 +119,10 @@ def _mapping_summary(mapping: object) -> str:
         target = f"-{dim}" if sign < 0.0 and dim != "gripper" else dim
         parts.append(f"{channel} -> {target}")
     return "; ".join(parts)
+
+
+def _sentence(text: str) -> str:
+    return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
 def _dimension_semantics(

@@ -177,9 +177,9 @@ def test_control_interface_uses_explicit_dimension_and_gripper_semantics():
         mode="planar_eef_delta_gripper",
         active_dimensions=("dx", "dy"),
         gripper="effort",
-        dimension_semantics_description="dx is horizontal and dy is vertical.",
+        dimension_semantics_description="dx is horizontal and dy is vertical",
         gripper_semantics_description=(
-            "Use sustained effort until visibly open or closed."
+            "Use sustained effort until visibly open or closed"
         ),
         gripper_neutral_command=0.5,
     )
@@ -189,10 +189,15 @@ def test_control_interface_uses_explicit_dimension_and_gripper_semantics():
         action_space.schema(),
     )
 
-    assert "dx is horizontal and dy is vertical." in instruction.text
+    assert (
+        "dx is horizontal and dy is vertical. The exact joystick-to-dimension "
+        "mapping is not disclosed"
+        in instruction.text
+    )
     assert "control frame's x and y axes" not in instruction.text
     assert "effort control" in instruction.text
     assert "Use sustained effort until visibly open or closed." in instruction.text
+    assert instruction.text.endswith("closed.")
     assert "0.5 means neutral" not in instruction.text
     assert action_space.schema()["joystick_2"] == {
         "kind": "continuous",
