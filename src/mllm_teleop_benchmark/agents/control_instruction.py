@@ -42,10 +42,14 @@ class ControlInstructionBuilder:
 
         if dimensions and visible:
             text_lines.append(f"The active controllable dimensions are: {', '.join(str(v) for v in dimensions)}.")
-            dimension_semantics = _dimension_semantics(
-                dimensions,
-                str(interface.get("rotation_representation", "")),
-            )
+            dimension_semantics = str(
+                interface.get("dimension_semantics_description", "")
+            ).strip()
+            if not dimension_semantics:
+                dimension_semantics = _dimension_semantics(
+                    dimensions,
+                    str(interface.get("rotation_representation", "")),
+                )
             if dimension_semantics:
                 text_lines.append(dimension_semantics)
             if control_frame_description:
@@ -83,7 +87,13 @@ class ControlInstructionBuilder:
 
         if gripper != "none":
             text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick.")
-            gripper_semantics = _gripper_semantics(interface.get("gripper_commands"))
+            gripper_semantics = str(
+                interface.get("gripper_semantics_description", "")
+            ).strip()
+            if not gripper_semantics:
+                gripper_semantics = _gripper_semantics(
+                    interface.get("gripper_commands")
+                )
             if gripper_semantics:
                 text_lines.append(gripper_semantics)
             panel_lines.append(f"gripper: {gripper}, final joystick")
@@ -178,7 +188,7 @@ def _gripper_semantics(commands: object) -> str:
     parts = [
         f"{_format_number(value)} means {name}"
         for name, value in commands.items()
-        if name in {"open", "closed", "hold"}
+        if name in {"open", "closed", "hold", "neutral"}
     ]
     if not parts:
         return ""

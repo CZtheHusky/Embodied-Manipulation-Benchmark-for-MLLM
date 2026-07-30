@@ -172,12 +172,42 @@ def test_control_interface_rejects_blank_public_frame_description():
         )
 
 
+def test_control_interface_uses_explicit_dimension_and_gripper_semantics():
+    interface = ControlInterfaceConfig(
+        mode="planar_eef_delta_gripper",
+        active_dimensions=("dx", "dy"),
+        gripper="effort",
+        dimension_semantics_description="dx is horizontal and dy is vertical.",
+        gripper_semantics_description=(
+            "Use sustained effort until visibly open or closed."
+        ),
+        gripper_neutral_command=0.5,
+    )
+    action_space = ActionSpace.from_config(interface.to_action_space_config())
+    instruction = ControlInstructionBuilder().build(
+        {**interface.metadata(), "source": "control_interface"},
+        action_space.schema(),
+    )
+
+    assert "dx is horizontal and dy is vertical." in instruction.text
+    assert "control frame's x and y axes" not in instruction.text
+    assert "effort control" in instruction.text
+    assert "Use sustained effort until visibly open or closed." in instruction.text
+    assert "0.5 means neutral" not in instruction.text
+    assert action_space.schema()["joystick_2"] == {
+        "kind": "continuous",
+        "min": 0.0,
+        "max": 1.0,
+    }
+
+
 @pytest.mark.parametrize(
     "field,value",
     (
         ("gripper_open_command", -0.01),
         ("gripper_closed_command", 1.01),
         ("gripper_hold_command", float("nan")),
+        ("gripper_neutral_command", float("nan")),
     ),
 )
 def test_direct_gripper_prompt_commands_must_fit_virtual_schema(field, value):
@@ -210,6 +240,17 @@ def test_gripper_open_and_closed_prompt_commands_must_differ():
             gripper="direct",
             gripper_open_command=0.5,
             gripper_closed_command=0.5,
+        )
+
+
+def test_gripper_hold_and_neutral_commands_are_mutually_exclusive():
+    with pytest.raises(ValueError, match="hold and neutral commands are mutually exclusive"):
+        ControlInterfaceConfig(
+            mode="eef_delta_pose",
+            active_dimensions=("dx",),
+            gripper="direct",
+            gripper_hold_command=0.5,
+            gripper_neutral_command=0.5,
         )
 
 

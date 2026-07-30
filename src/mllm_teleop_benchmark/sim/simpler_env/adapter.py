@@ -18,8 +18,21 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.env_id = config.env_id
         if self.env_id is None:
             raise ValueError("SimplerEnv simulator requires simulator.env_id")
+        raw_substeps = config.params.get("direct_gripper_substeps", 1)
+        if (
+            isinstance(raw_substeps, bool)
+            or not isinstance(raw_substeps, int)
+            or raw_substeps < 1
+        ):
+            raise ValueError(
+                "SimplerEnv simulator.params.direct_gripper_substeps must be "
+                "a positive integer"
+            )
+        self.direct_gripper_substeps = raw_substeps
         self.env: Any | None = None
         self.step_id = 0
+        self.native_step_id = 0
+        self.last_native_steps = 0
         self.last_native_obs: Any = None
         self.last_info: dict[str, Any] = {}
         self.last_reward: float | None = None
@@ -30,6 +43,8 @@ class SimplerEnvSimAdapter(SimAdapter):
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
         self._ensure_env()
         self.step_id = 0
+        self.native_step_id = 0
+        self.last_native_steps = 0
         self.last_truncated = False
         native_obs, reset_info = self._reset_native(seed)
         evaluator_info = self._reset_evaluator_info()
@@ -45,8 +60,21 @@ class SimplerEnvSimAdapter(SimAdapter):
             raise TypeError(f"SimplerEnvSimAdapter requires SimplerEnvAction, got {type(action).__name__}")
         self._ensure_env()
         native_action, clip_metadata = self._native_action(action)
-        native_obs, reward, success, truncated, info = self._normalize_step_result(self.env.step(native_action))
+        native_steps = 0
+        for substep in range(self.direct_gripper_substeps):
+            substep_action = np.array(native_action, copy=True)
+            if substep:
+                substep_action[..., :-1] = 0.0
+            native_obs, reward, success, truncated, info = (
+                self._normalize_step_result(self.env.step(substep_action))
+            )
+            native_steps += 1
+            if success or truncated:
+                break
+
         self.step_id += 1
+        self.native_step_id += native_steps
+        self.last_native_steps = native_steps
         self.last_native_obs = native_obs
         self.last_reward = self._float_or_none(reward)
         self.last_success = bool(success)
@@ -80,6 +108,9 @@ class SimplerEnvSimAdapter(SimAdapter):
     def get_state(self) -> dict[str, Any]:
         state = {
             "step_id": self.step_id,
+            "native_step_id": self.native_step_id,
+            "native_steps_this_action": self.last_native_steps,
+            "direct_gripper_substeps": self.direct_gripper_substeps,
             "env_id": self.env_id,
             "reward": self.last_reward,
             "success": self.last_success,

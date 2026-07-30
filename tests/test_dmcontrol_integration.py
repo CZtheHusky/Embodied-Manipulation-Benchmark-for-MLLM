@@ -226,13 +226,16 @@ def test_dmcontrol_mllm_config_is_planar_eef_not_native_motor_aliases(
     assert config.controller.params["dimensions"] == ["dx", "dy", "gripper"]
     assert config.control_interface.mode == "planar_eef_delta_gripper"
     assert config.control_interface.active_dimensions == ("dx", "dy")
+    assert config.control_interface.gripper == "effort"
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
     assert config.control_interface.gripper_open_command == 0.0
-    assert config.control_interface.gripper_hold_command == 0.5
+    assert config.control_interface.gripper_hold_command is None
+    assert config.control_interface.gripper_neutral_command == 0.5
     assert config.control_interface.gripper_closed_command == 1.0
+    assert config.simulator.params["action_repeat"] == 4
     assert config.control_interface.params["scale_mode"] == (
         "dmcontrol_world_xz_cartesian_impedance_target_0_03m"
     )
@@ -315,18 +318,20 @@ def test_dmcontrol_mllm_prompt_describes_true_public_control_contract():
 
     assert "active controllable dimensions are: dx, dy" in baseline_prompt
     assert "only dx and dy are active and there is no dz or rotation command" in baseline_prompt
-    assert "control dy is world z" in baseline_prompt
-    assert "positive direction projects toward image right" in baseline_prompt
-    assert "positive direction projects toward image up" in baseline_prompt
+    assert "dy denotes end-effector translation along world z" in baseline_prompt
+    assert "control frame's x and y axes" not in baseline_prompt
+    assert "world +x projects toward image right" in baseline_prompt
+    assert "world +z projects toward image up" in baseline_prompt
     assert "mapped magnitude-1 command requests a 0.03 m" in baseline_prompt
     assert "hand camera tracks the moving hand" in baseline_prompt
     assert "must not be applied to the hand view" in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_1 -> dy" in baseline_prompt
     assert "joystick_2 -> gripper" in baseline_prompt
-    assert "0 means open" in baseline_prompt
-    assert "0.5 means hold" in baseline_prompt
-    assert "1 means closed" in baseline_prompt
+    assert "0 commands sustained opening effort" in baseline_prompt
+    assert "0.5 is neutral zero effort and does not hold the aperture" in baseline_prompt
+    assert "1 commands sustained closing effort" in baseline_prompt
+    assert "effort control" in baseline_prompt
     for false_dimension in ("dz", "droll", "dpitch", "dyaw"):
         assert f"joystick_2 -> {false_dimension}" not in baseline_prompt
 
@@ -418,6 +423,9 @@ def test_dmcontrol_planar_eef_single_axis_moves_grasp_in_expected_world_directio
         signed_motion = (after[site_axis] - before[site_axis]) * np.sign(value)
         assert signed_motion > 5e-4
         assert result.info["step_id"] == 1
+        assert result.info["native_step_id"] == 4
+        assert result.info["native_steps_this_action"] == 4
+        assert result.info["action_repeat"] == 4
     finally:
         sim.close()
 
@@ -505,6 +513,43 @@ def test_dmcontrol_planar_eef_gripper_zero_opens_and_one_closes():
             sim.close()
 
     assert apertures[0.0] > apertures[1.0] + 0.04
+
+
+def test_dmcontrol_model_horizon_covers_official_native_time_limit():
+    pytest.importorskip("dm_control")
+    pytest.importorskip("mujoco")
+    config = load_config(BASELINE_MLLM_CONFIG)
+    sim = build_sim(config)
+    controller = build_controller(
+        config,
+        build_mapping(config, config.benchmark.seed),
+        config.benchmark.seed,
+    )
+    neutral = controller.translate(
+        JoystickAction(
+            {
+                "joystick_0": 0.0,
+                "joystick_1": 0.0,
+                "joystick_2": 0.5,
+            }
+        )
+    )
+
+    try:
+        sim.reset(config.task, config.benchmark.seed)
+        result = None
+        for _ in range(config.task.max_steps):
+            result = sim.step(neutral)
+            if result.terminated or result.truncated:
+                break
+
+        assert result is not None
+        assert result.terminated is False
+        assert result.truncated is True
+        assert result.info["step_id"] == 250
+        assert result.info["native_step_id"] == 1000
+    finally:
+        sim.close()
 
 
 @pytest.mark.parametrize(

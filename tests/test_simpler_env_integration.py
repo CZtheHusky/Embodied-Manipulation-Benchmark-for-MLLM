@@ -24,6 +24,7 @@ from mllm_teleop_benchmark.core.registry import (
 )
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 from mllm_teleop_benchmark.mapping.frame_transform import RotationControlFrameTransform
+from mllm_teleop_benchmark.core.types import SimplerEnvAction
 from mllm_teleop_benchmark.sim.simpler_env.adapter import SimplerEnvSimAdapter
 
 
@@ -178,6 +179,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
         "lifted_obj",
         "episode_stats",
     ]
+    assert config.simulator.params["direct_gripper_substeps"] == 3
     assert config.agent.observation.cameras == PUBLIC_CAMERAS
     assert tuple(camera.name for camera in config.camera.cameras) == PUBLIC_CAMERAS
     assert config.control_interface.active_dimensions == (
@@ -303,7 +305,8 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "joystick_5 -> dyaw" in baseline_prompt
     assert "direct control" in baseline_prompt
     assert "final virtual joystick" in baseline_prompt
-    assert "0.5 means hold" in baseline_prompt
+    assert "one 1 command reaches the closed target" in baseline_prompt
+    assert "0.5 preserves the target selected" in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     assert "exact joystick-to-dimension mapping is not disclosed" in perturbed_prompt
@@ -319,7 +322,8 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "base +y projects approximately toward image left" in perturbed_prompt
     assert "base +x mainly away from the camera" in perturbed_prompt
     assert "base +z toward image up" in perturbed_prompt
-    assert "0.5 means hold" in perturbed_prompt
+    assert "one 1 command reaches the closed target" in perturbed_prompt
+    assert "0.5 preserves the target selected" in perturbed_prompt
     assert "base_camera" not in perturbed_prompt
     assert (
         "Infer the hidden controls from visual observations and your own action "
@@ -387,6 +391,54 @@ def test_simpler_env_adapter_serializes_pose_like_info():
             "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
         }
     }
+
+
+def test_simpler_env_direct_gripper_reaches_absolute_target_in_one_outer_step():
+    class FakeActionSpace:
+        shape = (7,)
+        low = np.full(7, -1.0, dtype=np.float32)
+        high = np.full(7, 1.0, dtype=np.float32)
+
+    class FakeEnv:
+        def __init__(self):
+            self.action_space = FakeActionSpace()
+            self.actions = []
+            self.gripper_target = 0.0
+
+        def step(self, action):
+            values = np.asarray(action, dtype=np.float32).copy()
+            self.actions.append(values)
+            self.gripper_target = float(
+                np.clip(self.gripper_target + values[-1], -1.31, 1.31)
+            )
+            return {}, 0.0, False, False, {}
+
+    config = load_config(BASELINE_CONFIG)
+    adapter = SimplerEnvSimAdapter(config.simulator)
+    fake_env = FakeEnv()
+    adapter.env = fake_env
+
+    open_action = SimplerEnvAction(
+        values=(0.05, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0)
+    )
+    opened = adapter.step(open_action)
+    assert fake_env.gripper_target == pytest.approx(-1.31)
+    np.testing.assert_allclose(fake_env.actions[0][:-1], open_action.values[:-1])
+    np.testing.assert_allclose(fake_env.actions[1][:-1], 0.0)
+    np.testing.assert_allclose(fake_env.actions[2][:-1], 0.0)
+    assert opened.info["step_id"] == 1
+    assert opened.info["native_step_id"] == 3
+    assert opened.info["native_steps_this_action"] == 3
+
+    close_action = SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+    adapter.step(close_action)
+    assert fake_env.gripper_target == pytest.approx(1.31)
+
+    hold_action = SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+    held = adapter.step(hold_action)
+    assert fake_env.gripper_target == pytest.approx(1.31)
+    assert held.info["step_id"] == 3
+    assert held.info["native_step_id"] == 9
 
 
 def test_simpler_env_rejects_evaluator_success_before_model_request(
@@ -493,6 +545,57 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
             float(np.asarray(next_observation.images[camera]).std()) > 1.0
             for camera in PUBLIC_CAMERAS
         )
+    finally:
+        sim.close()
+
+
+def test_simpler_env_real_gripper_direct_command_sets_absolute_target():
+    _require_simpler_env()
+    config = load_config(BASELINE_CONFIG)
+    sim = build_sim(config)
+    controller = build_controller(
+        config,
+        build_mapping(config, config.benchmark.seed),
+        config.benchmark.seed,
+    )
+
+    def translate_gripper(value):
+        return controller.translate(
+            JoystickAction(
+                {
+                    **{f"joystick_{index}": 0.0 for index in range(6)},
+                    "joystick_6": value,
+                }
+            )
+        )
+
+    try:
+        sim.reset(config.task, seed=config.benchmark.seed)
+        native_gripper = sim.env.unwrapped.agent.controller.controllers["gripper"]
+        joint_limits = native_gripper.articulation.get_qlimits()[
+            native_gripper.joint_indices
+        ]
+        clip_threshold = native_gripper.config.clip_target_thres
+
+        sim.step(translate_gripper(0.0))
+        open_target = np.asarray(native_gripper._target_qpos).copy()
+        sim.step(translate_gripper(1.0))
+        closed_target = np.asarray(native_gripper._target_qpos).copy()
+        sim.step(translate_gripper(0.5))
+        held_target = np.asarray(native_gripper._target_qpos).copy()
+
+        np.testing.assert_allclose(
+            open_target,
+            joint_limits[:, 0] - clip_threshold,
+            atol=1e-7,
+        )
+        np.testing.assert_allclose(
+            closed_target,
+            joint_limits[:, 1] + clip_threshold,
+            atol=1e-7,
+        )
+        np.testing.assert_allclose(held_target, closed_target, atol=1e-7)
+        assert sim.get_state()["native_step_id"] == 9
     finally:
         sim.close()
 

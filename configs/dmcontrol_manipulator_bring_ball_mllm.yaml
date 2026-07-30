@@ -11,6 +11,7 @@ simulator:
     mujoco_gl: egl
     planar_eef_position_gain: 400
     planar_eef_velocity_damping: 5
+    action_repeat: 4
   env_kwargs: {}
 
 task:
@@ -38,7 +39,7 @@ camera:
 control_interface:
   mode: planar_eef_delta_gripper
   active_dimensions: [dx, dy]
-  gripper: direct
+  gripper: effort
   channel_kind: discrete
   channel_values: [-1, 0, 1]
   mapping_strategy: fixed
@@ -48,15 +49,24 @@ control_interface:
   frame_visible_to_agent: true
   control_frame_description: >-
     the 2D MuJoCo world x-z plane; only dx and dy are active and there is no dz
-    or rotation command: control dx is world x, whose positive direction
-    projects toward image right in the fixed camera; control dy is world z,
-    whose positive direction projects toward image up in the fixed camera. A
-    mapped magnitude-1 command requests a 0.03 m Cartesian target displacement.
-    The hand camera tracks the moving hand, so the fixed camera's image-axis
-    relation must not be applied to the hand view
+    or rotation command. A mapped magnitude-1 command requests a 0.03 m
+    Cartesian target displacement. In the fixed camera world +x projects toward
+    image right and world +z projects toward image up. The hand camera tracks
+    the moving hand, so the fixed camera's image-axis relation must not be
+    applied to the hand view
+  dimension_semantics_description: >-
+    dx denotes end-effector translation along world x and dy denotes
+    end-effector translation along world z. A positive mapped value commands
+    the positive world direction, a negative value commands the opposite
+    direction, and zero commands no position change
+  gripper_semantics_description: >-
+    For the final gripper joystick, 0 commands sustained opening effort, 0.5 is
+    neutral zero effort and does not hold the aperture, and 1 commands sustained
+    closing effort. Continue commanding 0 or 1 until the desired aperture is
+    visibly reached
   gripper_open_command: 0
   gripper_closed_command: 1
-  gripper_hold_command: 0.5
+  gripper_neutral_command: 0.5
   params:
     scale_mode: dmcontrol_world_xz_cartesian_impedance_target_0_03m
 

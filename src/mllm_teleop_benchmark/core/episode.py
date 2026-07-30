@@ -217,6 +217,8 @@ class EpisodeManager:
         gripper_channel = interface.channel_names()[-1]
         if interface.gripper_hold_command is not None:
             channels[gripper_channel] = interface.gripper_hold_command
+        elif interface.gripper_neutral_command is not None:
+            channels[gripper_channel] = interface.gripper_neutral_command
         elif (
             last_valid_action is not None
             and gripper_channel in last_valid_action.channels

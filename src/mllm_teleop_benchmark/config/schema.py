@@ -164,19 +164,29 @@ class ControlInterfaceConfig:
     frame_transform: str = "identity"
     frame_visible_to_agent: bool = True
     control_frame_description: str | None = None
+    dimension_semantics_description: str | None = None
+    gripper_semantics_description: str | None = None
     gripper_open_command: float | None = None
     gripper_closed_command: float | None = None
     gripper_hold_command: float | None = None
+    gripper_neutral_command: float | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.control_frame_description is not None:
-            description = str(self.control_frame_description).strip()
+        for field_name in (
+            "control_frame_description",
+            "dimension_semantics_description",
+            "gripper_semantics_description",
+        ):
+            raw_description = getattr(self, field_name)
+            if raw_description is None:
+                continue
+            description = str(raw_description).strip()
             if not description:
                 raise ValueError(
-                    "control_interface.control_frame_description must not be blank"
+                    f"control_interface.{field_name} must not be blank"
                 )
-            object.__setattr__(self, "control_frame_description", description)
+            object.__setattr__(self, field_name, description)
 
         commands = {
             name: value
@@ -184,6 +194,7 @@ class ControlInterfaceConfig:
                 ("gripper_open_command", self.gripper_open_command),
                 ("gripper_closed_command", self.gripper_closed_command),
                 ("gripper_hold_command", self.gripper_hold_command),
+                ("gripper_neutral_command", self.gripper_neutral_command),
             )
             if value is not None
         }
@@ -211,6 +222,13 @@ class ControlInterfaceConfig:
             raise ValueError(
                 "control_interface gripper open and closed commands must differ"
             )
+        if (
+            self.gripper_hold_command is not None
+            and self.gripper_neutral_command is not None
+        ):
+            raise ValueError(
+                "control_interface gripper hold and neutral commands are mutually exclusive"
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlInterfaceConfig":
@@ -219,8 +237,10 @@ class ControlInterfaceConfig:
             if dim not in CONTROL_INTERFACE_DIMS:
                 raise ValueError(f"Unsupported control_interface active dimension: {dim}")
         gripper = str(data.get("gripper", "none"))
-        if gripper not in {"none", "direct", "binary"}:
-            raise ValueError("control_interface.gripper must be one of: none, direct, binary")
+        if gripper not in {"none", "direct", "binary", "effort"}:
+            raise ValueError(
+                "control_interface.gripper must be one of: none, direct, binary, effort"
+            )
         channel_kind = str(data.get("channel_kind", "discrete"))
         return cls(
             mode=str(data.get("mode", "eef_delta_pose")),
@@ -240,6 +260,16 @@ class ControlInterfaceConfig:
                 if "control_frame_description" in data
                 else None
             ),
+            dimension_semantics_description=(
+                str(data["dimension_semantics_description"])
+                if "dimension_semantics_description" in data
+                else None
+            ),
+            gripper_semantics_description=(
+                str(data["gripper_semantics_description"])
+                if "gripper_semantics_description" in data
+                else None
+            ),
             gripper_open_command=(
                 float(data["gripper_open_command"])
                 if "gripper_open_command" in data
@@ -253,6 +283,11 @@ class ControlInterfaceConfig:
             gripper_hold_command=(
                 float(data["gripper_hold_command"])
                 if "gripper_hold_command" in data
+                else None
+            ),
+            gripper_neutral_command=(
+                float(data["gripper_neutral_command"])
+                if "gripper_neutral_command" in data
                 else None
             ),
             params=dict(data.get("params", {})),
@@ -273,7 +308,7 @@ class ControlInterfaceConfig:
     def to_action_space_config(self) -> "ActionSpaceConfig":
         channels: dict[str, ChannelConfig] = {}
         for name, dim in zip(self.channel_names(), self.control_dimensions(), strict=True):
-            if dim == "gripper" and self.gripper == "direct":
+            if dim == "gripper" and self.gripper in {"direct", "effort"}:
                 channels[name] = ChannelConfig(kind="continuous", minimum=0.0, maximum=1.0)
             elif dim == "gripper" and self.gripper == "binary":
                 channels[name] = ChannelConfig(kind="discrete", values=(0.0, 1.0))
@@ -339,6 +374,14 @@ class ControlInterfaceConfig:
         }
         if self.control_frame_description:
             visible["control_frame_description"] = self.control_frame_description
+        if self.dimension_semantics_description:
+            visible["dimension_semantics_description"] = (
+                self.dimension_semantics_description
+            )
+        if self.gripper_semantics_description:
+            visible["gripper_semantics_description"] = (
+                self.gripper_semantics_description
+            )
         rotation_representation = self.params.get("rotation_representation")
         if rotation_representation is not None:
             visible["rotation_representation"] = str(rotation_representation)
@@ -348,6 +391,7 @@ class ControlInterfaceConfig:
                 ("open", self.gripper_open_command),
                 ("closed", self.gripper_closed_command),
                 ("hold", self.gripper_hold_command),
+                ("neutral", self.gripper_neutral_command),
             )
             if value is not None
         }

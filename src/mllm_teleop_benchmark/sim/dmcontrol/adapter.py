@@ -43,6 +43,16 @@ class DMControlSimAdapter(SimAdapter):
         self.planar_eef_velocity_damping = float(
             config.params.get("planar_eef_velocity_damping", 5.0)
         )
+        raw_action_repeat = config.params.get("action_repeat", 1)
+        if (
+            isinstance(raw_action_repeat, bool)
+            or not isinstance(raw_action_repeat, int)
+            or raw_action_repeat < 1
+        ):
+            raise ValueError(
+                "DMControl simulator.params.action_repeat must be a positive integer"
+            )
+        self.action_repeat = raw_action_repeat
         self.env = suite.load(
             domain_name=domain_name,
             task_name=task_name,
@@ -51,11 +61,15 @@ class DMControlSimAdapter(SimAdapter):
         )
 
         self.step_id = 0
+        self.native_step_id = 0
+        self.last_native_steps = 0
         self.last_timestep = None
         self.last_render = None
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
         self.step_id = 0
+        self.native_step_id = 0
+        self.last_native_steps = 0
         if hasattr(self.env.task, "random"):
             self.env.task.random.seed(seed)
 
@@ -64,17 +78,32 @@ class DMControlSimAdapter(SimAdapter):
 
     def step(self, action: SimulatorAction) -> StepResult:
         if isinstance(action, DMControlPlanarEEFAction):
-            native_action = self._planar_eef_to_native(action)
+            planar_target = self._planar_eef_target(action)
+            native_action = None
         elif isinstance(action, DMControlAction):
             native_action = action_to_native(action, self.env.action_spec(), clip=True)
+            planar_target = None
         else:
             raise TypeError(
                 "DMControlSimAdapter requires DMControlAction or "
                 f"DMControlPlanarEEFAction, got {type(action).__name__}"
             )
 
-        self.last_timestep = self.env.step(native_action)
+        native_steps = 0
+        for _ in range(self.action_repeat):
+            if planar_target is not None:
+                native_action = self._planar_eef_target_to_native(
+                    planar_target,
+                    action.gripper,
+                )
+            self.last_timestep = self.env.step(native_action)
+            native_steps += 1
+            if bool(self.last_timestep.last()):
+                break
+
         self.step_id += 1
+        self.native_step_id += native_steps
+        self.last_native_steps = native_steps
 
         terminated, truncated = self._termination_flags(self.last_timestep)
 
@@ -97,6 +126,9 @@ class DMControlSimAdapter(SimAdapter):
     def get_state(self) -> dict[str, Any]:
         state = {
             "step_id": self.step_id,
+            "native_step_id": self.native_step_id,
+            "native_steps_this_action": self.last_native_steps,
+            "action_repeat": self.action_repeat,
             "reward": self.last_timestep.reward if self.last_timestep else None,
             "current_reward": self._jsonable_array(
                 self.env.task.get_reward(self.env.physics)
@@ -116,18 +148,47 @@ class DMControlSimAdapter(SimAdapter):
         self.env.close()
 
     def _planar_eef_to_native(self, action: DMControlPlanarEEFAction) -> Any:
+        return self._planar_eef_target_to_native(
+            self._planar_eef_target(action),
+            action.gripper,
+        )
+
+    def _planar_eef_target(self, action: DMControlPlanarEEFAction) -> Any:
         if self.domain_name != "manipulator":
             raise ValueError(
                 "DMControlPlanarEEFAction is only supported for the manipulator domain"
             )
 
-        import mujoco
         import numpy as np
 
         delta = np.asarray(action.delta_xy, dtype=np.float64)
         if delta.shape != (2,) or not np.all(np.isfinite(delta)):
             raise ValueError("DMControl planar EEF delta must contain two finite values")
         if not np.isfinite(action.gripper) or not 0.0 <= action.gripper <= 1.0:
+            raise ValueError("DMControl planar EEF gripper must be within [0, 1]")
+
+        physics = self.env.physics
+        model = physics.model
+        data = physics.data
+        grasp_site_id = model.name2id("grasp", "site")
+        current_position = np.asarray(
+            data.site_xpos[grasp_site_id, [0, 2]],
+            dtype=np.float64,
+        )
+        return current_position + delta
+
+    def _planar_eef_target_to_native(
+        self,
+        target_position: Any,
+        gripper: float,
+    ) -> Any:
+        import mujoco
+        import numpy as np
+
+        target = np.asarray(target_position, dtype=np.float64)
+        if target.shape != (2,) or not np.all(np.isfinite(target)):
+            raise ValueError("DMControl planar EEF target must contain two finite values")
+        if not np.isfinite(gripper) or not 0.0 <= gripper <= 1.0:
             raise ValueError("DMControl planar EEF gripper must be within [0, 1]")
 
         physics = self.env.physics
@@ -145,8 +206,12 @@ class DMControlSimAdapter(SimAdapter):
         mujoco.mj_jacSite(model.ptr, data.ptr, jacobian, None, grasp_site_id)
         planar_jacobian = jacobian[[0, 2]][:, arm_dof_ids]
         planar_velocity = planar_jacobian @ np.asarray(data.qvel[arm_dof_ids])
+        current_position = np.asarray(
+            data.site_xpos[grasp_site_id, [0, 2]],
+            dtype=np.float64,
+        )
         cartesian_force = (
-            self.planar_eef_position_gain * delta
+            self.planar_eef_position_gain * (target - current_position)
             - self.planar_eef_velocity_damping * planar_velocity
         )
         joint_torque = (
@@ -163,7 +228,7 @@ class DMControlSimAdapter(SimAdapter):
         native = np.zeros(action_spec.shape, dtype=np.float64)
         native[arm_actuator_ids] = arm_control
         grasp_actuator_id = model.name2id("grasp", "actuator")
-        native[grasp_actuator_id] = 2.0 * float(action.gripper) - 1.0
+        native[grasp_actuator_id] = 2.0 * float(gripper) - 1.0
         return action_to_native(
             DMControlAction(values=tuple(float(value) for value in native)),
             action_spec,

@@ -76,7 +76,7 @@ missing evaluator or missing `success` as an integration error.
 The benchmark control path remains simulator-independent:
 
 ```text
-JoystickAction -> JoystickMapping -> ControlFrameTransform -> SimplerEnvDeltaEEFController -> env.step()
+JoystickAction -> JoystickMapping -> ControlFrameTransform -> SimplerEnvDeltaEEFController -> SimplerEnvSimAdapter -> env.step()
 ```
 
 Joystick permutation, sign changes, and coordinate-frame rotation are handled by this repository before native SimplerEnv actions are produced. The controller always emits a 7D action in this order:
@@ -94,7 +94,8 @@ benchmark motion values `-1`, `0`, and `1` to translation deltas of
 mapping and scaling. The adapter only clips the final 7D action against the
 native environment action space when available.
 
-The gripper is the final virtual joystick. The default mapping is `0.0 -> -1.0` and `1.0 -> 1.0`, configurable through controller params.
+The gripper is the final virtual joystick. The default mapping is
+`0.0 -> -1.0` and `1.0 -> 1.0`, configurable through controller params.
 
 For the Google Robot task, upstream defines the first three native action
 values as delta XYZ, the next three as an axis-angle rotation vector, and the
@@ -125,6 +126,17 @@ compensation. In the public joystick schema, `joystick_6=0` means open and
 upstream `-1` and `1`. The mapping is continuous, so `joystick_6=0.5` emits
 native zero; the pinned target-delta gripper controller keeps its previous
 target for that command.
+
+The upstream gripper command is a target delta, so one native `+1` is not
+guaranteed to move from the fully open target to the fully closed target. The
+MLLM configurations therefore set `direct_gripper_substeps: 3`. The adapter
+executes three native substeps per model decision: the first substep applies
+the requested pose delta and gripper command, while the remaining substeps
+apply zero pose delta and repeat only the gripper command. Consequently one
+public `0` reaches the native open target, one public `1` reaches the native
+closed target, and a subsequent `0.5` preserves that target. This behavior is
+verified against the real pinned upstream gripper controller and its joint
+limits.
 
 ## Observation
 
