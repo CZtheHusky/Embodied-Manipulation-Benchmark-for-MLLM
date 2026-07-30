@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from mllm_teleop_benchmark.utils.pinned_zip import install_zip_exact
+from mllm_teleop_benchmark.utils.pinned_zip import (
+    ZipInstallRequest,
+    install_zip_batch_exact,
+    write_json_atomic,
+)
 
 
 HF_REPO = "robocasa/robocasa-assets"
@@ -17,6 +21,7 @@ ASSET_ARCHIVES = {
     "objaverse": ("objaverse.zip", Path("objects")),
 }
 MARKER_NAME = ".robocasa-assets-revision.json"
+MARKER_SCHEMA_VERSION = 1
 
 
 def main() -> None:
@@ -51,7 +56,14 @@ def download_assets(
     assets_root.mkdir(parents=True, exist_ok=True)
     marker_path = assets_root / MARKER_NAME
     previous_archives = _load_previous_archives(marker_path)
-    installed: dict[str, dict[str, object]] = {}
+    selected_filenames = {
+        ASSET_ARCHIVES[name][0] for name in selected
+    }
+    _require_manifests_for_preserved_archives(
+        previous_archives,
+        selected_filenames,
+    )
+    pending: list[tuple[str, ZipInstallRequest]] = []
     for name in selected:
         filename, relative_target = ASSET_ARCHIVES[name]
         print(f"Downloading {filename} from {HF_REPO}@{HF_REVISION}")
@@ -64,15 +76,26 @@ def download_assets(
             )
         )
         target = assets_root / relative_target
-        print(f"Extracting {filename} into {target}")
-        result = install_zip_exact(
-            archive,
-            target,
-            previous_files=_previous_files(
-                previous_archives,
+        print(f"Staging {filename} for {target}")
+        pending.append(
+            (
                 filename,
-            ),
+                ZipInstallRequest(
+                    archive=archive,
+                    target=target,
+                    previous_files=_previous_files(
+                        previous_archives,
+                        filename,
+                    ),
+                ),
+            )
         )
+
+    results = install_zip_batch_exact(
+        tuple(request for _filename, request in pending)
+    )
+    installed: dict[str, dict[str, object]] = {}
+    for (filename, _request), result in zip(pending, results, strict=True):
         installed[filename] = {
             "sha256": result.sha256,
             "roots": list(result.roots),
@@ -80,16 +103,24 @@ def download_assets(
             "files": list(result.files),
         }
 
+    archives = {
+        filename: record
+        for filename, record in previous_archives.items()
+        if filename not in selected_filenames
+    }
+    archives.update(installed)
     marker = {
+        "schema_version": MARKER_SCHEMA_VERSION,
         "repository": HF_REPO,
         "revision": HF_REVISION,
-        "asset_groups": list(selected),
-        "archives": installed,
+        "asset_groups": [
+            name
+            for name, (filename, _target) in ASSET_ARCHIVES.items()
+            if filename in archives
+        ],
+        "archives": archives,
     }
-    marker_path.write_text(
-        json.dumps(marker, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_json_atomic(marker_path, marker)
 
 
 def _load_previous_archives(
@@ -97,13 +128,59 @@ def _load_previous_archives(
 ) -> Mapping[str, object]:
     if not marker_path.is_file():
         return {}
+    if marker_path.is_symlink():
+        raise ValueError(
+            f"RoboCasa asset marker is a symbolic link: {marker_path}"
+        )
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
     archives = marker.get("archives") if isinstance(marker, Mapping) else None
     if not isinstance(archives, Mapping):
         raise ValueError(
             f"Invalid RoboCasa asset marker: {marker_path}"
         )
+    schema_version = marker.get("schema_version")
+    if schema_version not in {None, MARKER_SCHEMA_VERSION}:
+        raise ValueError(
+            f"Unsupported RoboCasa asset marker schema: {schema_version}"
+        )
+    for field, expected in (
+        ("repository", HF_REPO),
+        ("revision", HF_REVISION),
+    ):
+        actual = marker.get(field)
+        if actual is not None and actual != expected:
+            raise ValueError(
+                f"RoboCasa asset marker {field} mismatch: {actual}"
+            )
+    if schema_version == MARKER_SCHEMA_VERSION:
+        for filename, record in archives.items():
+            if not isinstance(filename, str) or not isinstance(
+                record, Mapping
+            ):
+                raise ValueError(
+                    f"Invalid RoboCasa archive record: {filename}"
+                )
+            if "files" not in record:
+                raise ValueError(
+                    "RoboCasa archive record lacks a file manifest: "
+                    f"{filename}"
+                )
+            _previous_files(archives, filename)
     return archives
+
+
+def _require_manifests_for_preserved_archives(
+    archives: Mapping[str, object],
+    selected_filenames: set[str],
+) -> None:
+    for filename, record in archives.items():
+        if filename in selected_filenames:
+            continue
+        if not isinstance(record, Mapping) or "files" not in record:
+            raise ValueError(
+                "Legacy RoboCasa marker cannot preserve an unselected "
+                f"archive without a file manifest: {filename}; install all"
+            )
 
 
 def _previous_files(
@@ -113,7 +190,9 @@ def _previous_files(
     record = archives.get(filename)
     if not isinstance(record, Mapping):
         return ()
-    files = record.get("files", ())
+    if "files" not in record:
+        return ()
+    files = record["files"]
     if not isinstance(files, list) or not all(
         isinstance(value, str) for value in files
     ):

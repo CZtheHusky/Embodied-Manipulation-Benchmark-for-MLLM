@@ -7,11 +7,16 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from mllm_teleop_benchmark.utils.pinned_zip import install_zip_exact
+from mllm_teleop_benchmark.utils.pinned_zip import (
+    ZipInstallRequest,
+    install_zip_batch_exact,
+    write_json_atomic,
+)
 
 HF_REPO = "nvidia/PhysicalAI-Robotics-Manipulation-Objects-Kitchen-MJCF"
 HF_REVISION = "420a04af939c34873e6839a586b70844baf28aab"
 MARKER_NAME = ".robocasa-lightwheel-revision.json"
+MARKER_SCHEMA_VERSION = 1
 
 FIXTURE_ZIPS = (
     "blenders.zip",
@@ -149,11 +154,16 @@ def download_assets(
             assets_root / "objects" / "lightwheel",
         ),
     }
-    installed: dict[str, dict[str, object]] = {}
+    selected_prefixes = {groups[name][0] for name in selected}
+    _require_manifests_for_preserved_archives(
+        previous_archives,
+        selected_prefixes,
+    )
+    pending: list[tuple[str, ZipInstallRequest]] = []
     for name in selected:
         prefix, filenames, target_dir = groups[name]
-        installed.update(
-            download_group(
+        pending.extend(
+            prepare_group(
                 prefix,
                 filenames,
                 target_dir,
@@ -162,28 +172,58 @@ def download_assets(
             )
         )
 
+    results = install_zip_batch_exact(
+        tuple(request for _remote_path, request in pending)
+    )
+    installed: dict[str, dict[str, object]] = {}
+    for (remote_path, _request), result in zip(
+        pending,
+        results,
+        strict=True,
+    ):
+        installed[remote_path] = {
+            "sha256": result.sha256,
+            "roots": list(result.roots),
+            "file_count": result.file_count,
+            "files": list(result.files),
+        }
+
+    archives = {
+        filename: record
+        for filename, record in previous_archives.items()
+        if not any(
+            filename.startswith(f"{prefix}/")
+            for prefix in selected_prefixes
+        )
+    }
+    archives.update(installed)
     marker = {
+        "schema_version": MARKER_SCHEMA_VERSION,
         "repository": HF_REPO,
         "revision": HF_REVISION,
-        "asset_groups": list(selected),
-        "archives": installed,
+        "asset_groups": [
+            name
+            for name, (prefix, _filenames, _target) in groups.items()
+            if any(
+                filename.startswith(f"{prefix}/")
+                for filename in archives
+            )
+        ],
+        "archives": archives,
     }
-    marker_path.write_text(
-        json.dumps(marker, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_json_atomic(marker_path, marker)
 
 
-def download_group(
+def prepare_group(
     prefix: str,
     filenames: tuple[str, ...],
     target_dir: Path,
     *,
     download_fn: Callable[..., str],
     previous_archives: Mapping[str, object],
-) -> dict[str, dict[str, object]]:
+) -> list[tuple[str, ZipInstallRequest]]:
     target_dir.mkdir(parents=True, exist_ok=True)
-    installed: dict[str, dict[str, object]] = {}
+    pending: list[tuple[str, ZipInstallRequest]] = []
     for filename in filenames:
         remote_path = f"{prefix}/{filename}"
         print(f"Downloading {remote_path} from {HF_REPO}@{HF_REVISION}")
@@ -195,22 +235,21 @@ def download_group(
                 revision=HF_REVISION,
             )
         )
-        print(f"Extracting {filename} into {target_dir}")
-        result = install_zip_exact(
-            archive,
-            target_dir,
-            previous_files=_previous_files(
-                previous_archives,
+        print(f"Staging {filename} for {target_dir}")
+        pending.append(
+            (
                 remote_path,
-            ),
+                ZipInstallRequest(
+                    archive=archive,
+                    target=target_dir,
+                    previous_files=_previous_files(
+                        previous_archives,
+                        remote_path,
+                    ),
+                ),
+            )
         )
-        installed[remote_path] = {
-            "sha256": result.sha256,
-            "roots": list(result.roots),
-            "file_count": result.file_count,
-            "files": list(result.files),
-        }
-    return installed
+    return pending
 
 
 def _load_previous_archives(
@@ -218,13 +257,63 @@ def _load_previous_archives(
 ) -> Mapping[str, object]:
     if not marker_path.is_file():
         return {}
+    if marker_path.is_symlink():
+        raise ValueError(
+            f"Lightwheel asset marker is a symbolic link: {marker_path}"
+        )
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
     archives = marker.get("archives") if isinstance(marker, Mapping) else None
     if not isinstance(archives, Mapping):
         raise ValueError(
             f"Invalid Lightwheel asset marker: {marker_path}"
         )
+    schema_version = marker.get("schema_version")
+    if schema_version not in {None, MARKER_SCHEMA_VERSION}:
+        raise ValueError(
+            f"Unsupported Lightwheel marker schema: {schema_version}"
+        )
+    for field, expected in (
+        ("repository", HF_REPO),
+        ("revision", HF_REVISION),
+    ):
+        actual = marker.get(field)
+        if actual is not None and actual != expected:
+            raise ValueError(
+                f"Lightwheel asset marker {field} mismatch: {actual}"
+            )
+    if schema_version == MARKER_SCHEMA_VERSION:
+        for filename, record in archives.items():
+            if not isinstance(filename, str) or not isinstance(
+                record, Mapping
+            ):
+                raise ValueError(
+                    f"Invalid Lightwheel archive record: {filename}"
+                )
+            if "files" not in record:
+                raise ValueError(
+                    "Lightwheel archive record lacks a file manifest: "
+                    f"{filename}"
+                )
+            _previous_files(archives, filename)
     return archives
+
+
+def _require_manifests_for_preserved_archives(
+    archives: Mapping[str, object],
+    selected_prefixes: set[str],
+) -> None:
+    for filename, record in archives.items():
+        selected = any(
+            filename.startswith(f"{prefix}/")
+            for prefix in selected_prefixes
+        )
+        if selected:
+            continue
+        if not isinstance(record, Mapping) or "files" not in record:
+            raise ValueError(
+                "Legacy Lightwheel marker cannot preserve an unselected "
+                f"archive without a file manifest: {filename}; install all"
+            )
 
 
 def _previous_files(
@@ -234,7 +323,9 @@ def _previous_files(
     record = archives.get(filename)
     if not isinstance(record, Mapping):
         return ()
-    files = record.get("files", ())
+    if "files" not in record:
+        return ()
+    files = record["files"]
     if not isinstance(files, list) or not all(
         isinstance(value, str) for value in files
     ):

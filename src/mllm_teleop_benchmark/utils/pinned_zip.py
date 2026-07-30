@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
+import json
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
-from tempfile import TemporaryDirectory
+from tempfile import mkstemp, TemporaryDirectory
 from zipfile import ZipFile, ZipInfo
 
 
@@ -17,39 +20,133 @@ class InstalledZip:
     files: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ZipInstallRequest:
+    archive: Path
+    target: Path
+    previous_files: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _PreparedZip:
+    request: ZipInstallRequest
+    payload: Path
+    result: InstalledZip
+
+
 def install_zip_exact(
     archive: Path,
     target: Path,
     *,
     previous_files: tuple[str, ...] = (),
 ) -> InstalledZip:
-    target.mkdir(parents=True, exist_ok=True)
-    with ZipFile(archive) as zip_file:
+    return install_zip_batch_exact(
+        (
+            ZipInstallRequest(
+                archive=archive,
+                target=target,
+                previous_files=previous_files,
+            ),
+        )
+    )[0]
+
+
+def install_zip_batch_exact(
+    requests: tuple[ZipInstallRequest, ...],
+) -> tuple[InstalledZip, ...]:
+    if not requests:
+        raise ValueError("Pinned asset batch is empty")
+
+    normalized: list[ZipInstallRequest] = []
+    device: int | None = None
+    for request in requests:
+        target = request.target.absolute()
+        if target.is_symlink():
+            raise ValueError(
+                f"Asset installation root is a symbolic link: {target}"
+            )
+        target.mkdir(parents=True, exist_ok=True)
+        current_device = target.stat().st_dev
+        if device is None:
+            device = current_device
+        elif current_device != device:
+            raise ValueError(
+                "Pinned asset batch targets must share one filesystem"
+            )
+        normalized.append(
+            ZipInstallRequest(
+                archive=request.archive.absolute(),
+                target=target,
+                previous_files=_validated_relative_paths(
+                    request.previous_files
+                ),
+            )
+        )
+
+    temporary_parent = normalized[0].target.parent
+    with TemporaryDirectory(
+        prefix=".pinned-asset-batch-",
+        dir=temporary_parent,
+    ) as temporary:
+        temporary_root = Path(temporary)
+        prepared = tuple(
+            _prepare_zip(request, temporary_root / f"payload-{index}")
+            for index, request in enumerate(normalized)
+        )
+        _replace_batch(prepared, temporary_root / "backup")
+        return tuple(item.result for item in prepared)
+
+
+def write_json_atomic(
+    path: Path,
+    value: Mapping[str, object],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError(f"Marker path is a symbolic link: {path}")
+    descriptor, temporary_name = mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        if path.is_symlink():
+            raise ValueError(f"Marker path is a symbolic link: {path}")
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+
+
+def _prepare_zip(
+    request: ZipInstallRequest,
+    payload: Path,
+) -> _PreparedZip:
+    payload.mkdir()
+    with ZipFile(request.archive) as zip_file:
         members = zip_file.infolist()
         roots, files = _validated_members(members)
-        previous = _validated_relative_paths(previous_files)
-        with TemporaryDirectory(
-            prefix=".pinned-asset-",
-            dir=target.parent,
-        ) as temporary:
-            temporary_root = Path(temporary)
-            payload = temporary_root / "payload"
-            backup = temporary_root / "backup"
-            payload.mkdir()
-            backup.mkdir()
-            _extract_files(zip_file, members, payload)
-            _replace_files(
-                payload,
-                target,
-                backup,
-                current_files=files,
-                previous_files=previous,
-            )
-    return InstalledZip(
-        sha256=_sha256(archive),
-        roots=roots,
-        file_count=len(files),
-        files=files,
+        _extract_files(zip_file, members, payload)
+    return _PreparedZip(
+        request=request,
+        payload=payload,
+        result=InstalledZip(
+            sha256=_sha256(request.archive),
+            roots=roots,
+            file_count=len(files),
+            files=files,
+        ),
     )
 
 
@@ -131,54 +228,116 @@ def _validated_relative_path(value: str) -> PurePosixPath:
     return path
 
 
-def _replace_files(
-    payload: Path,
-    target: Path,
+def _replace_batch(
+    prepared: tuple[_PreparedZip, ...],
     backup: Path,
-    *,
-    current_files: tuple[str, ...],
-    previous_files: tuple[str, ...],
 ) -> None:
+    backup.mkdir()
+    current: dict[Path, tuple[Path, Path]] = {}
+    previous: dict[Path, Path] = {}
+    for item in prepared:
+        target = item.request.target
+        for relative in item.result.files:
+            destination = _safe_destination(target, relative)
+            if destination in current:
+                raise ValueError(
+                    "Pinned archives own the same destination: "
+                    f"{destination}"
+                )
+            current[destination] = (
+                item.payload.joinpath(*PurePosixPath(relative).parts),
+                target,
+            )
+        for relative in item.request.previous_files:
+            destination = _safe_destination(target, relative)
+            previous.setdefault(destination, target)
+
+    current_paths = set(current)
+    for destination in current_paths:
+        conflict = next(
+            (
+                parent
+                for parent in destination.parents
+                if parent in current_paths
+            ),
+            None,
+        )
+        if conflict is not None:
+            raise ValueError(
+                "Pinned archive file conflicts with another file path: "
+                f"{conflict} and {destination}"
+            )
+
+    affected = set(previous) | current_paths
+    for destination, (_source, target) in current.items():
+        parent = destination.parent
+        while parent != target:
+            if (
+                (parent.is_symlink() or parent.is_file())
+                and parent not in affected
+            ):
+                raise ValueError(
+                    "Asset file has an unowned non-directory parent: "
+                    f"{destination}"
+                )
+            parent = parent.parent
+
     moved: list[tuple[Path, Path]] = []
     installed: list[Path] = []
+    created_directories: list[Path] = []
+    removed_directories: list[Path] = []
     try:
-        for relative in sorted(set(previous_files) | set(current_files)):
-            destination = _safe_destination(target, relative)
-            previous = backup / relative
+        for index, destination in enumerate(
+            sorted(affected, key=lambda path: (len(path.parts), str(path)))
+        ):
             if destination.is_symlink() or destination.is_file():
-                previous.parent.mkdir(parents=True, exist_ok=True)
-                destination.replace(previous)
-                moved.append((destination, previous))
+                previous_path = backup / str(index)
+                destination.replace(previous_path)
+                moved.append((destination, previous_path))
 
-        _remove_empty_parents(target, previous_files)
-        for relative in current_files:
-            source = payload / relative
-            destination = _safe_destination(target, relative)
+        for destination, (source, target) in sorted(
+            current.items(),
+            key=lambda item: (len(item[0].parts), str(item[0])),
+        ):
             if not source.is_file():
                 raise ValueError(
-                    f"Archive file was not extracted: {relative}"
+                    f"Archive file was not extracted: {source}"
                 )
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            _create_parent_directories(
+                target,
+                destination.parent,
+                created_directories,
+            )
             if destination.is_dir():
                 try:
                     destination.rmdir()
                 except OSError as error:
                     raise ValueError(
                         "Asset file conflicts with a non-empty directory: "
-                        f"{relative}"
+                        f"{destination}"
                     ) from error
+                removed_directories.append(destination)
             source.replace(destination)
             installed.append(destination)
+
+        current_set = set(current)
+        for destination, target in previous.items():
+            if destination not in current_set and any(
+                moved_destination == destination
+                for moved_destination, _backup in moved
+            ):
+                _prune_empty_parents(
+                    destination.parent,
+                    target,
+                    removed_directories,
+                )
     except Exception:
-        for destination in reversed(installed):
-            _remove_path(destination)
-        _remove_empty_parents(target, current_files)
-        for destination, previous in reversed(moved):
-            if previous.exists() or previous.is_symlink():
-                if destination.is_dir():
-                    destination.rmdir()
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                previous.replace(destination)
+        _rollback_batch(
+            installed=installed,
+            moved=moved,
+            created_directories=created_directories,
+            removed_directories=removed_directories,
+        )
         raise
 
 
@@ -212,29 +371,62 @@ def _remove_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def _remove_empty_parents(
+def _create_parent_directories(
     target: Path,
-    previous_files: tuple[str, ...],
+    parent: Path,
+    created: list[Path],
 ) -> None:
-    target_resolved = target.resolve()
-    parents = {
-        (target / relative).parent
-        for relative in previous_files
-    }
-    for parent in sorted(
-        parents,
+    missing: list[Path] = []
+    current = parent
+    while current != target and not current.exists():
+        missing.append(current)
+        current = current.parent
+    if current.exists() and not current.is_dir():
+        raise ValueError(
+            f"Asset destination parent is not a directory: {current}"
+        )
+    for directory in reversed(missing):
+        directory.mkdir()
+        created.append(directory)
+
+
+def _prune_empty_parents(
+    parent: Path,
+    target: Path,
+    removed: list[Path],
+) -> None:
+    current = parent
+    while current != target:
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        removed.append(current)
+        current = current.parent
+
+
+def _rollback_batch(
+    *,
+    installed: list[Path],
+    moved: list[tuple[Path, Path]],
+    created_directories: list[Path],
+    removed_directories: list[Path],
+) -> None:
+    for destination in reversed(installed):
+        _remove_path(destination)
+    for directory in reversed(created_directories):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    for directory in sorted(
+        set(removed_directories),
         key=lambda path: len(path.parts),
-        reverse=True,
     ):
-        current = parent
-        while current != target:
-            if not current.resolve().is_relative_to(target_resolved):
-                break
-            try:
-                current.rmdir()
-            except OSError:
-                break
-            current = current.parent
+        directory.mkdir(exist_ok=True)
+    for destination, previous in reversed(moved):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        previous.replace(destination)
 
 
 def _sha256(path: Path) -> str:

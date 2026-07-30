@@ -71,6 +71,7 @@ def test_downloads_only_pinned_required_asset_groups(tmp_path):
         )
     )
     assert marker == {
+        "schema_version": 1,
         "repository": "robocasa/robocasa-assets",
         "revision": "1b92c3d02ca4354984fec961357db0bff7b32166",
         "asset_groups": ["textures", "objaverse"],
@@ -106,3 +107,52 @@ def test_rejects_archive_path_traversal(tmp_path):
         )
 
     assert not (tmp_path / "escape.txt").exists()
+
+
+def test_previous_marker_without_file_manifest_is_migrated():
+    assert download_robocasa_assets._previous_files(
+        {"textures.zip": {"sha256": "legacy"}},
+        "textures.zip",
+    ) == ()
+
+
+def test_partial_install_preserves_other_group_ownership(tmp_path):
+    texture_archive = _zip(
+        tmp_path / "textures.zip",
+        "textures/new.png",
+    )
+    assets_root = tmp_path / "assets"
+    marker_path = assets_root / download_robocasa_assets.MARKER_NAME
+    assets_root.mkdir()
+    marker_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repository": download_robocasa_assets.HF_REPO,
+                "revision": download_robocasa_assets.HF_REVISION,
+                "asset_groups": ["textures", "objaverse"],
+                "archives": {
+                    "textures.zip": {
+                        "files": ["textures/old.png"],
+                    },
+                    "objaverse.zip": {
+                        "files": ["objaverse/keep.xml"],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    download_robocasa_assets.download_assets(
+        ("textures",),
+        assets_root=assets_root,
+        download_fn=lambda **_kwargs: str(texture_archive),
+    )
+
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker["asset_groups"] == ["textures", "objaverse"]
+    assert set(marker["archives"]) == {"textures.zip", "objaverse.zip"}
+    assert marker["archives"]["objaverse.zip"] == {
+        "files": ["objaverse/keep.xml"]
+    }

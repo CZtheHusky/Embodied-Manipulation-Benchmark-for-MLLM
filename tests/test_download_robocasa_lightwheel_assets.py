@@ -88,6 +88,7 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
         ).read_text(encoding="utf-8")
     )
     assert marker == {
+        "schema_version": 1,
         "repository": (
             "nvidia/PhysicalAI-Robotics-Manipulation-Objects-Kitchen-MJCF"
         ),
@@ -134,3 +135,74 @@ def test_rejects_lightwheel_archive_path_traversal(monkeypatch, tmp_path):
         )
 
     assert not (tmp_path / "escape.txt").exists()
+
+
+def test_previous_lightwheel_marker_without_file_manifest_is_migrated():
+    assert download_robocasa_lightwheel_assets._previous_files(
+        {
+            "fixtures_lightwheel/cabinets.zip": {
+                "sha256": "legacy",
+            }
+        },
+        "fixtures_lightwheel/cabinets.zip",
+    ) == ()
+
+
+def test_partial_lightwheel_install_preserves_other_group_ownership(
+    monkeypatch,
+    tmp_path,
+):
+    fixture_archive = _zip(
+        tmp_path / "cabinets.zip",
+        "cabinet/new.xml",
+    )
+    monkeypatch.setattr(
+        download_robocasa_lightwheel_assets,
+        "FIXTURE_ZIPS",
+        ("cabinets.zip",),
+    )
+    assets_root = tmp_path / "assets"
+    assets_root.mkdir()
+    marker_path = (
+        assets_root
+        / download_robocasa_lightwheel_assets.MARKER_NAME
+    )
+    marker_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repository": (
+                    download_robocasa_lightwheel_assets.HF_REPO
+                ),
+                "revision": (
+                    download_robocasa_lightwheel_assets.HF_REVISION
+                ),
+                "asset_groups": ["fixtures", "objects"],
+                "archives": {
+                    "fixtures_lightwheel/cabinets.zip": {
+                        "files": ["cabinet/old.xml"],
+                    },
+                    "objects_lightwheel/peeler.zip": {
+                        "files": ["peeler/keep.xml"],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    download_robocasa_lightwheel_assets.download_assets(
+        ("fixtures",),
+        assets_root=assets_root,
+        download_fn=lambda **_kwargs: str(fixture_archive),
+    )
+
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker["asset_groups"] == ["fixtures", "objects"]
+    assert set(marker["archives"]) == {
+        "fixtures_lightwheel/cabinets.zip",
+        "objects_lightwheel/peeler.zip",
+    }
+    assert marker["archives"]["objects_lightwheel/peeler.zip"] == {
+        "files": ["peeler/keep.xml"]
+    }
