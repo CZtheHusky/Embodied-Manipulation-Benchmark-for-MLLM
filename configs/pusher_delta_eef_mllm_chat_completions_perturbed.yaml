@@ -1,6 +1,6 @@
 benchmark:
-  name: pusher_delta_eef_mllm_chat_completions_perturbed_v0
-  num_episodes: 1
+  name: pusher_delta_eef_mllm_chat_completions_random_view_perturbed_action_v1
+  num_episodes: 10
   seed: 7
 
 simulator:
@@ -31,6 +31,7 @@ camera:
   manager: mujoco_randomized
   visible_metadata: true
   params:
+    experiment_condition: random_view
     distance_range: [1.6, 2.4]
     azimuth_range: [120.0, 180.0]
     elevation_range: [-35.0, -15.0]
@@ -104,7 +105,7 @@ agent:
 logging:
   output_dir: outputs/pusher_delta_eef_mllm
   save_images: false
-  save_video: false
+  save_video: true
   video:
     fps: 2
     step_hold_seconds: 1

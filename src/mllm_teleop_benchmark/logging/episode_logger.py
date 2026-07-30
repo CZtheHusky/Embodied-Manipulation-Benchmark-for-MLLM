@@ -199,6 +199,12 @@ class EpisodeLogger:
                 "cameras": list(self.config.agent.observation.cameras),
                 "image_max_side": self.config.agent.observation.image_max_side,
             },
+            "camera": {
+                "manager": self.config.camera.manager,
+                "experiment_condition": self.config.camera.params.get(
+                    "experiment_condition"
+                ),
+            },
             "control_interface": {
                 "mode": self.config.control_interface.mode,
                 "active_dimensions": list(
@@ -249,15 +255,18 @@ def make_experiment_group(config: BenchmarkConfig) -> str | None:
             f"images-{config.agent.history.image_window}"
             f"-actions-{config.agent.history.action_window}"
         )
+    camera_condition = config.camera.params.get("experiment_condition")
     parts = [
         f"model-{requested_model}",
         f"reasoning-{reasoning_effort}",
         f"api-{model.api}",
         f"prompt-{_configured_prompt_version(config)}",
         f"history-{history}",
-        f"episodes-{config.benchmark.num_episodes}",
-        f"maxsteps-{config.task.max_steps}",
     ]
+    if camera_condition is not None:
+        parts.append(f"camera-{camera_condition}")
+    parts.append(f"episodes-{config.benchmark.num_episodes}")
+    parts.append(f"maxsteps-{config.task.max_steps}")
     if config.control_interface.mapping_strategy != "fixed":
         parts.append(f"mapping-{config.control_interface.mapping_strategy}")
     if config.control_interface.frame_transform != "identity":
