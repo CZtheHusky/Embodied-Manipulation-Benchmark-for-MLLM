@@ -5,7 +5,8 @@ import argparse
 import json
 from pathlib import Path
 from typing import Callable
-from zipfile import ZipFile
+
+from mllm_teleop_benchmark.utils.pinned_zip import install_zip_exact
 
 
 HF_REPO = "robocasa/robocasa-assets"
@@ -47,7 +48,7 @@ def download_assets(
         download_fn = hf_hub_download
 
     assets_root.mkdir(parents=True, exist_ok=True)
-    extracted: list[str] = []
+    installed: dict[str, dict[str, object]] = {}
     for name in selected:
         filename, relative_target = ASSET_ARCHIVES[name]
         print(f"Downloading {filename} from {HF_REPO}@{HF_REVISION}")
@@ -60,32 +61,24 @@ def download_assets(
             )
         )
         target = assets_root / relative_target
-        target.mkdir(parents=True, exist_ok=True)
         print(f"Extracting {filename} into {target}")
-        _extract_zip(archive, target)
-        extracted.append(name)
+        result = install_zip_exact(archive, target)
+        installed[filename] = {
+            "sha256": result.sha256,
+            "roots": list(result.roots),
+            "file_count": result.file_count,
+        }
 
     marker = {
         "repository": HF_REPO,
         "revision": HF_REVISION,
-        "asset_groups": extracted,
+        "asset_groups": list(selected),
+        "archives": installed,
     }
     (assets_root / MARKER_NAME).write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-
-
-def _extract_zip(archive: Path, target: Path) -> None:
-    target_resolved = target.resolve()
-    with ZipFile(archive) as zip_file:
-        for member in zip_file.infolist():
-            destination = (target / member.filename).resolve()
-            if not destination.is_relative_to(target_resolved):
-                raise ValueError(
-                    f"Archive member escapes extraction directory: {member.filename}"
-                )
-        zip_file.extractall(target)
 
 
 def _installed_assets_root() -> Path:

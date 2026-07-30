@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from zipfile import ZipFile
@@ -44,6 +45,9 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
         ("peeler.zip",),
     )
     assets_root = tmp_path / "assets"
+    stale_fixture = assets_root / "fixtures/cabinet/stale.txt"
+    stale_fixture.parent.mkdir(parents=True)
+    stale_fixture.write_text("stale", encoding="utf-8")
 
     download_robocasa_lightwheel_assets.download_assets(
         ("fixtures", "objects"),
@@ -55,6 +59,7 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
     assert (
         assets_root / "objects/lightwheel/peeler/model.xml"
     ).read_bytes() == b"asset"
+    assert not stale_fixture.exists()
     assert all(
         call["repo_id"] == download_robocasa_lightwheel_assets.HF_REPO
         and call["revision"] == download_robocasa_lightwheel_assets.HF_REVISION
@@ -73,10 +78,26 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
         ),
         "revision": "420a04af939c34873e6839a586b70844baf28aab",
         "asset_groups": ["fixtures", "objects"],
-        "archives": [
-            "fixtures_lightwheel/cabinets.zip",
-            "objects_lightwheel/peeler.zip",
-        ],
+        "archives": {
+            "fixtures_lightwheel/cabinets.zip": {
+                "sha256": hashlib.sha256(
+                    archives[
+                        "fixtures_lightwheel/cabinets.zip"
+                    ].read_bytes()
+                ).hexdigest(),
+                "roots": ["cabinet"],
+                "file_count": 1,
+            },
+            "objects_lightwheel/peeler.zip": {
+                "sha256": hashlib.sha256(
+                    archives[
+                        "objects_lightwheel/peeler.zip"
+                    ].read_bytes()
+                ).hexdigest(),
+                "roots": ["peeler"],
+                "file_count": 1,
+            },
+        },
     }
 
 

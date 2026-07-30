@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from zipfile import ZipFile
@@ -28,6 +29,9 @@ def test_downloads_only_pinned_required_asset_groups(tmp_path):
         return str(archives[kwargs["filename"]])
 
     assets_root = tmp_path / "assets"
+    stale_texture = assets_root / "textures/stale.txt"
+    stale_texture.parent.mkdir(parents=True)
+    stale_texture.write_text("stale", encoding="utf-8")
     download_robocasa_assets.download_assets(
         ("textures", "objaverse"),
         assets_root=assets_root,
@@ -38,6 +42,7 @@ def test_downloads_only_pinned_required_asset_groups(tmp_path):
     assert (
         assets_root / "objects/objaverse/knife/model.xml"
     ).read_bytes() == b"asset"
+    assert not stale_texture.exists()
     assert {call["filename"] for call in calls} == {
         "textures.zip",
         "objaverse.zip",
@@ -57,6 +62,22 @@ def test_downloads_only_pinned_required_asset_groups(tmp_path):
         "repository": "robocasa/robocasa-assets",
         "revision": "1b92c3d02ca4354984fec961357db0bff7b32166",
         "asset_groups": ["textures", "objaverse"],
+        "archives": {
+            "textures.zip": {
+                "sha256": hashlib.sha256(
+                    archives["textures.zip"].read_bytes()
+                ).hexdigest(),
+                "roots": ["textures"],
+                "file_count": 1,
+            },
+            "objaverse.zip": {
+                "sha256": hashlib.sha256(
+                    archives["objaverse.zip"].read_bytes()
+                ).hexdigest(),
+                "roots": ["objaverse"],
+                "file_count": 1,
+            },
+        },
     }
 
 

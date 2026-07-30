@@ -5,8 +5,8 @@ import argparse
 import json
 from pathlib import Path
 from typing import Callable
-from zipfile import ZipFile
 
+from mllm_teleop_benchmark.utils.pinned_zip import install_zip_exact
 
 HF_REPO = "nvidia/PhysicalAI-Robotics-Manipulation-Objects-Kitchen-MJCF"
 HF_REVISION = "420a04af939c34873e6839a586b70844baf28aab"
@@ -146,10 +146,10 @@ def download_assets(
             assets_root / "objects" / "lightwheel",
         ),
     }
-    downloaded_archives: list[str] = []
+    installed: dict[str, dict[str, object]] = {}
     for name in selected:
         prefix, filenames, target_dir = groups[name]
-        downloaded_archives.extend(
+        installed.update(
             download_group(
                 prefix,
                 filenames,
@@ -162,7 +162,7 @@ def download_assets(
         "repository": HF_REPO,
         "revision": HF_REVISION,
         "asset_groups": list(selected),
-        "archives": downloaded_archives,
+        "archives": installed,
     }
     (assets_root / MARKER_NAME).write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n",
@@ -176,9 +176,9 @@ def download_group(
     target_dir: Path,
     *,
     download_fn: Callable[..., str],
-) -> list[str]:
+) -> dict[str, dict[str, object]]:
     target_dir.mkdir(parents=True, exist_ok=True)
-    downloaded: list[str] = []
+    installed: dict[str, dict[str, object]] = {}
     for filename in filenames:
         remote_path = f"{prefix}/{filename}"
         print(f"Downloading {remote_path} from {HF_REPO}@{HF_REVISION}")
@@ -191,21 +191,13 @@ def download_group(
             )
         )
         print(f"Extracting {filename} into {target_dir}")
-        _extract_zip(archive, target_dir)
-        downloaded.append(remote_path)
-    return downloaded
-
-
-def _extract_zip(archive: Path, target: Path) -> None:
-    target_resolved = target.resolve()
-    with ZipFile(archive) as zip_file:
-        for member in zip_file.infolist():
-            destination = (target / member.filename).resolve()
-            if not destination.is_relative_to(target_resolved):
-                raise ValueError(
-                    f"Archive member escapes extraction directory: {member.filename}"
-                )
-        zip_file.extractall(target)
+        result = install_zip_exact(archive, target_dir)
+        installed[remote_path] = {
+            "sha256": result.sha256,
+            "roots": list(result.roots),
+            "file_count": result.file_count,
+        }
+    return installed
 
 
 def _installed_assets_root() -> Path:
