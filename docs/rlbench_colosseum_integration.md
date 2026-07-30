@@ -366,8 +366,12 @@ not all byte-identical across seeds. It records native reset success and one
 planning-action rejection result per non-successful seed. The default planning
 probe re-plans the current end-effector pose; pass a small explicit world-frame
 delta with `--planning-delta DX DY DZ` when a motion probe is required. Any
-nonzero planning probe requires at least one accepted action across the sampled
-reset seeds; if every action is rejected, the report fails explicitly.
+nonzero planning probe requires finite end-effector positions before and after
+every accepted action, and at least one accepted action must move the end
+effector by more than `1e-6 m` across the sampled reset seeds. The report stores
+only displacement magnitudes and availability counts, not absolute poses. If
+every action is rejected, pose evidence is unavailable, or no accepted action
+produces measurable motion, the report fails explicitly.
 
 For the `front` camera, each current native observation supplies
 `front_camera_intrinsics`, `front_camera_extrinsics`, and `gripper_pose`. The
