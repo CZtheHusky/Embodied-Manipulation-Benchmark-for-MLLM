@@ -151,6 +151,7 @@ def test_pusher_fake_client_closes_public_visual_loop(
         "fingertip_object_distance",
         "object_position",
         "goal_position",
+        "goal_hold_counter",
         "fingertip_position",
         "ee_target_xyz",
         "PRIVATE_KEY_SENTINEL",

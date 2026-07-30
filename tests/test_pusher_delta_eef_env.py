@@ -1,7 +1,35 @@
 import numpy as np
 import pytest
 
+from mllm_teleop_benchmark import load_config
+from mllm_teleop_benchmark.core.types import Observation
 from mllm_teleop_benchmark.sim.gymnasium_envs.registry import REGISTERED_PUSHER_DELTA_EEF_ID, register_gymnasium_envs
+from mllm_teleop_benchmark.tasks.gymnasium_pusher import GymnasiumPusherTask
+
+
+def test_pusher_success_requires_configured_goal_hold_counter():
+    config = load_config("configs/pusher_delta_eef.yaml")
+    task = GymnasiumPusherTask(config.task)
+    observation = Observation(step_id=0, images={}, state={})
+    threshold = config.task.success_threshold
+
+    assert config.task.goal_hold_steps == 3
+    assert not task.is_success(
+        observation,
+        {"object_goal_distance": threshold, "goal_hold_counter": 2},
+    )
+    assert task.is_success(
+        observation,
+        {"object_goal_distance": threshold, "goal_hold_counter": 3},
+    )
+    assert not task.is_success(
+        observation,
+        {"object_goal_distance": threshold + 0.001, "goal_hold_counter": 3},
+    )
+    assert not task.is_success(
+        observation,
+        {"object_goal_distance": threshold},
+    )
 
 
 def test_pusher_delta_eef_env_reset_and_step():

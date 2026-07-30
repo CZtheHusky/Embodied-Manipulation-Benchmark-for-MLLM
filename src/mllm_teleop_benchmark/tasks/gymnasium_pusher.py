@@ -16,7 +16,12 @@ class GymnasiumPusherTask(Task):
         distance = sim_state.get("object_goal_distance", sim_state.get("distance_to_target"))
         if distance is None:
             return False
-        return float(distance) <= self.config.success_threshold
+        hold_counter = int(sim_state.get("goal_hold_counter", 0))
+        return (
+            float(distance) <= self.config.success_threshold
+            and self.config.goal_hold_steps >= 0
+            and hold_counter >= self.config.goal_hold_steps
+        )
 
     def metrics(self, sim_state: dict[str, object]) -> dict[str, object]:
         object_goal = sim_state.get("object_goal_distance", sim_state.get("distance_to_target", float("inf")))
