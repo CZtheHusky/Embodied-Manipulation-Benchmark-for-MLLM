@@ -74,7 +74,8 @@ audit-only metadata. Simulator parameters are not included in the model prompt.
 - `scripts/download_robocasa_lightwheel_assets.py` downloads Lightwheel
   fixtures and objects from
   `nvidia/PhysicalAI-Robotics-Manipulation-Objects-Kitchen-MJCF` at revision
-  `420a04af939c34873e6839a586b70844baf28aab`.
+  `420a04af939c34873e6839a586b70844baf28aab`. Both downloaders reject archive
+  path traversal and write revision markers under the installed asset root.
 
 Run the pinned downloaders only inside the isolated RoboCasa environment:
 
