@@ -325,9 +325,9 @@ def test_libero_native_horizon_preserves_policy_budget_after_settling():
 
     env_args = adapter._env_args(config.task, "task.bddl")
 
-    assert config.task.max_steps == 200
-    assert config.simulator.params["horizon"] == 200
-    assert env_args["horizon"] == 205
+    assert config.task.max_steps == 600
+    assert config.simulator.params["horizon"] == 600
+    assert env_args["horizon"] == 605
 
 
 def test_libero_adapter_rejects_instruction_that_does_not_match_selected_task():

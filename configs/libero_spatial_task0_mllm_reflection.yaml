@@ -12,7 +12,7 @@ simulator:
     task_order_index: 0
     init_state_strategy: seed_modulo
     settling_steps: 5
-    horizon: 200
+    horizon: 600
     control_freq: 20
     camera_names: [agentview, robot0_eye_in_hand]
     camera_height: 256
@@ -20,7 +20,7 @@ simulator:
 
 task:
   type: libero_generic
-  max_steps: 200
+  max_steps: 600
   success_threshold: 1.0
   params:
     suite_name: libero_spatial
@@ -153,7 +153,7 @@ ui:
   window_height: 540
   info_panel_height: 190
   fps: 20
-  max_steps: 500
+  max_steps: 600
   step_when_idle: false
   simple_blit: true
   debug_frames: true

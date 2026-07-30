@@ -40,13 +40,18 @@ python3 scripts/manage_conda_env.py create libero
 python3 scripts/manage_conda_env.py smoke libero
 ```
 
-The smoke result was:
+The dependency smoke result was:
 
 - `tests/test_libero_integration.py`: `15 passed`, no skips
-- `configs/libero_spatial_task0.yaml`: one random-agent benchmark episode, `average_steps=200.0`, `success_rate=0.0`
+- an earlier 200-step random-agent adapter check completed with `success_rate=0.0`
 - `scripts/play_benchmark.py --config configs/libero_spatial_task0.yaml --set ui.max_steps=0`: shared Pygame worker runtime starts LIBERO, extracts the `agentview` frame, and exits cleanly.
 
 The benchmark success rate is expected to be zero for the random policy. The verification claim is reset, init-state application, one environment step, image/render access, close, and benchmark-runner completion.
+
+All checked-in LIBERO configs use the pinned upstream evaluation budget of 600
+policy steps at 20 Hz (30 seconds). The adapter adds five settling steps to the
+native robosuite horizon without consuming the 600 policy decisions. Shorter
+runs are diagnostic only and must not be reported as native LIBERO baselines.
 
 ## Architecture
 
