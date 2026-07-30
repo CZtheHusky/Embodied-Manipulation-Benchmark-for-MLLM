@@ -272,7 +272,9 @@ def test_ten_seed_canary_rejects_initial_success_and_records_planning_rate():
         "delta_position": [0.0, 0.0, 0.0],
         "attempts": 9,
         "rejections": 4,
+        "acceptances": 5,
         "errors": 0,
+        "acceptance_required": False,
         "rejection_rate": pytest.approx(4 / 9),
         "recordable": True,
     }
@@ -288,6 +290,30 @@ def test_ten_seed_canary_rejects_initial_success_and_records_planning_rate():
     assert "camera_intrinsics" not in serialized
     assert "camera_extrinsics" not in serialized
     assert "gripper_pose" not in serialized
+
+
+def test_nonzero_planning_probe_fails_when_every_action_is_rejected():
+    class RejectAllAdapter(FakeAdapter):
+        def step(self, _action):
+            self.step_seeds.append(self.current_seed)
+            self.last_action_rejected = True
+            return SimpleNamespace(info={"action_rejected": True})
+
+    report = run_reset_canary(
+        RejectAllAdapter(),
+        SimpleNamespace(),
+        (SimpleNamespace(name="front"),),
+        tuple(range(3)),
+        planning_delta=(0.02, 0.0, 0.0),
+    )
+
+    assert report["status"] == "fail"
+    assert report["planning_probe"]["acceptance_required"] is True
+    assert report["planning_probe"]["acceptances"] == 0
+    assert any(
+        "not accepted for any reset seed" in failure
+        for failure in report["failures"]
+    )
 
 
 def test_ten_seed_canary_fails_when_camera_becomes_black():

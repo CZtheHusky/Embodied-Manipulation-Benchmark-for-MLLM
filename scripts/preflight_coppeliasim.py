@@ -408,6 +408,17 @@ def run_reset_canary(
             "cross_seed_variation_assessed": len(hashes) >= 2,
         }
 
+    planning_acceptances = (
+        planning_attempts - planning_rejections - planning_errors
+    )
+    planning_acceptance_required = any(
+        not np.isclose(value, 0.0) for value in delta
+    )
+    if planning_acceptance_required and planning_acceptances == 0:
+        failures.append(
+            "nonzero planning probe was not accepted for any reset seed"
+        )
+
     return {
         "report_version": REPORT_VERSION,
         "kind": "reset_canary",
@@ -422,7 +433,9 @@ def run_reset_canary(
             "delta_position": list(delta),
             "attempts": planning_attempts,
             "rejections": planning_rejections,
+            "acceptances": planning_acceptances,
             "errors": planning_errors,
+            "acceptance_required": planning_acceptance_required,
             "rejection_rate": (
                 float(planning_rejections / planning_attempts)
                 if planning_attempts

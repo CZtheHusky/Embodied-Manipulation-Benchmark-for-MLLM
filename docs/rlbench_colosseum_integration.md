@@ -348,6 +348,7 @@ Run the common 10-seed reset canary in the matching pinned environment:
 python3 scripts/manage_conda_env.py run rlbench -- \
   python scripts/preflight_coppeliasim.py reset-canary \
   --config configs/rlbench_reach_target_mllm_reflection.yaml \
+  --planning-delta 0.02 0 0 \
   --output outputs/preflight/rlbench_reach_target.json
 ```
 
@@ -363,7 +364,9 @@ non-black and spatially non-constant, and that the successful reset frames are
 not all byte-identical across seeds. It records native reset success and one
 planning-action rejection result per non-successful seed. The default planning
 probe re-plans the current end-effector pose; pass a small explicit world-frame
-delta with `--planning-delta DX DY DZ` when a motion probe is required.
+delta with `--planning-delta DX DY DZ` when a motion probe is required. Any
+nonzero planning probe requires at least one accepted action across the sampled
+reset seeds; if every action is rejected, the report fails explicitly.
 
 For the `front` camera, each current native observation supplies
 `front_camera_intrinsics`, `front_camera_extrinsics`, and `gripper_pose`. The
