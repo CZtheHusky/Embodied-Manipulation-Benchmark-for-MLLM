@@ -27,7 +27,7 @@ from mllm_teleop_benchmark.config.schema import AgentConfig
 from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, AgentTrace, Observation, StepTransition
 
 
-PROMPT_VERSION = "mllm_joystick_responses_v4"
+PROMPT_VERSION = "mllm_joystick_responses_v6"
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                 "ResponsesMLLMPolicy retains the full provider-side conversation and "
                 "requires action_window=all and image_window=all"
             )
+        self.prompt_version = PROMPT_VERSION
         self._previous_response_id: str | None = None
         self._last_response_step_id: int | None = None
 

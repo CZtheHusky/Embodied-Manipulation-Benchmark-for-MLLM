@@ -65,6 +65,18 @@ def test_mllm_control_description_discloses_the_effective_step(config_path):
     config = load_config(config_path)
     active_dimensions = set(config.control_interface.active_dimensions)
     description = config.control_interface.control_frame_description
+    schema = config.action_space.channels
+
+    assert config.control_interface.channel_kind == "continuous"
+    assert config.control_interface.channel_minimum == -30.0
+    assert config.control_interface.channel_maximum == 30.0
+    for channel_name in config.control_interface.channel_names()[
+        : len(config.control_interface.active_dimensions)
+    ]:
+        channel = schema[channel_name]
+        assert channel.kind == "continuous"
+        assert channel.minimum == -30.0
+        assert channel.maximum == 30.0
 
     if active_dimensions & TRANSLATION_DIMS:
         assert "0.01" in description

@@ -9,7 +9,7 @@ public visual context -> /chat/completions or /responses -> joystick JSON
                                                     -> controller -> simulator
 ~~~
 
-The production example is 'configs/reacher_delta_eef_mllm.yaml'.
+The production example is 'configs/reacher_delta_eef_mllm_responses.yaml'.
 
 ## Public input boundary
 
@@ -23,9 +23,9 @@ success-oracle data, simulator actions, transition info, seeds, camera
 randomization values, or other simulator metadata. Those values remain
 available to evaluators and debug logs, but not to the model client.
 
-Strict Chat Completions uses prompt version `mllm_joystick_v4`. Reflection
-Chat Completions uses `mllm_joystick_reflection_v4`. Responses uses
-`mllm_joystick_responses_v4`. Static system text, task text, control
+Chat Completions uses prompt version
+`mllm_joystick_chat_completions_v6`. Responses uses
+`mllm_joystick_responses_v6`. Static system text, task text, control
 instructions, and schema are placed before episode turns. Request IDs,
 timestamps, and other per-call values are not inserted into prompt text.
 
@@ -48,19 +48,30 @@ state, and source config path once at run start. The offline auditor rejects a
 new run recorded from a dirty or unidentifiable source tree. Each episode still
 stores the complete effective `config.yaml`, including command-line overrides.
 
-## Output modes
+## Backend modes and output contract
 
-`agent.action_output_mode` makes the response contract explicit. The default
-`action_only` mode accepts only:
+For every non-gripper `dxyz/rpy` channel, MLLM configs expose a continuous
+`[-30, 30]` action range. Finite fractional values are valid. Values outside
+that range are clipped before validation and execution; the raw provider text
+is retained while trajectory `parsed_action` and subsequent model history use
+the clipped value. A value of `1` requests the configured default step
+(`0.01 m` for translation and `1.8 degrees` for rotation), and other values
+scale that requested delta linearly. Gripper schemas are unchanged and are
+never covered by this motion clipping rule. When a motion magnitude exceeds
+`1`, the benchmark executes equal bounded joystick substeps whose sum is the
+clipped model action. This avoids silently collapsing a large command to one
+native unit step without modifying the simulator. Success or native
+termination stops the remaining substeps. Simulator workspace, planning, and
+other safety limits may still constrain realized motion. Episode `steps`
+continues to count model decisions; metrics separately record
+`simulator_steps`, and compound trajectory actions preserve every executed
+substep. The public control prompt explicitly tells the model to increase a
+motion magnitude in a later action when the preceding increment is too small
+to produce a visually distinguishable change.
 
-~~~json
-{"channels":{"joystick_0":0,"joystick_1":1}}
-~~~
-
-Any additional top-level key is invalid in this mode.
-
-`action_with_reflection` allows one optional, case-sensitive, top-level string
-key named `Reflection`:
+Both `agent.model.api=chat_completions` and
+`agent.model.api=responses` accept one optional, case-sensitive, top-level
+string key named `Reflection`:
 
 ~~~json
 {
@@ -75,24 +86,20 @@ joystick channel using only public observations and its own action history.
 it does not affect action validation or simulator control. Other top-level keys
 remain invalid.
 
-The reflection mode deliberately requires Chat Completions,
-`response_format=json_object`, and `image_window=3`. It sends the previous three
-images plus the current image while retaining all normalized action and
-Reflection text history. Responses mode is restricted to `action_only`.
-
-Switch between the two checked-in contracts by selecting the config:
+Both backends require `response_format=json_object`. Select the backend with
+its checked-in config:
 
 ~~~bash
-# Strict action-only output
-python scripts/run_benchmark.py --config configs/reacher_delta_eef_mllm.yaml
+# Chat Completions: all action/Reflection text and three historical images
+python scripts/run_benchmark.py --config configs/reacher_delta_eef_mllm_chat_completions.yaml
 
-# Action plus optional Reflection, Chat Completions, three historical images
-python scripts/run_benchmark.py --config configs/reacher_delta_eef_mllm_reflection.yaml
+# Responses: complete provider-side conversation through previous_response_id
+python scripts/run_benchmark.py --config configs/reacher_delta_eef_mllm_responses.yaml
 ~~~
 
-Reflection runs add `output-action_with_reflection` to the experiment group
-name and record the mode in `run_manifest.json`. Strict runs keep their existing
-directory naming for backward compatibility.
+Experiment groups and `run_manifest.json` identify the mode through
+`api-chat_completions` or `api-responses`. There is no separate output-mode
+label because Reflection has the same semantics for both backends.
 
 ## Output recovery
 
@@ -297,8 +304,8 @@ agent trace. The server does not expose arbitrary files: image routes are
 restricted to PNG artifacts named in request manifests, and evaluator
 state/info are not returned by its API.
 
-`mllm_joystick_v4`, `mllm_joystick_reflection_v4`, and
-`mllm_joystick_responses_v4` are prompt contract versions, not model versions.
+`mllm_joystick_chat_completions_v6` and
+`mllm_joystick_responses_v6` are prompt contract versions, not model versions.
 They identify the system instruction, public-input projection, history layout,
 image policy, and joystick response schema. A behavior-changing prompt update
 must use a new version so results remain attributable and comparable.
@@ -346,7 +353,7 @@ Run the isolated five-step baseline with no historical images:
 ~~~bash
 python3 scripts/manage_uv_env.py run gymnasium -- \
   python scripts/run_benchmark.py \
-  --config configs/reacher_delta_eef_mllm.yaml \
+  --config configs/reacher_delta_eef_mllm_chat_completions.yaml \
   --set task.max_steps=5 \
   --set agent.history.image_window=0 \
   --set logging.save_video=true
@@ -383,12 +390,9 @@ Run a five-step full-context Responses smoke with:
 ~~~bash
 python3 scripts/manage_uv_env.py run gymnasium -- \
   python scripts/run_benchmark.py \
-  --config configs/reacher_delta_eef_mllm.yaml \
+  --config configs/reacher_delta_eef_mllm_responses.yaml \
   --set task.max_steps=5 \
-  --set agent.model.api=responses \
   --set agent.model.stream=true \
-  --set agent.history.action_window=all \
-  --set agent.history.image_window=all \
   --set logging.save_video=true
 ~~~
 

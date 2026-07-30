@@ -26,6 +26,12 @@ class SimulatorAction:
 
 
 @dataclass(frozen=True)
+class CompoundSimulatorAction(SimulatorAction):
+    actions: tuple[SimulatorAction, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class SimAction(SimulatorAction):
     delta_position: Vec3
     delta_rotation_rpy: Vec3

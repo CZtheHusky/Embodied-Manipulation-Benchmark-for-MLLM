@@ -100,28 +100,22 @@ agents:
 ```bash
 python3 scripts/manage_uv_env.py run gymnasium -- \
   python scripts/run_benchmark.py \
-  --config configs/reacher_delta_eef_mllm.yaml \
-  --set task.max_steps=5 \
-  --set agent.history.image_window=0
+  --config configs/reacher_delta_eef_mllm_responses.yaml \
+  --set task.max_steps=5
 ```
 
 Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `MLLM_TELEOP_MODEL` before
-running. The production default keeps all text/action history and the previous
-two images. See `docs/model_api_control.md` for the public-input boundary,
-history semantics, cache metrics, artifacts, and follow-up `2`/`all` smoke
-procedure.
+running. Both backends accept an optional top-level string field named
+`Reflection` alongside `channels`. Use
+`configs/reacher_delta_eef_mllm_chat_completions.yaml` for Chat Completions
+with the previous three images plus the current frame. Use
+`configs/reacher_delta_eef_mllm_responses.yaml` for Responses with complete
+episode context retained through `previous_response_id`. Experiment
+directories and manifests identify these modes as `chat_completions` and
+`responses`.
 
-The default config uses the strict `action_only` response contract. Select
-`configs/reacher_delta_eef_mllm_reflection.yaml` to use the explicitly separate
-`action_with_reflection` contract. That mode uses Chat Completions, sends the
-previous three images plus the current frame, and permits an optional
-top-level string field named `Reflection` alongside `channels`. Reflection
-runs are labeled in their experiment directory and manifest.
-
-Set `agent.model.api=responses` together with both history windows set to `all`
-to retain the complete episode context through `previous_response_id`. This
-mode sends only incremental observations after the first successful call and
-records every previous/response ID pair for audit.
+See `docs/model_api_control.md` for the public-input boundary, history
+semantics, cache metrics, artifacts, and smoke-test procedure.
 
 Set `agent.model.reasoning_effort` explicitly when comparing reasoning models.
 Supported values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`.

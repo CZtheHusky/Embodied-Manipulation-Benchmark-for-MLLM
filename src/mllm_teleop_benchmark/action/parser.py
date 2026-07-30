@@ -28,17 +28,11 @@ class ActionParser:
     def parse_model_output(
         self,
         raw_action: Any,
-        output_mode: str,
     ) -> ParsedModelOutput:
         decoded = self._decode_mapping(raw_action)
         if "channels" not in decoded:
             raise ActionParseError("Model output must contain a top-level 'channels' key")
-        if output_mode == "action_only":
-            allowed_keys = {"channels"}
-        elif output_mode == "action_with_reflection":
-            allowed_keys = {"channels", "Reflection"}
-        else:
-            raise ActionParseError(f"Unsupported model action output mode: {output_mode}")
+        allowed_keys = {"channels", "Reflection"}
         extra_keys = sorted(str(key) for key in decoded if key not in allowed_keys)
         if extra_keys:
             raise ActionParseError(f"Unknown top-level model output keys: {extra_keys}")

@@ -13,7 +13,6 @@ import yaml
 
 from mllm_teleop_benchmark.agents.model_policy import (
     PROMPT_VERSION as CHAT_PROMPT_VERSION,
-    REFLECTION_PROMPT_VERSION,
 )
 from mllm_teleop_benchmark.agents.responses_policy import (
     PROMPT_VERSION as RESPONSES_PROMPT_VERSION,
@@ -189,7 +188,6 @@ class EpisodeLogger:
                     if isinstance(agent_metadata, dict)
                     else None
                 ),
-                "action_output_mode": self.config.agent.action_output_mode,
             },
             "history": {
                 "action_window": self.config.agent.history.action_window,
@@ -260,8 +258,6 @@ def make_experiment_group(config: BenchmarkConfig) -> str | None:
         f"episodes-{config.benchmark.num_episodes}",
         f"maxsteps-{config.task.max_steps}",
     ]
-    if config.agent.action_output_mode != "action_only":
-        parts.append(f"output-{config.agent.action_output_mode}")
     if config.control_interface.mapping_strategy != "fixed":
         parts.append(f"mapping-{config.control_interface.mapping_strategy}")
     if config.control_interface.frame_transform != "identity":
@@ -273,8 +269,6 @@ def _configured_prompt_version(config: BenchmarkConfig) -> str:
     model = config.agent.model
     if model is not None and model.api == "responses":
         return RESPONSES_PROMPT_VERSION
-    if config.agent.action_output_mode == "action_with_reflection":
-        return REFLECTION_PROMPT_VERSION
     return CHAT_PROMPT_VERSION
 
 

@@ -1,0 +1,127 @@
+benchmark:
+  name: metaworld_reach_v3_mllm_chat_completions_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: metaworld
+  env_id: Meta-World/MT1
+  render_mode: rgb_array
+  params:
+    env_name: reach-v3
+    camera_name: topview
+    width: 320
+    height: 240
+    mujoco_gl: egl
+    max_episode_steps: 100
+  env_kwargs: {}
+
+task:
+  type: metaworld_generic
+  max_steps: 100
+  success_threshold: 1.0
+  params:
+    instruction: "Move the robot end-effector to the visible target position."
+    success_key: success
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: topview
+      type: metaworld_rgb
+      width: 320
+      height: 240
+    - name: behindGripper
+      type: metaworld_rgb
+      width: 320
+      height: 240
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz]
+  gripper: none
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  control_frame_description: >-
+    the Meta-World world frame: +x points right in topview, +y points toward
+    the far edge of the table (up in topview), and +z points upward away from
+    the tabletop. A mapped magnitude-1 translation command moves the mocap
+    target by 0.01 meters per model decision. topview is a fixed external
+    world camera. behindGripper is wrist-mounted on the gripper and moves with
+    it, so its image directions do not have a fixed world-axis projection
+  params:
+    scale_mode: metaworld_normalized_box
+
+controller:
+  type: metaworld_box
+  frame: controller
+  scales:
+    dx: 1.0
+    dy: 1.0
+    dz: 1.0
+  params:
+    dimensions: [dx, dy, dz, gripper]
+    default_gripper_value: 1.0
+
+agent:
+  type: mllm
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [topview, behindGripper]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/metaworld_reach_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: topview
+  window_width: 720
+  window_height: 540
+  info_panel_height: 190
+  fps: 20
+  max_steps: 100
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true
+  mujoco_gl: egl

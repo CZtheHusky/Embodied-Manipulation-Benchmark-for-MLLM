@@ -756,13 +756,34 @@ def _closebox_control_contract(
         failures.append("active_dimensions must be exactly [dx, dy, dz]")
     if getattr(control, "gripper", None) != "none":
         failures.append("control_interface.gripper must be none")
-    if getattr(control, "channel_kind", None) != "discrete":
-        failures.append("control_interface.channel_kind must be discrete")
-    channel_values = tuple(
-        float(value) for value in getattr(control, "channel_values", ())
-    )
-    if len(channel_values) != 3 or set(channel_values) != {-1.0, 0.0, 1.0}:
-        failures.append("discrete channel values must be exactly {-1, 0, 1}")
+    channel_kind = getattr(control, "channel_kind", None)
+    if channel_kind == "discrete":
+        channel_values = tuple(
+            float(value) for value in getattr(control, "channel_values", ())
+        )
+        if (
+            len(channel_values) != 3
+            or set(channel_values) != {-1.0, 0.0, 1.0}
+        ):
+            failures.append("discrete channel values must be exactly {-1, 0, 1}")
+    elif channel_kind == "continuous":
+        channel_minimum = getattr(control, "channel_minimum", None)
+        channel_maximum = getattr(control, "channel_maximum", None)
+        if (
+            channel_minimum is None
+            or channel_maximum is None
+            or not np.isfinite(float(channel_minimum))
+            or not np.isfinite(float(channel_maximum))
+            or float(channel_minimum) > -1.0
+            or float(channel_maximum) < 1.0
+        ):
+            failures.append(
+                "continuous channel range must include [-1, 1]"
+            )
+    else:
+        failures.append(
+            "control_interface.channel_kind must be discrete or continuous"
+        )
     if getattr(control, "mapping_strategy", None) != "fixed":
         failures.append("control_interface.mapping_strategy must be fixed")
     if getattr(control, "frame_transform", None) != "identity":

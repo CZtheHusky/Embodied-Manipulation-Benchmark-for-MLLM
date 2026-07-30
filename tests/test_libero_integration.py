@@ -34,13 +34,13 @@ from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for
 
 MLLM_CONFIGS = (
     (
-        "configs/libero_spatial_task0_mllm_reflection.yaml",
+        "configs/libero_spatial_task0_mllm_chat_completions.yaml",
         "fixed",
         "identity",
         True,
     ),
     (
-        "configs/libero_spatial_task0_mllm_reflection_perturbed.yaml",
+        "configs/libero_spatial_task0_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
         False,
@@ -182,7 +182,7 @@ def test_libero_delta_eef_controller_outputs_7d_action():
         ],
     )
 
-    mllm_config = load_config("configs/libero_spatial_task0_mllm_reflection.yaml")
+    mllm_config = load_config("configs/libero_spatial_task0_mllm_chat_completions.yaml")
     mllm_controller = build_controller(
         mllm_config,
         build_mapping(mllm_config, mllm_config.benchmark.seed),
@@ -444,7 +444,6 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
     assert config.task.params["random_baseline"] is False
     assert config.task.params["reject_initial_success"] is True
     assert config.simulator.params["settling_steps"] == 5
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -516,7 +515,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
     assert tuple(action_schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
         action_schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(6)
     )
     assert action_schema["joystick_6"] == {
@@ -526,8 +525,8 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v4" in group
-    assert "output-action_with_reflection" in group
+    assert "prompt-mllm_joystick_chat_completions_v6" in group
+    assert "__output-" not in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
         assert "frame-random_rotation_3d" not in group
@@ -546,7 +545,7 @@ def test_libero_mllm_conditions_use_identical_upstream_task_text():
 
 
 def test_libero_mllm_public_prompt_matches_normalized_osc_pose_contract():
-    baseline = load_config("configs/libero_spatial_task0_mllm_reflection.yaml")
+    baseline = load_config("configs/libero_spatial_task0_mllm_chat_completions.yaml")
     prompt = ControlInstructionBuilder().build(
         control_interface_metadata(baseline, baseline.benchmark.seed),
         build_action_space(baseline).schema(),
@@ -570,7 +569,7 @@ def test_libero_mllm_public_prompt_matches_normalized_osc_pose_contract():
     assert "No additional control-frame rotation is applied" in prompt
 
     perturbed = load_config(
-        "configs/libero_spatial_task0_mllm_reflection_perturbed.yaml"
+        "configs/libero_spatial_task0_mllm_chat_completions_perturbed.yaml"
     )
     metadata = control_interface_metadata(perturbed, perturbed.benchmark.seed)
     perturbed_prompt = ControlInstructionBuilder().build(
@@ -689,7 +688,7 @@ def test_libero_adapter_rejects_invalid_native_actions(values):
 def test_libero_normalized_xyz_commands_move_eef_along_world_axes():
     _import_runtime_dependency("libero")
     _import_runtime_dependency("robosuite")
-    config = load_config("configs/libero_spatial_task0_mllm_reflection.yaml")
+    config = load_config("configs/libero_spatial_task0_mllm_chat_completions.yaml")
     sim = build_sim(config)
     task = build_task(config)
     controller = build_controller(
@@ -810,7 +809,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
     assert f"Task: {TASK_TEXT}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -890,8 +889,8 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

@@ -28,8 +28,8 @@ from mllm_teleop_benchmark.core.types import SimplerEnvAction
 from mllm_teleop_benchmark.sim.simpler_env.adapter import SimplerEnvSimAdapter
 
 
-BASELINE_CONFIG = "configs/simpler_env_google_robot_pick_coke_can_mllm_reflection.yaml"
-PERTURBED_CONFIG = "configs/simpler_env_google_robot_pick_coke_can_mllm_reflection_perturbed.yaml"
+BASELINE_CONFIG = "configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions.yaml"
+PERTURBED_CONFIG = "configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions_perturbed.yaml"
 MLLM_CONFIGS = (
     (BASELINE_CONFIG, "fixed", "identity", True),
     (
@@ -166,7 +166,6 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     schema = build_action_space(config).schema()
     raw = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
 
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -198,7 +197,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
     assert tuple(schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
         schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(6)
     )
     assert schema["joystick_6"] == {
@@ -249,7 +248,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "output-action_with_reflection" in group
+    assert "__output-" not in group
     if mapping_strategy == "fixed":
         assert "__mapping-" not in group
         assert "__frame-" not in group
@@ -870,8 +869,8 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
     assert manifest["simulator"]["type"] == "simpler_env"
     assert manifest["history"]["action_window"] == "all"
     assert manifest["history"]["image_window"] == 3

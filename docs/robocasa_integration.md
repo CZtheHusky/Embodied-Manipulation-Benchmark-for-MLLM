@@ -29,17 +29,18 @@ The base-motion channels are intentionally fixed at zero for the first pass. Add
 
 The PickPlaceCounterToCabinet task has two switchable Chat Completions configs:
 
-- `configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection.yaml`: `fixed + identity`.
-- `configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection_perturbed.yaml`: hidden `permuted_sign_flipped + random_rotation_3d`.
+- `configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions.yaml`: `fixed + identity`.
+- `configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions_perturbed.yaml`: hidden `permuted_sign_flipped + random_rotation_3d`.
 
-Both use `action_with_reflection`, reasoning effort `low`, three historical image
+Both use `chat_completions` with optional Reflection, reasoning effort `low`, three historical image
 steps, all action history, and prompt contract
-`mllm_joystick_reflection_v2`. After reset, both conditions project the upstream
+`mllm_joystick_chat_completions_v6`. After reset, both conditions project the upstream
 public `annotation.human.task_description` string into the prompt. This names the
 episode's target object and avoids the ambiguous static fallback when distractor
 objects are present. A missing or empty upstream instruction is a runtime error.
 
-The public joystick has six discrete motion channels followed by one binary gripper channel:
+The public MLLM joystick has six continuous `[-30, 30]` motion channels followed
+by one binary gripper channel:
 
 - PandaOmron OSC controls `robot0_right_center` in the robot-base frame. This
   frame moves with the mobile base; it is not a fixed world frame.
@@ -57,7 +58,11 @@ The public joystick has six discrete motion channels followed by one binary grip
   condition's explicit hidden sign flips are benchmark perturbations.
 - The virtual gripper is binary: `0` means open and `1` means close. The pinned RoboCasa wrapper internally maps values below `0.5` to native `-1` and values at or above `0.5` to native `1`; there is no distinct `0.5` hold command.
 
-After a hidden 3D rotation, a multi-axis discrete command can have an individual component outside the upstream normalized Box even though its Euclidean norm is unchanged. `RoboCasaOSCController` therefore rescales each transformed translation or rotation vector by its infinity norm only when necessary. This preserves direction while enforcing the official native action bound.
+After a hidden 3D rotation, a multi-axis command can have an individual
+component outside the upstream normalized Box even though its Euclidean norm
+is unchanged. `RoboCasaOSCController` therefore rescales each transformed
+translation or rotation vector by its infinity norm only when necessary. This
+preserves direction while enforcing the official native action bound.
 
 The model input projection includes only:
 

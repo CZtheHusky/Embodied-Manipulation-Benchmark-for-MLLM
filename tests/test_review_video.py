@@ -39,7 +39,7 @@ from mllm_teleop_benchmark.utils.images import encode_rgb_png
 
 
 def _config(tmp_path: Path, *, debug: bool = False, cameras=("front",)):
-    config = load_config("configs/reacher_delta_eef_mllm.yaml")
+    config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
     return replace(
         config,
         agent=replace(

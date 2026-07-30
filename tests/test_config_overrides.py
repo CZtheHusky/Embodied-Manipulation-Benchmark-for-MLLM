@@ -50,26 +50,24 @@ def test_legacy_action_space_mapping_without_control_interface_is_rejected():
         BenchmarkConfig.from_dict(legacy)
 
 
-def test_mllm_config_uses_full_action_history_and_two_prior_images_by_default():
-    config = load_config("configs/reacher_delta_eef_mllm.yaml")
+def test_responses_config_uses_full_provider_context():
+    config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
 
     assert config.agent.type == "mllm"
-    assert config.agent.action_output_mode == "action_only"
     assert config.agent.model is not None
-    assert config.agent.model.api == "chat_completions"
+    assert config.agent.model.api == "responses"
     assert config.agent.model.reasoning_effort == "medium"
     assert config.agent.model.retry_until_success
     assert config.agent.model.retry_backoff_max_seconds == 30
     assert config.agent.history.action_window == "all"
-    assert config.agent.history.image_window == 2
+    assert config.agent.history.image_window == "all"
     assert config.agent.history.max_images_per_request == 128
     assert config.agent.history.max_request_bytes == 67_108_864
 
 
-def test_reflection_config_uses_chat_completions_and_three_prior_images():
-    config = load_config("configs/reacher_delta_eef_mllm_reflection.yaml")
+def test_chat_completions_config_can_use_three_prior_images():
+    config = load_config("configs/reacher_delta_eef_mllm_chat_completions.yaml")
 
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
@@ -77,30 +75,43 @@ def test_reflection_config_uses_chat_completions_and_three_prior_images():
     assert config.agent.history.image_window == 3
 
 
-def test_reflection_mode_rejects_responses_backend():
-    with pytest.raises(ValueError, match="requires agent.model.api=chat_completions"):
+def test_responses_backend_accepts_reflection_contract_with_full_history():
+    config = load_config(
+        "configs/reacher_delta_eef_mllm_chat_completions.yaml",
+        (
+            "agent.model.api=responses",
+            "agent.history.image_window=all",
+        ),
+    )
+
+    assert config.agent.model is not None
+    assert config.agent.model.api == "responses"
+    assert config.agent.history.action_window == "all"
+    assert config.agent.history.image_window == "all"
+
+
+def test_chat_completions_backend_allows_configurable_image_history():
+    config = load_config(
+        "configs/reacher_delta_eef_mllm_chat_completions.yaml",
+        ("agent.history.image_window=2",),
+    )
+
+    assert config.agent.history.image_window == 2
+
+
+def test_mllm_backends_require_json_object_response_format():
+    with pytest.raises(ValueError, match="MLLM backends require"):
         load_config(
-            "configs/reacher_delta_eef_mllm_reflection.yaml",
-            (
-                "agent.model.api=responses",
-                "agent.history.image_window=all",
-            ),
-        )
-
-
-def test_reflection_mode_rejects_wrong_image_history_window():
-    with pytest.raises(ValueError, match="requires agent.history.image_window=3"):
-        load_config(
-            "configs/reacher_delta_eef_mllm_reflection.yaml",
-            ("agent.history.image_window=2",),
-        )
-
-
-def test_reflection_mode_requires_json_object_response_format():
-    with pytest.raises(ValueError, match="requires agent.model.response_format=json_object"):
-        load_config(
-            "configs/reacher_delta_eef_mllm_reflection.yaml",
+            "configs/reacher_delta_eef_mllm_chat_completions.yaml",
             ("agent.model.response_format=none",),
+        )
+
+
+def test_removed_action_output_mode_is_rejected_with_backend_guidance():
+    with pytest.raises(ValueError, match="select the backend with agent.model.api"):
+        load_config(
+            "configs/reacher_delta_eef_mllm_chat_completions.yaml",
+            ("agent.action_output_mode=action_with_reflection",),
         )
 
 
@@ -113,7 +124,10 @@ def test_reflection_mode_requires_json_object_response_format():
     ],
 )
 def test_mllm_image_history_override_accepts_zero_integer_or_all(override, expected):
-    config = load_config("configs/reacher_delta_eef_mllm.yaml", (override,))
+    config = load_config(
+        "configs/reacher_delta_eef_mllm_chat_completions.yaml",
+        (override,),
+    )
 
     assert config.agent.history.image_window == expected
 
@@ -122,7 +136,7 @@ def test_mllm_image_history_override_accepts_zero_integer_or_all(override, expec
 def test_mllm_image_history_rejects_ambiguous_or_negative_values(value):
     with pytest.raises(ValueError, match="non-negative integer or 'all'"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
+            "configs/reacher_delta_eef_mllm_chat_completions.yaml",
             (f"agent.history.image_window={value}",),
         )
 
@@ -130,14 +144,14 @@ def test_mllm_image_history_rejects_ambiguous_or_negative_values(value):
 def test_mllm_config_rejects_inline_api_key():
     with pytest.raises(ValueError, match="api_key is forbidden"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
+            "configs/reacher_delta_eef_mllm_responses.yaml",
             ("agent.model.api_key=DO_NOT_PERSIST",),
         )
 
 
 def test_responses_api_requires_explicit_full_history_semantics():
     config = load_config(
-        "configs/reacher_delta_eef_mllm.yaml",
+        "configs/reacher_delta_eef_mllm_responses.yaml",
         (
             "agent.model.api=responses",
             "agent.history.image_window=all",
@@ -152,15 +166,15 @@ def test_responses_api_requires_explicit_full_history_semantics():
 def test_responses_api_rejects_history_windows_that_it_cannot_honor():
     with pytest.raises(ValueError, match="retains the full provider-side conversation"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
-            ("agent.model.api=responses",),
+            "configs/reacher_delta_eef_mllm_responses.yaml",
+            ("agent.history.image_window=2",),
         )
 
 
 def test_mllm_config_rejects_unknown_model_api():
     with pytest.raises(ValueError, match="agent.model.api"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
+            "configs/reacher_delta_eef_mllm_responses.yaml",
             ("agent.model.api=legacy_responses",),
         )
 
@@ -168,7 +182,7 @@ def test_mllm_config_rejects_unknown_model_api():
 @pytest.mark.parametrize("effort", ("none", "low", "medium", "high", "xhigh", "max"))
 def test_mllm_config_accepts_supported_reasoning_effort(effort):
     config = load_config(
-        "configs/reacher_delta_eef_mllm.yaml",
+        "configs/reacher_delta_eef_mllm_responses.yaml",
         (f"agent.model.reasoning_effort={effort}",),
     )
 
@@ -179,7 +193,7 @@ def test_mllm_config_accepts_supported_reasoning_effort(effort):
 def test_mllm_config_rejects_unknown_reasoning_effort():
     with pytest.raises(ValueError, match="reasoning_effort"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
+            "configs/reacher_delta_eef_mllm_responses.yaml",
             ("agent.model.reasoning_effort=ultra",),
         )
 
@@ -187,13 +201,13 @@ def test_mllm_config_rejects_unknown_reasoning_effort():
 def test_mllm_config_rejects_retry_backoff_cap_below_initial_delay():
     with pytest.raises(ValueError, match="retry_backoff_max_seconds"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
+            "configs/reacher_delta_eef_mllm_responses.yaml",
             ("agent.model.retry_backoff_max_seconds=0.5",),
         )
 
 
 def test_review_video_is_disabled_by_default():
-    config = load_config("configs/reacher_delta_eef_mllm.yaml")
+    config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
 
     assert not config.logging.save_video
     assert config.logging.video.fps == 2
@@ -205,7 +219,7 @@ def test_review_video_is_disabled_by_default():
 def test_evaluator_debug_video_requires_video_logging():
     with pytest.raises(ValueError, match="requires logging.save_video=true"):
         load_config(
-            "configs/reacher_delta_eef_mllm.yaml",
+            "configs/reacher_delta_eef_mllm_responses.yaml",
             ("logging.video.include_evaluator_debug=true",),
         )
 
@@ -225,4 +239,4 @@ def test_review_video_rejects_non_mllm_agent():
 )
 def test_review_video_rejects_non_positive_timing(override):
     with pytest.raises(ValueError, match="must be positive"):
-        load_config("configs/reacher_delta_eef_mllm.yaml", (override,))
+        load_config("configs/reacher_delta_eef_mllm_responses.yaml", (override,))

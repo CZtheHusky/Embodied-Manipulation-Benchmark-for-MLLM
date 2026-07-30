@@ -54,13 +54,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = "configs/colosseum_close_box_manip_obj_color_smoke.yaml"
 MLLM_CONFIGS = (
     (
-        "configs/colosseum_close_box_mllm_reflection.yaml",
+        "configs/colosseum_close_box_mllm_chat_completions.yaml",
         "fixed",
         "identity",
         True,
     ),
     (
-        "configs/colosseum_close_box_mllm_reflection_perturbed.yaml",
+        "configs/colosseum_close_box_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
         False,
@@ -329,7 +329,6 @@ def test_colosseum_mllm_configs_are_explicit_and_switchable(
         assert "delta expressed in the Colosseum/RLBench world Cartesian" in frame_description
         assert "without another transform or sign compensation" in frame_description
     assert config.controller.scales == {"dx": 0.01, "dy": 0.01, "dz": 0.01}
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -345,7 +344,7 @@ def test_colosseum_mllm_configs_are_explicit_and_switchable(
 
 def test_colosseum_perturbed_controller_native_action_canary_is_nonzero():
     config = load_config(
-        "configs/colosseum_close_box_mllm_reflection_perturbed.yaml"
+        "configs/colosseum_close_box_mllm_chat_completions_perturbed.yaml"
     )
     mapping = build_mapping(config, seed=config.benchmark.seed)
     controller = build_controller(
@@ -403,9 +402,9 @@ def test_colosseum_perturbed_controller_native_action_canary_is_nonzero():
 
 
 def test_colosseum_mllm_baseline_and_perturbed_same_seed_reset_pair_with_stub():
-    baseline = load_config("configs/colosseum_close_box_mllm_reflection.yaml")
+    baseline = load_config("configs/colosseum_close_box_mllm_chat_completions.yaml")
     perturbed = load_config(
-        "configs/colosseum_close_box_mllm_reflection_perturbed.yaml"
+        "configs/colosseum_close_box_mllm_chat_completions_perturbed.yaml"
     )
 
     assert baseline.benchmark.seed == perturbed.benchmark.seed
@@ -673,7 +672,7 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     ] == [0, 1, 2, 3]
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
     assert "Task: Close the visible box lid." in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "Colosseum/RLBench world Cartesian x, y, and z axes" in request_text
@@ -729,7 +728,7 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
+    assert "action_output_mode" not in manifest["model"]
     assert manifest["history"]["image_window"] == 3
     assert manifest["control_interface"]["mapping_strategy"] == mapping_strategy
     assert manifest["control_interface"]["frame_transform"] == frame_transform

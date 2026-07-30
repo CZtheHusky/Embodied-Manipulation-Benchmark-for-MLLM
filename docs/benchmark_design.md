@@ -8,7 +8,11 @@ The benchmark exposes an agent-visible control interface rather than a fixed glo
 
 A full end-effector delta pose interface can contain virtual joystick channels for `dx`, `dy`, `dz`, `droll`, `dpitch`, `dyaw`, and optionally a final gripper channel.
 
-Motion channels are usually discrete delta commands in `{-1, 0, 1}` and are scaled by configuration. A gripper channel is exposed only when the task and embodiment support it; direct gripper control uses `[0, 1]`.
+Human keyboard controls use discrete delta commands in `{-1, 0, 1}`. MLLM
+motion channels accept finite numeric values, clip them to `[-30, 30]`, and
+scale them by the configured magnitude-1 step. A gripper channel is exposed
+only when the task and embodiment support it; direct gripper control uses
+`[0, 1]` and is not covered by motion-channel clipping.
 
 For Reacher-style planar tasks, the current interface uses two virtual joysticks for planar motion. The benchmark can tell the agent that planar motion channels exist without revealing the exact joystick-to-physical-axis relationship when mapping or frame complexity is enabled.
 

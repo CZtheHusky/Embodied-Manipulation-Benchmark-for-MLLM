@@ -36,13 +36,13 @@ from mllm_teleop_benchmark.ui.runtime import PlayerCommand, PlayerRuntimeResult,
 
 MLLM_CONFIGS = (
     (
-        "configs/calvin_delta_eef_mllm_reflection.yaml",
+        "configs/calvin_delta_eef_mllm_chat_completions.yaml",
         "fixed",
         "identity",
         True,
     ),
     (
-        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml",
+        "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
         False,
@@ -298,7 +298,6 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert config.controller.params["transform_rotation"] is False
     assert config.control_interface.gripper_open_command == 1.0
     assert config.control_interface.gripper_closed_command == 0.0
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -312,7 +311,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert tuple(schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
         schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(6)
     )
     assert schema["joystick_6"] == {
@@ -323,7 +322,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "output-action_with_reflection" in group
+    assert "__output-" not in group
     if mapping_strategy == "fixed":
         assert "__mapping-" not in group
         assert "__frame-" not in group
@@ -333,9 +332,9 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
 
 
 def test_calvin_mllm_task_instruction_is_identical_across_control_conditions():
-    baseline = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    baseline = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     perturbed = load_config(
-        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+        "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml"
     )
 
     assert baseline.task.params["instruction"] == perturbed.task.params["instruction"]
@@ -343,7 +342,7 @@ def test_calvin_mllm_task_instruction_is_identical_across_control_conditions():
 
 def test_calvin_task_uses_official_strict_three_stage_oracle():
     _require_module("calvin_env")
-    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    config = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     task = build_task(config)
     reset_info = _oracle_info(
         red_position=(0.1, -0.1, 0.46),
@@ -409,7 +408,7 @@ def test_calvin_task_uses_official_strict_three_stage_oracle():
 
 
 def test_calvin_task_reset_invariant_accepts_valid_stub_initial_state():
-    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    config = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     task = build_task(config)
     task._task_oracle = MagicMock()
     task._task_oracle.get_task_info_for_set.return_value = set()
@@ -464,7 +463,7 @@ def test_calvin_task_reset_invariant_rejects_invalid_stub_initial_state(
     reset_info,
     message,
 ):
-    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    config = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     task = build_task(config)
     task._task_oracle = MagicMock()
 
@@ -496,7 +495,7 @@ def test_calvin_legacy_seed_fallback_syncs_scene_and_object_rngs():
 
 
 def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
-    baseline = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    baseline = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     prompt = ControlInstructionBuilder().build(
         control_interface_metadata(baseline, baseline.benchmark.seed),
         build_action_space(baseline).schema(),
@@ -526,7 +525,7 @@ def test_calvin_mllm_prompt_describes_public_pose_and_gripper_contract():
     assert "No additional control-frame rotation is applied" in prompt
 
     perturbed = load_config(
-        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+        "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml"
     )
     metadata = control_interface_metadata(perturbed, perturbed.benchmark.seed)
     prompt = ControlInstructionBuilder().build(
@@ -652,7 +651,7 @@ def test_calvin_controller_applies_frame_rotation_to_position_and_rotation():
 
 def test_calvin_mllm_controller_uses_native_scale_and_does_not_rotate_euler_parameters():
     config = load_config(
-        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+        "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml"
     )
     mapping = MagicMock()
     mapping.map_action.return_value = {
@@ -695,7 +694,7 @@ def test_calvin_mllm_controller_uses_native_scale_and_does_not_rotate_euler_para
 
 def test_calvin_hidden_rotation_preserves_direction_within_native_action_bounds():
     config = load_config(
-        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+        "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml"
     )
     mapping = MagicMock()
     mapping.map_action.return_value = {
@@ -742,7 +741,7 @@ def test_calvin_mllm_normalized_action_reaches_pinned_native_step_size():
 
     from calvin_env.robot.robot import Robot
 
-    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    config = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     controller = build_controller(
         config,
         build_mapping(config, config.benchmark.seed),
@@ -776,7 +775,7 @@ def test_calvin_mllm_normalized_action_reaches_pinned_native_step_size():
         np.asarray(sim_action.values, dtype=float),
     )
 
-    np.testing.assert_allclose(target_pos, [0.02, 0.0, 0.0])
+    np.testing.assert_allclose(target_pos, [0.01, 0.0, 0.0])
     np.testing.assert_allclose(target_orn, [0.0, 0.0, 0.0])
     np.testing.assert_allclose(gripper, [1.0])
 
@@ -810,7 +809,7 @@ def test_calvin_static_camera_projection_matches_public_prompt():
 
 def test_calvin_perturbation_only_changes_motion_channels():
     config = load_config(
-        "configs/calvin_delta_eef_mllm_reflection_perturbed.yaml"
+        "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml"
     )
     mapping = build_mapping(config, config.benchmark.seed)
     controller = build_controller(config, mapping, config.benchmark.seed)
@@ -952,7 +951,7 @@ def test_calvin_mllm_seed_range_reset_canary_when_installed():
         "omegaconf",
         "pinned CALVIN reset canary requires OmegaConf",
     )
-    config = load_config("configs/calvin_delta_eef_mllm_reflection.yaml")
+    config = load_config("configs/calvin_delta_eef_mllm_chat_completions.yaml")
     sim = build_sim(config)
     task = build_task(config)
     camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
@@ -1163,7 +1162,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
     assert (
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
@@ -1248,8 +1247,8 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

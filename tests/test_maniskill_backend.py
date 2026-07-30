@@ -36,8 +36,8 @@ from mllm_teleop_benchmark.sim.maniskill.observation import ManiSkillObservation
 
 
 MLLM_CONFIGS = (
-    "configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml",
-    "configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml",
+    "configs/maniskill_pickcube_delta_eef_mllm_chat_completions_fixed.yaml",
+    "configs/maniskill_pickcube_delta_eef_mllm_chat_completions_perturbed.yaml",
 )
 MANISKILL_CONTROL_FRAME = (
     "the Panda root/base frame, fixed and aligned with ManiSkill world axes: "
@@ -116,7 +116,6 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert config.agent.type == "mllm"
     assert config.benchmark.seed == 9
     assert config.task.params["reject_initial_success"] is True
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
     assert config.agent.model.reasoning_effort == "low"
@@ -235,7 +234,11 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
 
     assert decision.trace.status == "ok"
     request_text = client.requests[0].encoded_body().decode("utf-8")
-    assert "Each motion joystick value must be one of -1, 0, or 1" in request_text
+    assert (
+        "Values outside [-30, 30] are clipped to that range before execution"
+        in request_text
+    )
+    assert "other values scale the requested motion linearly" in request_text
     assert (
         "dx, dy, and dz denote end-effector translation along the control frame's "
         "x, y, and z axes"

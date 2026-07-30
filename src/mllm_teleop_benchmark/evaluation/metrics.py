@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from mllm_teleop_benchmark.core.types import AgentTrace, StepTransition
+from mllm_teleop_benchmark.core.types import (
+    AgentTrace,
+    CompoundSimulatorAction,
+    StepTransition,
+)
 
 
 class MetricsRecorder:
     def __init__(self) -> None:
         self.invalid_action_count = 0
         self.steps = 0
+        self.simulator_steps = 0
         self.model_decision_count = 0
         self.model_call_count = 0
         self.model_api_error_count = 0
@@ -23,6 +28,10 @@ class MetricsRecorder:
 
     def update(self, transition: StepTransition) -> None:
         self.steps += 1
+        if isinstance(transition.sim_action, CompoundSimulatorAction):
+            self.simulator_steps += len(transition.sim_action.actions)
+        else:
+            self.simulator_steps += 1
         if not transition.validation.is_valid:
             self.invalid_action_count += 1
 
@@ -55,6 +64,7 @@ class MetricsRecorder:
         metrics: dict[str, object] = {
             "success": success,
             "steps": self.steps,
+            "simulator_steps": self.simulator_steps,
             "invalid_action_count": self.invalid_action_count,
         }
         if self.model_decision_count:

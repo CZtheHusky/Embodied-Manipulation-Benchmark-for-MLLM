@@ -89,7 +89,7 @@ def test_simpler_env_delta_eef_controller_maps_pose_and_gripper_to_7d_action():
 
 def test_simpler_env_mllm_control_output_canary_preserves_scaled_signs():
     config = load_config(
-        "configs/simpler_env_google_robot_pick_coke_can_mllm_reflection.yaml"
+        "configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions.yaml"
     )
     controller = build_controller(
         config,

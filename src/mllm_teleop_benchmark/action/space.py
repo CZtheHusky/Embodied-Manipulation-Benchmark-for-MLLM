@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -40,4 +41,27 @@ class ActionSpace:
                 values[name] = rng.uniform(channel.minimum, channel.maximum)
             else:
                 raise ValueError(f"Unsupported channel kind for sampling: {channel.kind}")
+        return JoystickAction(values)
+
+    def clip_continuous_channels(
+        self,
+        action: JoystickAction,
+        channel_names: tuple[str, ...],
+    ) -> JoystickAction:
+        values = dict(action.channels)
+        for name in channel_names:
+            channel = self.channels.get(name)
+            if (
+                channel is None
+                or channel.kind != "continuous"
+                or channel.minimum is None
+                or channel.maximum is None
+                or name not in values
+                or not math.isfinite(values[name])
+            ):
+                continue
+            values[name] = min(
+                max(values[name], channel.minimum),
+                channel.maximum,
+            )
         return JoystickAction(values)

@@ -513,15 +513,28 @@ class RunAuditor:
             fail("native_action_audit_invalid")
             return False
 
-        sim_action = transition.get("sim_action")
-        sim_values = (
-            _finite_vector(sim_action.get("values"), length=7)
-            if isinstance(sim_action, dict)
-            else None
+        sim_actions = _sim_action_records(transition)
+        sim_value_records = (
+            [
+                _finite_vector(sim_action.get("values"), length=7)
+                for sim_action in sim_actions
+            ]
+            if sim_actions is not None
+            else []
         )
-        if sim_values is None:
+        if not sim_value_records or any(
+            record is None for record in sim_value_records
+        ):
             fail("sim_action_invalid")
-        elif not np.allclose(values[:6], sim_values[:6], atol=1e-7, rtol=0.0):
+            sim_values = None
+        else:
+            sim_values = sim_value_records[-1]
+        if sim_values is not None and not np.allclose(
+            values[:6],
+            sim_values[:6],
+            atol=1e-7,
+            rtol=0.0,
+        ):
             fail("native_motion_mismatch")
 
         if info.get("absolute_gripper_target") is not True:
@@ -593,64 +606,65 @@ class RunAuditor:
                 f"step={step_id}",
             )
 
-        sim_action = transition.get("sim_action")
-        if not isinstance(sim_action, dict):
+        sim_actions = _sim_action_records(transition)
+        if sim_actions is None:
             fail("robocasa_sim_action_missing")
             return False
-        values = sim_action.get("values")
-        if not isinstance(values, dict):
-            fail("robocasa_sim_action_values_invalid")
-            return False
+        for sim_action in sim_actions:
+            values = sim_action.get("values")
+            if not isinstance(values, dict):
+                fail("robocasa_sim_action_values_invalid")
+                continue
 
-        expected = {
-            "action.end_effector_position",
-            "action.end_effector_rotation",
-            "action.gripper_close",
-            "action.base_motion",
-            "action.control_mode",
-        }
-        if set(values) != expected:
-            fail("robocasa_sim_action_keys_invalid")
+            expected = {
+                "action.end_effector_position",
+                "action.end_effector_rotation",
+                "action.gripper_close",
+                "action.base_motion",
+                "action.control_mode",
+            }
+            if set(values) != expected:
+                fail("robocasa_sim_action_keys_invalid")
 
-        position = _finite_vector(
-            values.get("action.end_effector_position"),
-            length=3,
-        )
-        rotation = _finite_vector(
-            values.get("action.end_effector_rotation"),
-            length=3,
-        )
-        if position is None or np.any(np.abs(position) > 1.0):
-            fail("robocasa_sim_action_position_invalid")
-        if rotation is None or np.any(np.abs(rotation) > 1.0):
-            fail("robocasa_sim_action_rotation_invalid")
+            position = _finite_vector(
+                values.get("action.end_effector_position"),
+                length=3,
+            )
+            rotation = _finite_vector(
+                values.get("action.end_effector_rotation"),
+                length=3,
+            )
+            if position is None or np.any(np.abs(position) > 1.0):
+                fail("robocasa_sim_action_position_invalid")
+            if rotation is None or np.any(np.abs(rotation) > 1.0):
+                fail("robocasa_sim_action_rotation_invalid")
 
-        gripper = _finite_vector(
-            values.get("action.gripper_close"),
-            length=1,
-        )
-        if gripper is None or float(gripper[0]) not in {0.0, 1.0}:
-            fail("robocasa_sim_action_gripper_invalid")
+            gripper = _finite_vector(
+                values.get("action.gripper_close"),
+                length=1,
+            )
+            if gripper is None or float(gripper[0]) not in {0.0, 1.0}:
+                fail("robocasa_sim_action_gripper_invalid")
 
-        base = _finite_vector(
-            values.get("action.base_motion"),
-            length=4,
-        )
-        if base is None or not np.allclose(base, 0.0):
-            fail("robocasa_sim_action_base_invalid")
+            base = _finite_vector(
+                values.get("action.base_motion"),
+                length=4,
+            )
+            if base is None or not np.allclose(base, 0.0):
+                fail("robocasa_sim_action_base_invalid")
 
-        control_mode = _finite_vector(
-            values.get("action.control_mode"),
-            length=1,
-        )
-        if control_mode is None or float(control_mode[0]) != 1.0:
-            fail("robocasa_sim_action_control_mode_invalid")
+            control_mode = _finite_vector(
+                values.get("action.control_mode"),
+                length=1,
+            )
+            if control_mode is None or float(control_mode[0]) != 1.0:
+                fail("robocasa_sim_action_control_mode_invalid")
 
-        metadata = sim_action.get("metadata")
-        if not isinstance(metadata, dict):
-            fail("robocasa_sim_action_metadata_invalid")
-        elif metadata.get("controller") != "robocasa_osc":
-            fail("robocasa_sim_action_controller_invalid")
+            metadata = sim_action.get("metadata")
+            if not isinstance(metadata, dict):
+                fail("robocasa_sim_action_metadata_invalid")
+            elif metadata.get("controller") != "robocasa_osc":
+                fail("robocasa_sim_action_controller_invalid")
         return valid
 
     def audit_rlbench_sim_action(
@@ -671,26 +685,30 @@ class RunAuditor:
                 f"step={step_id}" + (f", {detail}" if detail else ""),
             )
 
-        sim_action = transition.get("sim_action")
-        if not isinstance(sim_action, dict):
+        sim_actions = _sim_action_records(transition)
+        if sim_actions is None:
             fail("sim_action_missing")
         else:
-            if not _is_finite_number_vector(
-                sim_action.get("delta_position"), length=3
-            ):
-                fail("sim_action_delta_position_invalid")
-            if not _is_finite_number_vector(
-                sim_action.get("delta_rotation_rpy"), length=3
-            ):
-                fail("sim_action_delta_rotation_rpy_invalid")
-            gripper = sim_action.get("gripper")
-            if not _is_finite_number(gripper) or not 0.0 <= float(gripper) <= 1.0:
-                fail("sim_action_gripper_invalid")
-            metadata = sim_action.get("metadata")
-            if not isinstance(metadata, dict):
-                fail("sim_action_metadata_invalid")
-            elif metadata.get("controller") != "rlbench_delta_eef":
-                fail("sim_action_controller_invalid")
+            for sim_action in sim_actions:
+                if not _is_finite_number_vector(
+                    sim_action.get("delta_position"), length=3
+                ):
+                    fail("sim_action_delta_position_invalid")
+                if not _is_finite_number_vector(
+                    sim_action.get("delta_rotation_rpy"), length=3
+                ):
+                    fail("sim_action_delta_rotation_rpy_invalid")
+                gripper = sim_action.get("gripper")
+                if (
+                    not _is_finite_number(gripper)
+                    or not 0.0 <= float(gripper) <= 1.0
+                ):
+                    fail("sim_action_gripper_invalid")
+                metadata = sim_action.get("metadata")
+                if not isinstance(metadata, dict):
+                    fail("sim_action_metadata_invalid")
+                elif metadata.get("controller") != "rlbench_delta_eef":
+                    fail("sim_action_controller_invalid")
 
         info = transition.get("info")
         if not isinstance(info, dict):
@@ -1327,6 +1345,29 @@ def _nested_str(value: dict[str, Any] | None, *keys: str) -> str | None:
             return None
         current = current.get(key)
     return current if isinstance(current, str) else None
+
+
+def _sim_action_records(
+    transition: Mapping[str, object],
+) -> list[dict[str, Any]] | None:
+    sim_action = transition.get("sim_action")
+    if not isinstance(sim_action, dict):
+        return None
+    if "actions" not in sim_action:
+        return [sim_action]
+
+    actions = sim_action.get("actions")
+    metadata = sim_action.get("metadata")
+    if (
+        not isinstance(actions, list)
+        or not actions
+        or not all(isinstance(action, dict) for action in actions)
+        or not isinstance(metadata, dict)
+        or metadata.get("execution") != "linear_motion_substeps"
+        or metadata.get("substep_count") != len(actions)
+    ):
+        return None
+    return actions
 
 
 def _finite_vector(value: object, *, length: int) -> np.ndarray | None:

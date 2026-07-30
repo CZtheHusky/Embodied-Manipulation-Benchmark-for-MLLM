@@ -33,13 +33,13 @@ from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for
 
 MLLM_CONFIGS = (
     (
-        "configs/metaworld_reach_mllm_reflection.yaml",
+        "configs/metaworld_reach_mllm_chat_completions.yaml",
         "fixed",
         "identity",
         True,
     ),
     (
-        "configs/metaworld_reach_mllm_reflection_perturbed.yaml",
+        "configs/metaworld_reach_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
         False,
@@ -248,7 +248,6 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
         "wrist-mounted on the gripper and moves with it, so its image "
         "directions do not have a fixed world-axis projection"
     )
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -263,13 +262,13 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
     )
     assert all(
         schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(3)
     )
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "output-action_with_reflection" in group
+    assert "__output-" not in group
     if mapping_strategy == "fixed":
         assert "__mapping-" not in group
         assert "__frame-" not in group
@@ -279,16 +278,16 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
 
 
 def test_metaworld_mllm_task_instruction_is_identical_across_control_conditions():
-    baseline = load_config("configs/metaworld_reach_mllm_reflection.yaml")
+    baseline = load_config("configs/metaworld_reach_mllm_chat_completions.yaml")
     perturbed = load_config(
-        "configs/metaworld_reach_mllm_reflection_perturbed.yaml"
+        "configs/metaworld_reach_mllm_chat_completions_perturbed.yaml"
     )
 
     assert baseline.task.params["instruction"] == perturbed.task.params["instruction"]
 
 
 def test_metaworld_mllm_prompt_describes_public_xyz_only():
-    baseline = load_config("configs/metaworld_reach_mllm_reflection.yaml")
+    baseline = load_config("configs/metaworld_reach_mllm_chat_completions.yaml")
     baseline_prompt = ControlInstructionBuilder().build(
         control_interface_metadata(baseline, baseline.benchmark.seed),
         build_action_space(baseline).schema(),
@@ -312,7 +311,7 @@ def test_metaworld_mllm_prompt_describes_public_xyz_only():
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     perturbed = load_config(
-        "configs/metaworld_reach_mllm_reflection_perturbed.yaml"
+        "configs/metaworld_reach_mllm_chat_completions_perturbed.yaml"
     )
     metadata = control_interface_metadata(perturbed, perturbed.benchmark.seed)
     perturbed_prompt = ControlInstructionBuilder().build(
@@ -339,7 +338,7 @@ def test_metaworld_mllm_prompt_describes_public_xyz_only():
 
 def test_metaworld_perturbation_only_changes_translation_channels():
     config = load_config(
-        "configs/metaworld_reach_mllm_reflection_perturbed.yaml"
+        "configs/metaworld_reach_mllm_chat_completions_perturbed.yaml"
     )
     mapping = build_mapping(config, config.benchmark.seed)
     controller = build_controller(config, mapping, config.benchmark.seed)
@@ -503,8 +502,8 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

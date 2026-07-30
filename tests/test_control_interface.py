@@ -286,6 +286,33 @@ def test_gripper_instruction_does_not_name_motion_complexity_mechanisms():
     assert "sign" not in instruction.text
 
 
+def test_continuous_motion_instruction_explains_clipping_and_linear_scale():
+    interface = ControlInterfaceConfig(
+        mode="eef_delta_pose",
+        active_dimensions=("dx", "dy", "dz"),
+        channel_kind="continuous",
+        channel_minimum=-30.0,
+        channel_maximum=30.0,
+    )
+    action_space = ActionSpace.from_config(interface.to_action_space_config())
+
+    instruction = ControlInstructionBuilder().build(
+        {**interface.metadata(), "source": "control_interface"},
+        action_space.schema(),
+    )
+
+    assert "any finite numeric value" in instruction.text
+    assert "Values outside [-30, 30] are clipped" in instruction.text
+    assert "value of 1 requests one configured default motion step" in instruction.text
+    assert "scale the requested motion linearly" in instruction.text
+    assert "executed as bounded internal substeps" in instruction.text
+    assert (
+        "If an increment is too small to produce a visually distinguishable "
+        "change, increase that motion value's magnitude in a later action."
+        in instruction.text
+    )
+
+
 def test_episode_agent_context_controller_metadata_is_public_only():
     config = load_config(
         "configs/pusher_delta_eef.yaml",

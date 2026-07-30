@@ -9,8 +9,8 @@ SimplerEnv is integrated as an optional real-to-sim/VLA evaluation backend. The 
 - Controller: `control/simpler_env.py`
 - Task wrapper: `tasks/simpler_env_task.py`
 - Example config: `configs/simpler_env_google_robot_pick_coke_can.yaml`
-- MLLM baseline: `configs/simpler_env_google_robot_pick_coke_can_mllm_reflection.yaml`
-- MLLM perturbation: `configs/simpler_env_google_robot_pick_coke_can_mllm_reflection_perturbed.yaml`
+- MLLM baseline: `configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions.yaml`
+- MLLM perturbation: `configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions_perturbed.yaml`
 - uv backend: `simpler-env`
 
 ## Dependency
@@ -189,7 +189,7 @@ action, seed, or sampled mapping/frame-transform parameters.
 ## MLLM Evaluation
 
 Both MLLM configurations use the shared `MLLMPolicy` and `SimAdapter` path,
-OpenAI-compatible Chat Completions, `action_with_reflection`,
+OpenAI-compatible Chat Completions with optional Reflection,
 `reasoning_effort=low`, three historical RGB steps, and complete public action
 history. Video logging is disabled by default. Both set
 `task.params.reject_initial_success: true`; if the public evaluator reports

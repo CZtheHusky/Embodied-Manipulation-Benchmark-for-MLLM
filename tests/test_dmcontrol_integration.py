@@ -35,8 +35,8 @@ from mllm_teleop_benchmark.ui.runtime import (
     sim_adapter_worker_entry,
 )
 
-BASELINE_MLLM_CONFIG = "configs/dmcontrol_manipulator_bring_ball_mllm.yaml"
-PERTURBED_MLLM_CONFIG = "configs/dmcontrol_manipulator_bring_ball_mllm_perturbed.yaml"
+BASELINE_MLLM_CONFIG = "configs/dmcontrol_manipulator_bring_ball_mllm_chat_completions.yaml"
+PERTURBED_MLLM_CONFIG = "configs/dmcontrol_manipulator_bring_ball_mllm_chat_completions_perturbed.yaml"
 
 
 class FakeDMControlClient:
@@ -244,14 +244,21 @@ def test_dmcontrol_mllm_config_is_planar_eef_not_native_motor_aliases(
         "gripper": 1.0,
     }
     assert tuple(schema) == ("joystick_0", "joystick_1", "joystick_2")
-    assert schema["joystick_0"]["values"] == [-1.0, 0.0, 1.0]
-    assert schema["joystick_1"]["values"] == [-1.0, 0.0, 1.0]
+    assert schema["joystick_0"] == {
+        "kind": "continuous",
+        "min": -30.0,
+        "max": 30.0,
+    }
+    assert schema["joystick_1"] == {
+        "kind": "continuous",
+        "min": -30.0,
+        "max": 30.0,
+    }
     assert schema["joystick_2"] == {
         "kind": "continuous",
         "min": 0.0,
         "max": 1.0,
     }
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -666,7 +673,7 @@ def test_dmcontrol_mllm_fake_client_preserves_history_rgb_and_privacy(
     run_dir = episode_dir.parent
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["model"]["api"] == "chat_completions"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
+    assert "action_output_mode" not in manifest["model"]
     assert manifest["model"]["reasoning_effort"] == "low"
     assert manifest["history"]["image_window"] == 3
     assert manifest["history"]["action_window"] == "all"

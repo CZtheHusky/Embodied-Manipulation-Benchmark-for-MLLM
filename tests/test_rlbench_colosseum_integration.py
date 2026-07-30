@@ -34,13 +34,13 @@ from mllm_teleop_benchmark.sim.rlbench.observation import RLBenchObservationProv
 ROOT = Path(__file__).resolve().parents[1]
 MLLM_CONFIGS = (
     (
-        "configs/rlbench_reach_target_mllm_reflection.yaml",
+        "configs/rlbench_reach_target_mllm_chat_completions.yaml",
         "fixed",
         "identity",
         True,
     ),
     (
-        "configs/rlbench_reach_target_mllm_reflection_perturbed.yaml",
+        "configs/rlbench_reach_target_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
         False,
@@ -162,8 +162,8 @@ def test_rlbench_configs_use_worker_play_runtime():
     for config_path in (
         "configs/rlbench_reach_target_delta_eef.yaml",
         "configs/rlbench_reach_target_delta_eef_smoke.yaml",
-        "configs/rlbench_reach_target_mllm_reflection.yaml",
-        "configs/rlbench_reach_target_mllm_reflection_perturbed.yaml",
+        "configs/rlbench_reach_target_mllm_chat_completions.yaml",
+        "configs/rlbench_reach_target_mllm_chat_completions_perturbed.yaml",
     ):
         config = load_config(config_path)
 
@@ -221,7 +221,6 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
         assert "delta expressed in the RLBench world Cartesian" in frame_description
         assert "without another transform or sign compensation" in frame_description
     assert config.controller.scales == {"dx": 0.01, "dy": 0.01, "dz": 0.01}
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -232,14 +231,14 @@ def test_rlbench_mllm_configs_are_explicit_and_switchable(
     assert tuple(schema) == ("joystick_0", "joystick_1", "joystick_2")
     assert all(
         schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(3)
     )
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v4" in group
-    assert "output-action_with_reflection" in group
+    assert "prompt-mllm_joystick_chat_completions_v6" in group
+    assert "__output-" not in group
     if visible:
         assert "__mapping-" not in group
         assert "__frame-" not in group
@@ -260,7 +259,7 @@ def test_rlbench_mllm_conditions_use_identical_task_text():
 
 
 def test_rlbench_task_projects_public_reset_description_into_instruction():
-    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    config = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     task = build_task(config)
 
     class StubSim:
@@ -288,7 +287,7 @@ def test_rlbench_task_projects_public_reset_description_into_instruction():
 
 
 def test_rlbench_task_rejects_missing_public_reset_description():
-    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    config = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     task = build_task(config)
 
     class StubSim:
@@ -303,7 +302,7 @@ def test_rlbench_task_rejects_missing_public_reset_description():
 
 
 def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
-    baseline = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    baseline = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     baseline_prompt = ControlInstructionBuilder().build(
         control_interface_metadata(baseline, baseline.benchmark.seed),
         build_action_space(baseline).schema(),
@@ -331,7 +330,7 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     perturbed = load_config(
-        "configs/rlbench_reach_target_mllm_reflection_perturbed.yaml"
+        "configs/rlbench_reach_target_mllm_chat_completions_perturbed.yaml"
     )
     metadata = control_interface_metadata(perturbed, perturbed.benchmark.seed)
     perturbed_prompt = ControlInstructionBuilder().build(
@@ -367,7 +366,7 @@ def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
 
 def test_rlbench_perturbation_only_changes_translation_channels():
     config = load_config(
-        "configs/rlbench_reach_target_mllm_reflection_perturbed.yaml"
+        "configs/rlbench_reach_target_mllm_chat_completions_perturbed.yaml"
     )
     mapping = build_mapping(config, config.benchmark.seed)
     controller = build_controller(config, mapping, config.benchmark.seed)
@@ -410,7 +409,7 @@ def test_rlbench_delta_eef_controller_maps_delta_position_and_default_gripper():
 
 
 def test_rlbench_mllm_baseline_control_output_canary_uses_latest_absolute_pose():
-    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    config = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     controller = build_controller(
         config,
         build_mapping(config, config.benchmark.seed),
@@ -543,7 +542,7 @@ def test_rlbench_reset_seeds_upstream_numpy_without_leaking_global_rng_state():
 
 
 def test_rlbench_reset_uses_native_success_oracle_after_reset():
-    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    config = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     adapter = RLBenchSimAdapter(config.simulator)
     task_environment = DeterministicTaskEnvironmentStub(
         initial_success=False,
@@ -559,7 +558,7 @@ def test_rlbench_reset_uses_native_success_oracle_after_reset():
 
 
 def test_rlbench_rejects_native_initial_success_without_taking_an_action():
-    config = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    config = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     adapter = RLBenchSimAdapter(config.simulator)
     task_environment = DeterministicTaskEnvironmentStub(
         initial_success=True,
@@ -599,9 +598,9 @@ def test_rlbench_reset_fails_loud_when_native_success_oracle_is_unavailable():
 
 
 def test_rlbench_mllm_baseline_and_perturbed_same_seed_reset_pair_with_stub():
-    baseline = load_config("configs/rlbench_reach_target_mllm_reflection.yaml")
+    baseline = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     perturbed = load_config(
-        "configs/rlbench_reach_target_mllm_reflection_perturbed.yaml"
+        "configs/rlbench_reach_target_mllm_chat_completions_perturbed.yaml"
     )
 
     assert baseline.benchmark.seed == perturbed.benchmark.seed
@@ -903,7 +902,7 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
     assert "Task: reach the " in request_text
     assert " target\nControl:" in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
@@ -981,8 +980,8 @@ def test_rlbench_fake_client_closes_four_step_public_rgb_loop(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
     assert manifest["observation"]["cameras"] == ["front"]
     assert manifest["history"] == {
         "action_window": "all",

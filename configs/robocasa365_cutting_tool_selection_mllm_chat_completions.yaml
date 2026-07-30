@@ -1,23 +1,28 @@
 benchmark:
-  name: robocasa_pick_place_counter_to_cabinet_mllm_reflection_v0
-  num_episodes: 1
+  name: robocasa365_cutting_tool_selection_mllm_chat_completions_v0
+  num_episodes: 10
   seed: 42
 
 simulator:
   type: robocasa
-  env_id: robocasa/PickPlaceCounterToCabinet
+  env_id: robocasa/CuttingToolSelection
   env_kwargs:
-    split: pretrain
+    split: target
+    obj_registries: [objaverse, lightwheel]
     camera_widths: 256
     camera_heights: 256
     randomize_cameras: false
+  params:
+    asset_revisions:
+      robocasa_assets: 1b92c3d02ca4354984fec961357db0bff7b32166
+      lightwheel: 420a04af939c34873e6839a586b70844baf28aab
 
 task:
   type: robocasa_generic
-  max_steps: 100
+  max_steps: 800
   success_threshold: 1.0
   params:
-    instruction: Pick the object from the counter and place it in the cabinet.
+    instruction: Place the appropriate cutting tool for the food on the cutting board.
     instruction_from_observation: true
     instruction_observation_key: annotation.human.task_description
     reject_initial_success: true
@@ -46,8 +51,9 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
   gripper: binary
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
   mapping_strategy: fixed
   visible_metadata: true
   mapping_visible_to_agent: true
@@ -92,7 +98,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible
@@ -124,7 +129,7 @@ agent:
     max_request_bytes: 67108864
 
 logging:
-  output_dir: outputs/robocasa_pick_place_counter_to_cabinet_mllm
+  output_dir: outputs/robocasa365_cutting_tool_selection_mllm
   save_images: false
   save_video: false
   video:
@@ -143,7 +148,7 @@ ui:
   window_height: 540
   info_panel_height: 190
   fps: 20
-  max_steps: 500
+  max_steps: 800
   step_when_idle: false
   simple_blit: true
   debug_frames: true

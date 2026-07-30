@@ -1,5 +1,5 @@
 benchmark:
-  name: maniskill_pickcube_delta_eef_mllm_fixed_v0
+  name: maniskill_pickcube_delta_eef_mllm_chat_completions_permuted_sign_flipped_random_rotation_3d_v0
   num_episodes: 1
   seed: 9
 
@@ -41,13 +41,14 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
   gripper: direct
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
-  mapping_strategy: fixed
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
+  mapping_strategy: permuted_sign_flipped
   visible_metadata: true
-  mapping_visible_to_agent: true
-  frame_transform: identity
-  frame_visible_to_agent: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_3d
+  frame_visible_to_agent: false
   control_frame_description: >-
     the Panda root/base frame, fixed and aligned with ManiSkill world axes:
     +x points from the robot base toward the table center, +y runs laterally
@@ -62,6 +63,8 @@ control_interface:
   gripper_closed_command: 1
   params:
     scale_mode: maniskill_normalized_pd_ee_delta_pose
+    frame_transform:
+      sampling: uniform_so3
 
 controller:
   type: maniskill_delta_eef
@@ -81,7 +84,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible
@@ -110,7 +112,7 @@ agent:
     max_request_bytes: 67108864
 
 logging:
-  output_dir: outputs/maniskill_pickcube_delta_eef_mllm_fixed
+  output_dir: outputs/maniskill_pickcube_delta_eef_mllm_chat_completions_perturbed
   save_images: false
   save_video: false
   video:

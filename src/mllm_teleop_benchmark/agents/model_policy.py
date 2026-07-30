@@ -13,8 +13,7 @@ from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, Agent
 from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_name
 
 
-PROMPT_VERSION = "mllm_joystick_v4"
-REFLECTION_PROMPT_VERSION = "mllm_joystick_reflection_v4"
+PROMPT_VERSION = "mllm_joystick_chat_completions_v6"
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
@@ -55,7 +54,7 @@ class MLLMPolicy(Agent):
         self.config = config
         self.client = client
         self.model_name = model_name
-        self.prompt_version = _prompt_version(config.action_output_mode)
+        self.prompt_version = PROMPT_VERSION
         self._image_cache: dict[tuple[int, str], EncodedImage] = {}
         self._previous_message_stream = b""
 
@@ -147,7 +146,6 @@ class MLLMPolicy(Agent):
             "api": self.config.model.api,
             "model": self.model_name,
             "reasoning_effort": self.config.model.reasoning_effort,
-            "action_output_mode": self.config.action_output_mode,
             "prompt_version": self.prompt_version,
         }
 
@@ -175,14 +173,13 @@ class MLLMPolicy(Agent):
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": _system_prompt(self.config.action_output_mode),
+                "content": _system_prompt(),
             },
             {
                 "role": "user",
                 "content": _static_instruction(
                     context,
                     self.prompt_version,
-                    self.config.action_output_mode,
                 ),
             },
         ]
@@ -206,7 +203,6 @@ class MLLMPolicy(Agent):
                         transition,
                         context.action_schema,
                         include_action=include_action,
-                        action_output_mode=self.config.action_output_mode,
                     ),
                 }
             )
@@ -375,36 +371,21 @@ class MLLMPolicy(Agent):
         )
 
 
-def _prompt_version(action_output_mode: str) -> str:
-    if action_output_mode == "action_only":
-        return PROMPT_VERSION
-    if action_output_mode == "action_with_reflection":
-        return REFLECTION_PROMPT_VERSION
-    raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
-
-
-def _system_prompt(action_output_mode: str = "action_only") -> str:
-    prompt = (
+def _system_prompt() -> str:
+    return (
         "You control a robot through a virtual joystick. "
         "Return exactly one JSON object and no prose outside that object. "
-        "Use the current observation and the permitted history only."
+        "Use the current observation and the permitted history only. "
+        "You may include the top-level string key Reflection. "
+        "When included, Reflection must concisely summarize your current "
+        "hypothesis about what each joystick channel controls, based only on "
+        "public observations and your own action history."
     )
-    if action_output_mode == "action_with_reflection":
-        return (
-            f"{prompt} You may include the top-level string key Reflection. "
-            "When included, Reflection must concisely summarize your current "
-            "hypothesis about what each joystick channel controls, based only on "
-            "public observations and your own action history."
-        )
-    if action_output_mode != "action_only":
-        raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
-    return prompt
 
 
 def _static_instruction(
     context: AgentContext,
     prompt_version: str = PROMPT_VERSION,
-    action_output_mode: str = "action_only",
 ) -> str:
     control = ControlInstructionBuilder().build(
         context.metadata.get("control_interface", {}),
@@ -412,29 +393,21 @@ def _static_instruction(
     )
     schema = json.dumps(context.action_schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
     example_payload: dict[str, Any] = {
-        "channels": {name: 0 for name in context.action_schema}
-    }
-    if action_output_mode == "action_with_reflection":
-        example_payload["Reflection"] = (
+        "channels": {name: 0 for name in context.action_schema},
+        "Reflection": (
             "joystick_0 appears to control ...; joystick_1 appears to control ..."
-        )
-    elif action_output_mode != "action_only":
-        raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
+        ),
+    }
     example = json.dumps(
         example_payload,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
     )
-    if action_output_mode == "action_with_reflection":
-        format_requirement = (
-            "The only permitted top-level keys are channels and the optional "
-            "case-sensitive string key Reflection. "
-        )
-    else:
-        format_requirement = (
-            "The object must contain only the top-level key channels. "
-        )
+    format_requirement = (
+        "The only permitted top-level keys are channels and the optional "
+        "case-sensitive string key Reflection. "
+    )
     return (
         f"Prompt version: {prompt_version}.\n"
         f"Task: {context.task_instruction}\n"
@@ -450,16 +423,12 @@ def _history_action(
     action_schema: dict[str, Any],
     *,
     include_action: bool,
-    action_output_mode: str = "action_only",
 ) -> str:
     if not include_action:
         return ACTION_OMITTED
     if transition.validation.is_valid and transition.parsed_action is not None:
         payload: dict[str, Any] = {"channels": transition.parsed_action}
-        if (
-            action_output_mode == "action_with_reflection"
-            and transition.reflection is not None
-        ):
+        if transition.reflection is not None:
             payload["Reflection"] = transition.reflection
     else:
         status = (
@@ -471,8 +440,6 @@ def _history_action(
             "channels": {name: 0 for name in action_schema},
             "status": status,
         }
-    if action_output_mode not in {"action_only", "action_with_reflection"}:
-        raise ValueError(f"Unsupported agent.action_output_mode: {action_output_mode}")
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 

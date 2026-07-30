@@ -64,11 +64,17 @@ class FakeClient:
         )
 
 
-def _config(tmp_path, image_window, action_output_mode="action_only"):
+def _config(tmp_path, image_window):
     config = load_config("configs/dummy_reach.yaml")
+    control_interface = replace(
+        config.control_interface,
+        channel_kind="continuous",
+        channel_values=(),
+        channel_minimum=-30.0,
+        channel_maximum=30.0,
+    )
     agent = AgentConfig(
         type="mllm",
-        action_output_mode=action_output_mode,
         invalid_action_recovery="noop",
         model=ModelConfig(
             name="fake-model",
@@ -88,6 +94,8 @@ def _config(tmp_path, image_window, action_output_mode="action_only"):
         config,
         benchmark=replace(config.benchmark, num_episodes=1),
         task=replace(config.task, max_steps=3),
+        action_space=control_interface.to_action_space_config(),
+        control_interface=control_interface,
         agent=agent,
         logging=replace(config.logging, output_dir=tmp_path),
     )
@@ -174,7 +182,7 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert (
         group_dir.name
         == f"model-fake-model__reasoning-default__api-chat_completions"
-        f"__prompt-mllm_joystick_v4"
+        f"__prompt-mllm_joystick_chat_completions_v6"
         f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
     )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
@@ -211,7 +219,7 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
 
     assert make_experiment_group(config) == (
         "model-fake-model__reasoning-default__api-chat_completions"
-        "__prompt-mllm_joystick_v4"
+        "__prompt-mllm_joystick_chat_completions_v6"
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
@@ -231,7 +239,6 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         _config(
             tmp_path,
             3,
-            action_output_mode="action_with_reflection",
         ),
         client,
     )
@@ -258,11 +265,10 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         "joystick_0 may control horizontal motion"
     )
     run_dir = episode_dir.parent
-    assert "__prompt-mllm_joystick_reflection_v4__" in run_dir.parent.name
-    assert run_dir.parent.name.endswith("__output-action_with_reflection")
+    assert "__prompt-mllm_joystick_chat_completions_v6__" in run_dir.parent.name
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
 
 
 def test_responses_experiment_group_records_prompt_version(tmp_path):
@@ -278,7 +284,7 @@ def test_responses_experiment_group_records_prompt_version(tmp_path):
     group = make_experiment_group(config)
 
     assert group is not None
-    assert "__api-responses__prompt-mllm_joystick_responses_v4__history-full__" in group
+    assert "__api-responses__prompt-mllm_joystick_responses_v6__history-full__" in group
 
 
 def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):
@@ -321,6 +327,130 @@ def test_invalid_model_json_executes_noop_without_extra_api_request(monkeypatch,
     assert episode.metrics["model_api_error_count"] == 0
     assert [action.gripper for action in sim_actions] == [0.5, 0.5, 0.5]
     assert all(action.delta_position == (0.0, 0.0, 0.0) for action in sim_actions)
+
+
+def test_model_motion_is_clipped_then_scaled_by_the_default_unit(
+    monkeypatch,
+    tmp_path,
+):
+    response = (
+        '{"channels":{"joystick_0":45,"joystick_1":-12.5,'
+        '"joystick_2":0,"joystick_3":2.5,"joystick_4":0,'
+        '"joystick_5":-45,"joystick_6":0.5}}'
+    )
+    sim_actions = _capture_dummy_actions(monkeypatch)
+    config = _config(tmp_path, 0)
+    config = replace(
+        config,
+        task=replace(config.task, max_steps=1),
+    )
+    episode = _run_with_fake(
+        monkeypatch,
+        config,
+        FakeClient(response_text=response),
+    )
+
+    assert len(sim_actions) == 30
+    assert episode.metrics["simulator_steps"] == 30
+    assert tuple(
+        sum(action.delta_position[index] for action in sim_actions)
+        for index in range(3)
+    ) == pytest.approx((0.3, -0.125, 0.0))
+    assert tuple(
+        sum(action.delta_rotation_rpy[index] for action in sim_actions)
+        for index in range(3)
+    ) == pytest.approx(
+        (0.07853981633974475, 0.0, -0.9424777960769379)
+    )
+    assert all(action.gripper == 0.5 for action in sim_actions)
+
+    trajectory = [
+        json.loads(line)
+        for line in (
+            Path(episode.log_dir) / "trajectory.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+    ]
+    assert '"joystick_0":45' in trajectory[0]["raw_action"]
+    assert trajectory[0]["parsed_action"]["joystick_0"] == 30.0
+    assert trajectory[0]["parsed_action"]["joystick_1"] == -12.5
+    assert trajectory[0]["parsed_action"]["joystick_5"] == -30.0
+    assert trajectory[0]["sim_action"]["metadata"] == {
+        "execution": "linear_motion_substeps",
+        "substep_count": 30,
+    }
+    assert len(trajectory[0]["sim_action"]["actions"]) == 30
+
+
+def test_model_motion_substeps_stop_when_task_succeeds(
+    monkeypatch,
+    tmp_path,
+):
+    response = (
+        '{"channels":{"joystick_0":30,"joystick_1":0,'
+        '"joystick_2":0,"joystick_3":0,"joystick_4":0,'
+        '"joystick_5":0,"joystick_6":0.5}}'
+    )
+    config = _config(tmp_path, 0)
+    config = replace(
+        config,
+        task=replace(
+            config.task,
+            max_steps=1,
+            target_position=(0.02, 0.0, 0.2),
+            success_threshold=1e-6,
+        ),
+    )
+    sim_actions = _capture_dummy_actions(monkeypatch)
+
+    episode = _run_with_fake(
+        monkeypatch,
+        config,
+        FakeClient(response_text=response),
+    )
+
+    assert episode.success is True
+    assert episode.termination_reason == "success"
+    assert len(sim_actions) == 2
+    assert episode.metrics["simulator_steps"] == 2
+    assert sum(action.delta_position[0] for action in sim_actions) == pytest.approx(
+        0.02
+    )
+
+
+def test_model_motion_substeps_stop_on_native_action_rejection(
+    monkeypatch,
+    tmp_path,
+):
+    response = (
+        '{"channels":{"joystick_0":30,"joystick_1":0,'
+        '"joystick_2":0,"joystick_3":0,"joystick_4":0,'
+        '"joystick_5":0,"joystick_6":0.5}}'
+    )
+    config = _config(tmp_path, 0)
+    config = replace(
+        config,
+        task=replace(config.task, max_steps=1),
+    )
+    original_step = DummySimAdapter.step
+    sim_actions = []
+
+    def rejected_step(sim, action):
+        sim_actions.append(action)
+        result = original_step(sim, action)
+        return replace(
+            result,
+            info={**result.info, "action_rejected": True},
+        )
+
+    monkeypatch.setattr(DummySimAdapter, "step", rejected_step)
+
+    _run_with_fake(
+        monkeypatch,
+        config,
+        FakeClient(response_text=response),
+    )
+
+    assert len(sim_actions) == 1
 
 
 def test_invalid_model_action_preserves_last_binary_gripper_command(

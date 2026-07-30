@@ -18,8 +18,8 @@ env = gym.make("Meta-World/MT1", env_name="reach-v3", seed=seed)
 - Controller: `control/metaworld.py`
 - Task wrapper: `tasks/metaworld_task.py`
 - Example config: `configs/metaworld_reach.yaml`
-- MLLM baseline: `configs/metaworld_reach_mllm_reflection.yaml`
-- MLLM perturbed: `configs/metaworld_reach_mllm_reflection_perturbed.yaml`
+- MLLM baseline: `configs/metaworld_reach_mllm_chat_completions.yaml`
+- MLLM perturbed: `configs/metaworld_reach_mllm_chat_completions_perturbed.yaml`
 
 ## Dependency
 
@@ -59,7 +59,7 @@ that fixed camera is below the work surface in this Meta-World model.
 
 Both MLLM configurations use the shared `MLLMPolicy` and `SimAdapter`; there is
 no Meta-World-specific agent. They use OpenAI-compatible Chat Completions,
-`action_with_reflection`, `reasoning_effort: low`, three historical RGB frames,
+`chat_completions` with optional Reflection, `reasoning_effort: low`, three historical RGB frames,
 and all prior normalized action text. Review video is disabled by default and
 can be enabled by the real evaluation command.
 
@@ -85,11 +85,11 @@ file or process environment and explicitly enable video:
 ```bash
 python3 scripts/manage_uv_env.py run metaworld -- \
   python scripts/run_benchmark.py \
-  --config configs/metaworld_reach_mllm_reflection.yaml \
+  --config configs/metaworld_reach_mllm_chat_completions.yaml \
   --set logging.save_video=true
 ```
 
-Use `configs/metaworld_reach_mllm_reflection_perturbed.yaml` for the hidden
+Use `configs/metaworld_reach_mllm_chat_completions_perturbed.yaml` for the hidden
 mapping and random 3D control-frame condition.
 
 ## Running

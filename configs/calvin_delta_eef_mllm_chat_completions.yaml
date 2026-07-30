@@ -1,5 +1,5 @@
 benchmark:
-  name: calvin_delta_eef_mllm_reflection_v0
+  name: calvin_delta_eef_mllm_chat_completions_v0
   num_episodes: 10
   seed: 42
 
@@ -43,8 +43,9 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
   gripper: direct
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
   mapping_strategy: fixed
   visible_metadata: true
   mapping_visible_to_agent: true
@@ -84,7 +85,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible

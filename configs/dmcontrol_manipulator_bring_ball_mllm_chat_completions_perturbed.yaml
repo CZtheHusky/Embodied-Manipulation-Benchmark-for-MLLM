@@ -1,5 +1,5 @@
 benchmark:
-  name: dmcontrol_manipulator_bring_ball_mllm_fixed_identity_v1
+  name: dmcontrol_manipulator_bring_ball_mllm_chat_completions_permuted_sign_flipped_random_rotation_2d_v1
   num_episodes: 1
   seed: 12
 
@@ -40,25 +40,27 @@ control_interface:
   mode: planar_eef_delta_gripper
   active_dimensions: [dx, dy]
   gripper: effort
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
-  mapping_strategy: fixed
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
+  mapping_strategy: permuted_sign_flipped
   visible_metadata: true
-  mapping_visible_to_agent: true
-  frame_transform: identity
-  frame_visible_to_agent: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_2d
+  frame_visible_to_agent: false
   control_frame_description: >-
     the 2D MuJoCo world x-z plane; only dx and dy are active and there is no dz
-    or rotation command. A mapped magnitude-1 command requests a 0.01 m
-    Cartesian target displacement. In the fixed camera world +x projects toward
-    image right and world +z projects toward image up. The hand camera tracks
-    the moving hand, so the fixed camera's image-axis relation must not be
-    applied to the hand view
+    or rotation command: before the hidden episode-fixed planar transform,
+    mapped magnitude 1 requests a 0.01 m Cartesian target displacement. In the
+    fixed camera world +x projects toward image right and world +z projects
+    toward image up. The hand camera tracks the moving hand, so the fixed
+    camera's image-axis relation must not be applied to the hand view
   dimension_semantics_description: >-
-    dx denotes end-effector translation along world x and dy denotes
-    end-effector translation along world z. A positive mapped value commands
-    the positive world direction, a negative value commands the opposite
-    direction, and zero commands no position change
+    Before the hidden episode-fixed planar transform, dx denotes end-effector
+    translation along world x and dy denotes end-effector translation along
+    world z. A positive mapped value commands the positive pre-transform
+    direction, a negative value commands the opposite direction, and zero
+    commands no position change
   gripper_semantics_description: >-
     For the final gripper joystick, 0 commands sustained opening effort, 0.5 is
     neutral zero effort and does not hold the aperture, and 1 commands sustained
@@ -69,6 +71,8 @@ control_interface:
   gripper_neutral_command: 0.5
   params:
     scale_mode: dmcontrol_world_xz_cartesian_impedance_target_0_01m
+    frame_transform:
+      angle_range_degrees: [-180, 180]
 
 controller:
   type: dmcontrol_planar_eef
@@ -81,7 +85,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible
@@ -110,7 +113,7 @@ agent:
     max_request_bytes: 67108864
 
 logging:
-  output_dir: outputs/dmcontrol_manipulator_bring_ball_mllm
+  output_dir: outputs/dmcontrol_manipulator_bring_ball_mllm_chat_completions
   save_images: false
   save_video: false
   video:

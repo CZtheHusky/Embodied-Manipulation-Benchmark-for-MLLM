@@ -73,15 +73,22 @@ class FakeAdapter:
         )
 
 
-def _restricted_closebox_config(*, max_steps=100, scales=None):
+def _restricted_closebox_config(
+    *,
+    max_steps=100,
+    scales=None,
+    continuous=False,
+):
     return SimpleNamespace(
         simulator=SimpleNamespace(type="colosseum"),
         task=SimpleNamespace(max_steps=max_steps),
         control_interface=SimpleNamespace(
             active_dimensions=("dx", "dy", "dz"),
             gripper="none",
-            channel_kind="discrete",
+            channel_kind="continuous" if continuous else "discrete",
             channel_values=(-1.0, 0.0, 1.0),
+            channel_minimum=-30.0 if continuous else None,
+            channel_maximum=30.0 if continuous else None,
             mapping_strategy="fixed",
             frame_transform="identity",
         ),
@@ -487,6 +494,22 @@ def test_closebox_scripted_success_uses_only_restricted_benchmark_actions():
     assert report["guessed_pose_script_executed"] is False
     assert report["action_contract"]["action_budget"] == 100
     assert "waypoint_positions" not in report
+
+
+def test_closebox_scripted_success_accepts_model_continuous_action_schema():
+    sim = FakeRestrictedCloseBoxSim(reject_first=True)
+
+    report = run_close_box_scripted_success_canary(
+        sim,
+        _restricted_closebox_config(continuous=True),
+        seed=11,
+    )
+
+    assert report["status"] == "pass"
+    assert all(
+        set(action.delta_position).issubset({-0.01, 0.0, 0.01})
+        for action in sim.actions
+    )
 
 
 def test_closebox_scripted_success_exhaustion_reports_planning_rejections():

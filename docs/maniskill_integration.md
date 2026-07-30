@@ -10,8 +10,8 @@ ManiSkill is integrated as an optional backend. The benchmark does not fork or m
 - Task wrapper: `tasks/maniskill.py`
 - Human play UI: `ui/human_player.py` with `ui.runtime: sim_adapter_worker`
 - Example config: `configs/maniskill_pickcube_delta_eef.yaml`
-- Fixed MLLM config: `configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml`
-- Perturbed MLLM config: `configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml`
+- Fixed MLLM config: `configs/maniskill_pickcube_delta_eef_mllm_chat_completions_fixed.yaml`
+- Perturbed MLLM config: `configs/maniskill_pickcube_delta_eef_mllm_chat_completions_perturbed.yaml`
 
 ## Dependency
 
@@ -87,11 +87,11 @@ PickCube has two standalone MLLM configurations:
 
 | Configuration | Mapping | Control frame | Model-visible rule |
 | --- | --- | --- | --- |
-| `configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml` | `fixed` | `identity` | The exact ordered mapping and the identity-frame rule are public. |
-| `configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_3d` | The permutation/sign and 3D-frame rules are public, but their episode realization is hidden. |
+| `configs/maniskill_pickcube_delta_eef_mllm_chat_completions_fixed.yaml` | `fixed` | `identity` | The exact ordered mapping and the identity-frame rule are public. |
+| `configs/maniskill_pickcube_delta_eef_mllm_chat_completions_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_3d` | The permutation/sign and 3D-frame rules are public, but their episode realization is hidden. |
 
 Both use the OpenAI-compatible Chat Completions API,
-`action_with_reflection`, `image_window: 3`, and `action_window: all`. They
+`chat_completions` with optional Reflection, `image_window: 3`, and `action_window: all`. They
 send the official `render_camera` RGB stream. ManiSkill sensor observations
 intentionally hide the green PickCube goal site, so the benchmark uses the
 human render camera where both the red cube and green goal marker are public.
@@ -100,13 +100,13 @@ seeds `9` through `18`, which are verified to be non-successful immediately
 after reset. `task.params.reject_initial_success: true` fails before the first
 model request if a future seed is already successful instead of counting a
 zero-step episode as model success. The discarded seed-7 batch is preserved
-under `outputs/maniskill_pickcube_delta_eef_mllm_fixed/invalid/initial-success/`
+under `outputs/maniskill_pickcube_delta_eef_mllm_chat_completions_fixed/invalid/initial-success/`
 because its seed-8 episode started with the cube already placed.
 Select either YAML directly:
 
 ```bash
-python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_fixed.yaml
-python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_perturbed.yaml
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_chat_completions_fixed.yaml
+python3 scripts/manage_uv_env.py run maniskill-cpu -- python scripts/run_benchmark.py --config configs/maniskill_pickcube_delta_eef_mllm_chat_completions_perturbed.yaml
 ```
 
 The model request is a strict projection containing only the task

@@ -228,6 +228,16 @@ def _set_rlbench_action_evidence(
     )
 
 
+def _compound_sim_action(action, count=2):
+    return {
+        "actions": [action for _ in range(count)],
+        "metadata": {
+            "execution": "linear_motion_substeps",
+            "substep_count": count,
+        },
+    }
+
+
 def _set_robocasa_action_evidence(
     run_dir: Path,
     *,
@@ -635,6 +645,32 @@ def test_all_rejected_rlbench_actions_fail_without_counting_invalid_evidence(
     assert "episode_all_simulator_actions_rejected" in {
         item["code"] for item in report["anomalies"]
     }
+
+
+def test_rlbench_action_audit_accepts_replayable_compound_substeps(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, "rlbench")
+    _set_rlbench_action_evidence(
+        run_dir,
+        sim_action=_compound_sim_action(
+            {
+                "delta_position": [0.01, 0.0, 0.0],
+                "delta_rotation_rpy": [0.0, 0.0, 0.0],
+                "gripper": 1.0,
+                "metadata": {"controller": "rlbench_delta_eef"},
+            },
+            count=30,
+        ),
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "pass"
+    assert report["checks"]["native_actions"]["invalid_steps"] == 0
 
 
 def test_image_tampering_black_screen_and_secret_leaks_fail(

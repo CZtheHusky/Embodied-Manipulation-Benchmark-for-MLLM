@@ -17,10 +17,10 @@ Implemented in this repository:
 - Colosseum config:
   `configs/colosseum_close_box_manip_obj_color_smoke.yaml`
 - MLLM configs:
-  - `configs/rlbench_reach_target_mllm_reflection.yaml`
-  - `configs/rlbench_reach_target_mllm_reflection_perturbed.yaml`
-  - `configs/colosseum_close_box_mllm_reflection.yaml`
-  - `configs/colosseum_close_box_mllm_reflection_perturbed.yaml`
+  - `configs/rlbench_reach_target_mllm_chat_completions.yaml`
+  - `configs/rlbench_reach_target_mllm_chat_completions_perturbed.yaml`
+  - `configs/colosseum_close_box_mllm_chat_completions.yaml`
+  - `configs/colosseum_close_box_mllm_chat_completions_perturbed.yaml`
 - Miniconda fallback backends: `rlbench`, `colosseum`
 
 The Colosseum route uses official `EnvironmentExt`, task `close_box`, and
@@ -275,7 +275,7 @@ description, for example:
 reach the red target
 ```
 
-They use `action_with_reflection`, OpenAI-compatible Chat Completions, reasoning
+They use the `chat_completions` backend with optional Reflection, reasoning
 effort `low`, three historical image turns, all textual action history, and the
 public `front` RGB camera. The public control surface contains only `dx`, `dy`,
 and `dz`; it does not expose rotation or gripper channels because `ReachTarget`
@@ -347,7 +347,7 @@ Run the common 10-seed reset canary in the matching pinned environment:
 ```bash
 python3 scripts/manage_conda_env.py run rlbench -- \
   python scripts/preflight_coppeliasim.py reset-canary \
-  --config configs/rlbench_reach_target_mllm_reflection.yaml \
+  --config configs/rlbench_reach_target_mllm_chat_completions.yaml \
   --planning-delta 0.01 0 0 \
   --output outputs/preflight/rlbench_reach_target.json
 ```
@@ -355,7 +355,7 @@ python3 scripts/manage_conda_env.py run rlbench -- \
 ```bash
 python3 scripts/manage_conda_env.py run colosseum -- \
   python scripts/preflight_coppeliasim.py reset-canary \
-  --config configs/colosseum_close_box_mllm_reflection.yaml \
+  --config configs/colosseum_close_box_mllm_chat_completions.yaml \
   --planning-delta 0.01 0 0 \
   --output outputs/preflight/colosseum_close_box.json
 ```
@@ -393,15 +393,16 @@ report.
 ```bash
 python3 scripts/manage_conda_env.py run colosseum -- \
   python scripts/preflight_coppeliasim.py closebox-scripted-success \
-  --config configs/colosseum_close_box_mllm_reflection.yaml \
+  --config configs/colosseum_close_box_mllm_chat_completions.yaml \
   --output outputs/preflight/colosseum_close_box_scripted_success.json
 ```
 
 Every actual motion is sent through `sim.step(RLBenchAction)`. Before launch,
-the command requires the baseline config to expose exactly discrete
-`[dx, dy, dz]`, no gripper channel, fixed mapping, identity frame transform,
-equal `0.01`-meter controller scales, and `default_gripper: 1.0`. Each emitted
-translation component is therefore one of `-0.01`, `0`, or `0.01`;
+the command requires the baseline config to expose `[dx, dy, dz]` with either
+the exact discrete `{-1, 0, 1}` schema or a continuous range containing it, no
+gripper channel, fixed mapping, identity frame transform, equal `0.01`-meter
+controller scales, and `default_gripper: 1.0`. The canary itself still emits
+translation components only in `{-0.01, 0, 0.01}`;
 `delta_rotation_rpy` is always zero and the gripper is always open. The default
 action budget is `task.max_steps` (100 for the current config), and an explicit
 `--max-actions` override cannot exceed it.

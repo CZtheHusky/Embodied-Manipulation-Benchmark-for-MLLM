@@ -28,10 +28,10 @@ from mllm_teleop_benchmark.tasks.robocasa_task import RoboCasaGenericTask
 
 HUMAN_CONFIG = "configs/robocasa365_cutting_tool_selection.yaml"
 BASELINE_CONFIG = (
-    "configs/robocasa365_cutting_tool_selection_mllm_reflection.yaml"
+    "configs/robocasa365_cutting_tool_selection_mllm_chat_completions.yaml"
 )
 PERTURBED_CONFIG = (
-    "configs/robocasa365_cutting_tool_selection_mllm_reflection_perturbed.yaml"
+    "configs/robocasa365_cutting_tool_selection_mllm_chat_completions_perturbed.yaml"
 )
 MLLM_CONFIGS = (BASELINE_CONFIG, PERTURBED_CONFIG)
 PUBLIC_CAMERAS = (
@@ -158,8 +158,13 @@ def test_robocasa365_configs_load_with_exact_task_metadata(
     interface = config.control_interface
     assert interface.active_dimensions == ACTIVE_DIMENSIONS
     assert interface.gripper == "binary"
-    assert interface.channel_kind == "discrete"
-    assert interface.channel_values == (-1.0, 0.0, 1.0)
+    if agent_type == "mllm":
+        assert interface.channel_kind == "continuous"
+        assert interface.channel_minimum == -30.0
+        assert interface.channel_maximum == 30.0
+    else:
+        assert interface.channel_kind == "discrete"
+        assert interface.channel_values == (-1.0, 0.0, 1.0)
     assert interface.gripper_open_command == 0.0
     assert interface.gripper_hold_command is None
     assert interface.gripper_closed_command == 1.0
@@ -177,7 +182,6 @@ def test_robocasa365_configs_load_with_exact_task_metadata(
     assert config.controller.params == {"control_mode": 1.0}
 
     if agent_type == "mllm":
-        assert config.agent.action_output_mode == "action_with_reflection"
         assert config.agent.model is not None
         assert config.agent.model.api == "chat_completions"
         assert config.agent.model.reasoning_effort == "low"
@@ -195,7 +199,7 @@ def test_robocasa365_action_channels_and_native_base_contract_are_exact():
     )
     assert all(
         action_schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(6)
     )
     assert action_schema["joystick_6"] == {

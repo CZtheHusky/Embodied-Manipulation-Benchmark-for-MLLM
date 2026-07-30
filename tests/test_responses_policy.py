@@ -63,7 +63,10 @@ class RecordingResponsesClient(ModelClient):
         text = (
             "not-json"
             if outcome == "invalid"
-            else '{"channels":{"joystick_0":0,"joystick_1":1}}'
+            else (
+                '{"channels":{"joystick_0":0,"joystick_1":1},'
+                '"Reflection":"joystick_1 appears to move the fingertip"}'
+            )
         )
         raw = {
             "id": response_id,
@@ -143,6 +146,11 @@ def _transition(step_id, decision, *, valid=True):
         terminated=False,
         truncated=False,
         agent_trace=decision.trace,
+        reflection=(
+            "joystick_1 appears to move the fingertip"
+            if valid
+            else None
+        ),
     )
 
 
@@ -161,7 +169,8 @@ def test_responses_projection_excludes_privileged_state_and_uses_current_frame()
 
     decision = policy.act(_context(0))
 
-    assert PROMPT_VERSION == "mllm_joystick_responses_v4"
+    assert PROMPT_VERSION == "mllm_joystick_responses_v6"
+    assert policy.prompt_version == PROMPT_VERSION
     body = client.requests[0].encoded_body().decode("utf-8")
     assert "PRIVATE_TARGET" not in body
     assert "PRIVATE_DISTANCE" not in body
@@ -169,6 +178,8 @@ def test_responses_projection_excludes_privileged_state_and_uses_current_frame()
     assert client.requests[0].previous_response_id is None
     assert _image_count(client.requests[0]) == 1
     assert "JSON" in json.dumps(client.requests[0].input)
+    assert "optional case-sensitive string key Reflection" in client.requests[0].instructions
+    assert '"Reflection"' in decision.action
     assert decision.trace.api == "responses"
     assert decision.trace.response_id == "resp-1"
     assert decision.trace.previous_response_id is None
@@ -208,6 +219,7 @@ def test_missing_previous_response_rebuilds_full_public_history_without_stepping
     rebuilt_body = rebuilt_request.encoded_body().decode("utf-8")
     assert "Observation step 0" in rebuilt_body
     assert "Execution feedback for step 0" in rebuilt_body
+    assert "joystick_1 appears to move the fingertip" in rebuilt_body
     assert "Observation step 1" in rebuilt_body
     assert _image_count(rebuilt_request) == 2
     assert recovered.trace.status == "ok"

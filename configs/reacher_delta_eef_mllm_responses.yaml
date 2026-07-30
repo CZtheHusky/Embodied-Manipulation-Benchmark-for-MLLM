@@ -1,5 +1,5 @@
 benchmark:
-  name: reacher_delta_eef_mllm_reflection_v0
+  name: reacher_delta_eef_mllm_responses_v0
   num_episodes: 1
   seed: 7
 
@@ -40,8 +40,9 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy]
   gripper: none
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
   mapping_strategy: fixed
   visible_metadata: true
   mapping_visible_to_agent: true
@@ -62,11 +63,10 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible
-    api: chat_completions
+    api: responses
     name_env: MLLM_TELEOP_MODEL
     base_url_env: OPENAI_BASE_URL
     api_key_env: OPENAI_API_KEY
@@ -86,7 +86,7 @@ agent:
     image_max_side: 512
   history:
     action_window: all
-    image_window: 3
+    image_window: all
     max_images_per_request: 128
     max_request_bytes: 67108864
 

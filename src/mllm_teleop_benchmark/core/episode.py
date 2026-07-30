@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.action.parser import ActionParseError, ActionParser
 from mllm_teleop_benchmark.action.space import ActionSpace
@@ -8,7 +10,15 @@ from mllm_teleop_benchmark.agents.base import Agent, AgentContext
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
 from mllm_teleop_benchmark.core.registry import control_interface_metadata
-from mllm_teleop_benchmark.core.types import EpisodeResult, StepTransition, ValidationResult
+from mllm_teleop_benchmark.core.types import (
+    CompoundSimulatorAction,
+    EpisodeResult,
+    Observation,
+    SimulatorAction,
+    StepResult,
+    StepTransition,
+    ValidationResult,
+)
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
@@ -117,12 +127,14 @@ class EpisodeManager:
                 last_valid_action = parsed_action
             else:
                 action_to_execute = self._noop_joystick_action(last_valid_action)
-            sim_action = self.controller.translate(
-                action_to_execute
+            (
+                sim_action,
+                step_result,
+                next_observation,
+                success,
+            ) = self._execute_action(
+                action_to_execute,
             )
-            step_result = self.sim.step(sim_action)
-            next_observation = self.observation_provider.get_observation(self.sim)
-            success = self.task.is_success(next_observation, self.sim.get_state())
             reached_max_steps = len(history) + 1 >= self.config.task.max_steps
             truncated = reached_max_steps and not success
             transition = StepTransition(
@@ -187,7 +199,6 @@ class EpisodeManager:
             if self.config.agent.type == "mllm":
                 parsed_output = self.parser.parse_model_output(
                     raw_action,
-                    self.config.agent.action_output_mode,
                 )
                 parsed_action = parsed_output.action
                 reflection = parsed_output.reflection
@@ -200,10 +211,91 @@ class EpisodeManager:
                 ValidationResult(False, (str(exc),)),
                 None,
             )
+        if self.config.agent.type == "mllm":
+            motion_channel_count = len(
+                self.config.control_interface.active_dimensions
+            )
+            motion_channels = self.config.control_interface.channel_names()[
+                :motion_channel_count
+            ]
+            parsed_action = self.action_space.clip_continuous_channels(
+                parsed_action,
+                motion_channels,
+            )
         validation = self.validator.validate(parsed_action)
         if not validation.is_valid and self.config.agent.invalid_action_recovery != "noop":
             raise ValueError(f"Unsupported invalid action recovery: {self.config.agent.invalid_action_recovery}")
         return parsed_action, validation, reflection
+
+    def _execute_action(
+        self,
+        action: JoystickAction,
+    ) -> tuple[SimulatorAction, StepResult, Observation, bool]:
+        sim_actions: list[SimulatorAction] = []
+        step_result: StepResult | None = None
+        next_observation: Observation | None = None
+        success = False
+        for substep_action in self._execution_actions(action):
+            translated = self.controller.translate(substep_action)
+            sim_actions.append(translated)
+            step_result = self.sim.step(translated)
+            next_observation = self.observation_provider.get_observation(self.sim)
+            success = self.task.is_success(
+                next_observation,
+                self.sim.get_state(),
+            )
+            if (
+                success
+                or step_result.terminated
+                or step_result.truncated
+                or step_result.info.get("action_rejected") is True
+            ):
+                break
+
+        assert step_result is not None
+        assert next_observation is not None
+        if len(sim_actions) == 1:
+            logged_action = sim_actions[0]
+        else:
+            logged_action = CompoundSimulatorAction(
+                actions=tuple(sim_actions),
+                metadata={
+                    "execution": "linear_motion_substeps",
+                    "substep_count": len(sim_actions),
+                },
+            )
+        return logged_action, step_result, next_observation, success
+
+    def _execution_actions(
+        self,
+        action: JoystickAction,
+    ) -> tuple[JoystickAction, ...]:
+        if self.config.agent.type != "mllm":
+            return (action,)
+
+        motion_channel_count = len(
+            self.config.control_interface.active_dimensions
+        )
+        motion_channels = self.config.control_interface.channel_names()[
+            :motion_channel_count
+        ]
+        maximum_magnitude = max(
+            (
+                abs(action.channels.get(channel, 0.0))
+                for channel in motion_channels
+            ),
+            default=0.0,
+        )
+        substep_count = max(1, math.ceil(maximum_magnitude))
+        if substep_count == 1:
+            return (action,)
+
+        substep_values = dict(action.channels)
+        for channel in motion_channels:
+            if channel in substep_values:
+                substep_values[channel] /= substep_count
+        substep = JoystickAction(substep_values)
+        return (substep,) * substep_count
 
     def _noop_joystick_action(
         self,

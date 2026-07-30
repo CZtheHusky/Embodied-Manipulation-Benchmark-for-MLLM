@@ -20,8 +20,8 @@ The three configs are:
 | Config | Use | Control condition |
 | --- | --- | --- |
 | `configs/robocasa365_cutting_tool_selection.yaml` | Shared Pygame human play | `fixed + identity` |
-| `configs/robocasa365_cutting_tool_selection_mllm_reflection.yaml` | Chat Completions baseline | visible `fixed + identity` |
-| `configs/robocasa365_cutting_tool_selection_mllm_reflection_perturbed.yaml` | Chat Completions hidden-control condition | hidden `permuted_sign_flipped + random_rotation_3d` |
+| `configs/robocasa365_cutting_tool_selection_mllm_chat_completions.yaml` | Chat Completions baseline | visible `fixed + identity` |
+| `configs/robocasa365_cutting_tool_selection_mllm_chat_completions_perturbed.yaml` | Chat Completions hidden-control condition | hidden `permuted_sign_flipped + random_rotation_3d` |
 
 All three use:
 
@@ -40,7 +40,7 @@ All three use:
 
 Both MLLM conditions reject an environment that is already successful
 immediately after reset. They use the Chat Completions API, reasoning effort
-`low`, `action_with_reflection`, all action history, and three historical image
+`low`, `chat_completions` with optional Reflection, all action history, and three historical image
 steps.
 
 ## Control Contract
@@ -121,8 +121,8 @@ Example commands to run after those prerequisites are met:
 
 ```bash
 python3 scripts/manage_uv_env.py run robocasa -- python scripts/play_benchmark.py --config configs/robocasa365_cutting_tool_selection.yaml
-python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa365_cutting_tool_selection_mllm_reflection.yaml --set logging.save_video=true
-python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa365_cutting_tool_selection_mllm_reflection_perturbed.yaml --set logging.save_video=true
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa365_cutting_tool_selection_mllm_chat_completions.yaml --set logging.save_video=true
+python3 scripts/manage_uv_env.py run robocasa -- python scripts/run_benchmark.py --config configs/robocasa365_cutting_tool_selection_mllm_chat_completions_perturbed.yaml --set logging.save_video=true
 ```
 
 The upstream RoboCasa protocol randomly samples 50 scenarios for evaluation

@@ -636,7 +636,6 @@ class AgentHistoryConfig:
 @dataclass(frozen=True)
 class AgentConfig:
     type: str
-    action_output_mode: str = "action_only"
     invalid_action_recovery: str = "noop"
     history_window: int = 5
     model: ModelConfig | None = None
@@ -646,20 +645,13 @@ class AgentConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AgentConfig":
         agent_type = str(_require(data, "type"))
-        action_output_mode = str(data.get("action_output_mode", "action_only"))
         invalid_action_recovery = str(data.get("invalid_action_recovery", "noop"))
         history_window = int(data.get("history_window", 5))
-        if action_output_mode not in {
-            "action_only",
-            "action_with_reflection",
-        }:
+        if "action_output_mode" in data:
             raise ValueError(
-                "agent.action_output_mode must be one of: "
-                "action_only, action_with_reflection"
-            )
-        if agent_type != "mllm" and action_output_mode != "action_only":
-            raise ValueError(
-                "agent.action_output_mode=action_with_reflection requires agent.type=mllm"
+                "agent.action_output_mode has been removed; select the backend with "
+                "agent.model.api. Both chat_completions and responses accept optional "
+                "Reflection."
             )
         if invalid_action_recovery != "noop":
             raise ValueError("agent.invalid_action_recovery currently supports only: noop")
@@ -673,26 +665,12 @@ class AgentConfig:
                     "agent.model.api=responses retains the full provider-side conversation "
                     "and requires agent.history.action_window=all and image_window=all"
                 )
-        if action_output_mode == "action_with_reflection":
-            assert model is not None
-            if model.api != "chat_completions":
-                raise ValueError(
-                    "agent.action_output_mode=action_with_reflection requires "
-                    "agent.model.api=chat_completions"
-                )
-            if history.image_window != 3:
-                raise ValueError(
-                    "agent.action_output_mode=action_with_reflection requires "
-                    "agent.history.image_window=3"
-                )
-            if model.response_format != "json_object":
-                raise ValueError(
-                    "agent.action_output_mode=action_with_reflection requires "
-                    "agent.model.response_format=json_object"
-                )
+        if model is not None and model.response_format != "json_object":
+            raise ValueError(
+                "MLLM backends require agent.model.response_format=json_object"
+            )
         return cls(
             type=agent_type,
-            action_output_mode=action_output_mode,
             invalid_action_recovery=invalid_action_recovery,
             history_window=history_window,
             model=model,

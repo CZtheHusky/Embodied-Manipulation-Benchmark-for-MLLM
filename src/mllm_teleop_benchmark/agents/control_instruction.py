@@ -26,11 +26,12 @@ class ControlInstructionBuilder:
         frame_complexity = bool(interface.get("frame_complexity_present", False))
         mapping_summary = _mapping_summary(interface.get("mapping"))
         control_frame_description = str(interface.get("control_frame_description", "")).strip()
+        motion_channels = channels[: len(dimensions)]
 
         text_lines = [
             f"You control the robot with {len(channels)} virtual joystick channel(s).",
             f"The control mode is {mode}.",
-            "Each motion joystick value must be one of -1, 0, or 1.",
+            _motion_value_instruction(motion_channels, action_schema),
         ]
         panel_lines = [
             f"control mode: {mode}",
@@ -101,6 +102,41 @@ class ControlInstructionBuilder:
             panel_lines.append("gripper: none")
 
         return ControlInstruction(text=" ".join(text_lines), panel_lines=tuple(panel_lines))
+
+
+def _motion_value_instruction(
+    motion_channels: list[object],
+    action_schema: dict[str, Any],
+) -> str:
+    schemas = [
+        action_schema.get(str(channel))
+        for channel in motion_channels
+    ]
+    if schemas and all(
+        isinstance(schema, dict)
+        and schema.get("kind") == "continuous"
+        and schema.get("min") is not None
+        and schema.get("max") is not None
+        for schema in schemas
+    ):
+        ranges = {
+            (float(schema["min"]), float(schema["max"]))
+            for schema in schemas
+            if isinstance(schema, dict)
+        }
+        if len(ranges) == 1:
+            minimum, maximum = ranges.pop()
+            return (
+                "Each motion joystick accepts any finite numeric value. "
+                f"Values outside [{minimum:g}, {maximum:g}] are clipped to that "
+                "range before execution. A value of 1 requests one configured "
+                "default motion step; other values scale the requested motion "
+                "linearly. Magnitudes above 1 are executed as bounded internal "
+                "substeps before the next observation. If an increment is too "
+                "small to produce a visually distinguishable change, increase "
+                "that motion value's magnitude in a later action."
+            )
+    return "Each motion joystick value must satisfy the action schema."
 
 
 def _mapping_summary(mapping: object) -> str:

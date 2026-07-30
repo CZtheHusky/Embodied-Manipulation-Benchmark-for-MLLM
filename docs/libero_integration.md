@@ -7,8 +7,8 @@ LIBERO is added as an optional language-conditioned manipulation backend. The go
 Initial config:
 
 - `configs/libero_spatial_task0.yaml`
-- `configs/libero_spatial_task0_mllm_reflection.yaml`
-- `configs/libero_spatial_task0_mllm_reflection_perturbed.yaml`
+- `configs/libero_spatial_task0_mllm_chat_completions.yaml`
+- `configs/libero_spatial_task0_mllm_chat_completions_perturbed.yaml`
 - `simulator.type: libero`
 - `task.type: libero_generic`
 - `controller.type: libero_delta_eef`
@@ -118,7 +118,7 @@ pick up the black bowl between the plate and the ramekin and place it on the pla
 
 Both use:
 
-- `action_with_reflection`
+- `chat_completions` with optional Reflection
 - OpenAI-compatible Chat Completions
 - reasoning effort `low`
 - three historical image turns and all textual action history

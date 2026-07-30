@@ -35,13 +35,13 @@ from mllm_teleop_benchmark.ui.runtime import MujocoPlayerRuntimeHooks, hooks_for
 CONFIG_PATH = "configs/robocasa_pick_place_counter_to_cabinet.yaml"
 MLLM_CONFIGS = (
     (
-        "configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection.yaml",
+        "configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions.yaml",
         "fixed",
         "identity",
         True,
     ),
     (
-        "configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection_perturbed.yaml",
+        "configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
         False,
@@ -249,7 +249,6 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
         == "annotation.human.task_description"
     )
     assert config.task.params["reject_initial_success"] is True
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
@@ -334,7 +333,7 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert tuple(action_schema) == tuple(f"joystick_{index}" for index in range(7))
     assert all(
         action_schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(6)
     )
     assert action_schema["joystick_6"] == {
@@ -344,8 +343,8 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_reflection_v4" in group
-    assert "output-action_with_reflection" in group
+    assert "prompt-mllm_joystick_chat_completions_v6" in group
+    assert "__output-" not in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
         assert "frame-random_rotation_3d" not in group
@@ -367,7 +366,7 @@ def test_robocasa_mllm_conditions_use_identical_task_text():
 
 def test_robocasa_perturbation_keeps_gripper_direct_and_hidden():
     config = load_config(
-        "configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection_perturbed.yaml"
+        "configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions_perturbed.yaml"
     )
     mapping = build_mapping(config, config.benchmark.seed)
     controller = build_controller(config, mapping, config.benchmark.seed)
@@ -473,7 +472,7 @@ def test_robocasa_controller_action_shape_contract():
 
 def test_robocasa_mllm_controller_matches_official_normalized_dict_contract():
     config = load_config(
-        "configs/robocasa_pick_place_counter_to_cabinet_mllm_reflection.yaml"
+        "configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions.yaml"
     )
     controller = build_controller(
         config,
@@ -728,7 +727,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_reflection_v4" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
     assert f"Task: {public_instructions[0]}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -839,8 +838,8 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     )
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
-    assert manifest["model"]["action_output_mode"] == "action_with_reflection"
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_reflection_v4"
+    assert "action_output_mode" not in manifest["model"]
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

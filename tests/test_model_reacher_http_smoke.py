@@ -27,7 +27,10 @@ class StubChatHandler(BaseHTTPRequestHandler):
             "choices": [
                 {
                     "message": {
-                        "content": '{"channels":{"joystick_0":0,"joystick_1":0}}'
+                        "content": (
+                            '{"channels":{"joystick_0":0,"joystick_1":0},'
+                            '"Reflection":"chat completion mapping hypothesis"}'
+                        )
                     }
                 }
             ],
@@ -60,7 +63,10 @@ class StubResponsesHandler(BaseHTTPRequestHandler):
                     "content": [
                         {
                             "type": "output_text",
-                            "text": '{"channels":{"joystick_0":0,"joystick_1":0}}',
+                            "text": (
+                                '{"channels":{"joystick_0":0,"joystick_1":0},'
+                                '"Reflection":"responses mapping hypothesis"}'
+                            ),
                         }
                     ],
                 }
@@ -194,7 +200,7 @@ def test_reacher_runs_five_steps_through_openai_compatible_http(monkeypatch, tmp
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        config = load_config("configs/reacher_delta_eef_mllm.yaml")
+        config = load_config("configs/reacher_delta_eef_mllm_chat_completions.yaml")
         agent = replace(
             config.agent,
             model=replace(
@@ -235,6 +241,10 @@ def test_reacher_runs_five_steps_through_openai_compatible_http(monkeypatch, tmp
         for line in (episode_dir / "trajectory.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert all(step["validation"]["is_valid"] for step in trajectory)
+    assert all(
+        step["reflection"] == "chat completion mapping hypothesis"
+        for step in trajectory
+    )
     assert (episode_dir / "model_calls/step_0004/response.json").exists()
     for artifact in episode_dir.rglob("*"):
         if artifact.is_file():
@@ -250,21 +260,15 @@ def test_reacher_responses_api_retains_full_context_by_response_id(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        config = load_config("configs/reacher_delta_eef_mllm.yaml")
+        config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
         agent = replace(
             config.agent,
             model=replace(
                 config.agent.model,
-                api="responses",
                 name="stub-vision-model",
                 base_url=f"http://127.0.0.1:{server.server_port}/v1",
                 api_key_env="HTTP_SMOKE_API_KEY",
                 require_api_key=True,
-            ),
-            history=replace(
-                config.agent.history,
-                action_window="all",
-                image_window="all",
             ),
         )
         config = replace(
@@ -309,6 +313,10 @@ def test_reacher_responses_api_retains_full_context_by_response_id(
         "resp-3",
     ]
     assert all(step["agent_trace"]["api"] == "responses" for step in trajectory)
+    assert all(
+        step["reflection"] == "responses mapping hypothesis"
+        for step in trajectory
+    )
 
 
 def test_reacher_retries_responses_error_before_stepping_simulator(
@@ -320,7 +328,7 @@ def test_reacher_retries_responses_error_before_stepping_simulator(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        config = load_config("configs/reacher_delta_eef_mllm.yaml")
+        config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
         agent = replace(
             config.agent,
             model=replace(
@@ -384,7 +392,7 @@ def test_reacher_recovers_missing_previous_response_before_stepping_simulator(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        config = load_config("configs/reacher_delta_eef_mllm.yaml")
+        config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
         agent = replace(
             config.agent,
             model=replace(

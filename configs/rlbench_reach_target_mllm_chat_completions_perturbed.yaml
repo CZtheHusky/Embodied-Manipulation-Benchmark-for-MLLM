@@ -1,29 +1,30 @@
 benchmark:
-  name: colosseum_close_box_mllm_reflection_v0
+  name: rlbench_reach_target_mllm_chat_completions_perturbed_v0
   num_episodes: 1
   seed: 11
 
 simulator:
-  type: colosseum
-  env_id: close_box
+  type: rlbench
+  env_id: ReachTarget
   control_dt: 0.1
   workspace_bounds:
     low: [-0.6, -0.6, 0.75]
     high: [0.6, 0.6, 1.35]
   params:
-    task_name: close_box
-    spreadsheet_idx: 2
-    perturbation: manip_obj_color
+    task_class: ReachTarget
     action_mode: move_arm_then_gripper_end_effector_pose_via_planning_discrete
     headless: false
     static_positions: false
 
 task:
   type: rlbench_generic
-  max_steps: 100
+  max_steps: 40
   success_threshold: 1.0
   params:
-    instruction: Close the visible box lid.
+    instruction: Move the robot end-effector to the visible target.
+    instruction_from_observation: true
+    instruction_observation_key: descriptions
+    instruction_description_index: 0
     success_key: success
     reject_initial_success: true
 
@@ -40,24 +41,28 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz]
   gripper: none
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
-  mapping_strategy: fixed
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
+  mapping_strategy: permuted_sign_flipped
   visible_metadata: true
-  mapping_visible_to_agent: true
-  frame_transform: identity
-  frame_visible_to_agent: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_3d
+  frame_visible_to_agent: false
   control_frame_description: >-
-    the Colosseum/RLBench world Cartesian x, y, and z axes, with translation
-    as the only active motion. A mapped magnitude-1 command is a 0.01-meter
-    world-frame delta. The benchmark adds that delta without sign compensation
-    to the position from the latest observed absolute gripper pose, clamps the
-    target to the configured workspace bounds, and sends a native absolute
-    world-frame planning pose. The gripper is fixed open and is not
-    controllable; no joystick gripper channel exists. front is a scene camera,
-    not a wrist camera, and its pose remains fixed during each episode. Its pose
-    comes from the official task scene; without runtime extrinsics, this control
-    contract does not assign world axes to image directions
+    a hidden controller Cartesian frame, with translation as the only active
+    motion. The hidden joystick mapping produces a controller-frame vector. A
+    magnitude-1 mapped component is scaled to 0.01 meters, then the hidden
+    episode-fixed 3D transform rotates that controller vector exactly once into
+    a delta expressed in the RLBench world Cartesian x, y, and z axes. The
+    benchmark adds this world-frame delta to the position from the latest
+    observed absolute gripper pose without another transform or sign
+    compensation, clamps the target to the configured workspace bounds, and
+    sends a native absolute world-frame planning pose. The gripper is fixed open
+    and is not controllable; no joystick gripper channel exists. The front
+    camera is fixed in the TTT scene: world +y projects approximately toward
+    image right, world +z toward image up, and world +x mainly toward the camera
+    with a downward image component
   params:
     scale_mode: rlbench_absolute_pose_target_from_delta_eef
 
@@ -74,7 +79,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible
@@ -103,7 +107,7 @@ agent:
     max_request_bytes: 67108864
 
 logging:
-  output_dir: outputs/colosseum_close_box_mllm
+  output_dir: outputs/rlbench_reach_target_mllm
   save_images: false
   save_video: false
   video:
@@ -122,7 +126,7 @@ ui:
   window_height: 540
   info_panel_height: 190
   fps: 20
-  max_steps: 100
+  max_steps: 40
   step_when_idle: false
   simple_blit: true
   debug_frames: true

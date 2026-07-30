@@ -1,5 +1,5 @@
 benchmark:
-  name: metaworld_reach_v3_mllm_reflection_perturbed_v0
+  name: metaworld_reach_v3_mllm_chat_completions_perturbed_v0
   num_episodes: 1
   seed: 7
 
@@ -41,8 +41,9 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz]
   gripper: none
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
   mapping_strategy: permuted_sign_flipped
   visible_metadata: true
   mapping_visible_to_agent: false
@@ -71,7 +72,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible

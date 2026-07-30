@@ -8,8 +8,8 @@ robosuite is integrated as an optional backend. It is not part of the root core 
 - Controller: `control/robosuite_controller.py`
 - Task wrapper: `tasks/robosuite_task.py`
 - Human/random-agent config: `configs/robosuite_lift.yaml`
-- Fixed MLLM config: `configs/robosuite_lift_mllm_reflection.yaml`
-- Perturbed MLLM config: `configs/robosuite_lift_mllm_reflection_perturbed.yaml`
+- Fixed MLLM config: `configs/robosuite_lift_mllm_chat_completions.yaml`
+- Perturbed MLLM config: `configs/robosuite_lift_mllm_chat_completions_perturbed.yaml`
 - Environment: `envs/uv/robosuite.in` and `envs/uv/locks/robosuite.lock.txt`
 
 ## Dependency
@@ -37,13 +37,13 @@ python3 scripts/manage_uv_env.py run robosuite -- python scripts/play_benchmark.
 ## MLLM configs
 
 Both Lift MLLM configs use OpenAI-compatible Chat Completions with the
-`action_with_reflection` output contract. They send the current pair of RGB
+the `chat_completions` backend with optional Reflection. They send the current pair of RGB
 frames, up to three prior pairs of RGB frames, and all prior normalized model
 actions and reflections:
 
 ```text
 agent.model.api: chat_completions
-agent.action_output_mode: action_with_reflection
+agent.model.api: chat_completions
 agent.history.image_window: 3
 agent.history.action_window: all
 ```
@@ -52,14 +52,14 @@ Choose the public fixed baseline:
 
 ```bash
 python3 scripts/manage_uv_env.py run robosuite -- \
-  python scripts/run_benchmark.py --config configs/robosuite_lift_mllm_reflection.yaml
+  python scripts/run_benchmark.py --config configs/robosuite_lift_mllm_chat_completions.yaml
 ```
 
 Or choose the control-perturbed condition:
 
 ```bash
 python3 scripts/manage_uv_env.py run robosuite -- \
-  python scripts/run_benchmark.py --config configs/robosuite_lift_mllm_reflection_perturbed.yaml
+  python scripts/run_benchmark.py --config configs/robosuite_lift_mllm_chat_completions_perturbed.yaml
 ```
 
 The configs resolve model name, base URL, and API key from the standard

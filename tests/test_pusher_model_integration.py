@@ -55,13 +55,13 @@ class PusherFakeClient:
     ("config_path", "mapping_strategy", "frame_transform", "visible"),
     [
         (
-            "configs/pusher_delta_eef_mllm_reflection.yaml",
+            "configs/pusher_delta_eef_mllm_chat_completions.yaml",
             "fixed",
             "identity",
             True,
         ),
         (
-            "configs/pusher_delta_eef_mllm_reflection_perturbed.yaml",
+            "configs/pusher_delta_eef_mllm_chat_completions_perturbed.yaml",
             "permuted_sign_flipped",
             "random_rotation_3d",
             False,
@@ -76,7 +76,6 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
 ):
     config = load_config(config_path)
 
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.history.action_window == "all"
@@ -95,7 +94,7 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
     )
     group = make_experiment_group(config)
     assert group is not None
-    assert "output-action_with_reflection" in group
+    assert "__output-" not in group
     if mapping_strategy != "fixed":
         assert "mapping-permuted_sign_flipped" in group
         assert "frame-random_rotation_3d" in group
@@ -104,8 +103,8 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
 @pytest.mark.parametrize(
     ("config_path", "visible"),
     [
-        ("configs/pusher_delta_eef_mllm_reflection.yaml", True),
-        ("configs/pusher_delta_eef_mllm_reflection_perturbed.yaml", False),
+        ("configs/pusher_delta_eef_mllm_chat_completions.yaml", True),
+        ("configs/pusher_delta_eef_mllm_chat_completions_perturbed.yaml", False),
     ],
 )
 def test_pusher_fake_client_closes_public_visual_loop(

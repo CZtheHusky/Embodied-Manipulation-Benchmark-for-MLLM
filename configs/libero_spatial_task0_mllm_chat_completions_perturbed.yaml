@@ -1,5 +1,5 @@
 benchmark:
-  name: libero_spatial_task0_mllm_reflection_v0
+  name: libero_spatial_task0_mllm_chat_completions_perturbed_v0
   num_episodes: 1
   seed: 7
 
@@ -61,13 +61,14 @@ control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
   gripper: binary
-  channel_kind: discrete
-  channel_values: [-1, 0, 1]
-  mapping_strategy: fixed
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
+  mapping_strategy: permuted_sign_flipped
   visible_metadata: true
-  mapping_visible_to_agent: true
-  frame_transform: identity
-  frame_visible_to_agent: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_3d
+  frame_visible_to_agent: false
   control_frame_description: >-
     the LIBERO MuJoCo world Cartesian x, y, and z axes used by robosuite's
     OSC_POSE controller; translation deltas and right-hand axis-angle
@@ -104,7 +105,6 @@ controller:
 
 agent:
   type: mllm
-  action_output_mode: action_with_reflection
   invalid_action_recovery: noop
   model:
     provider: openai_compatible

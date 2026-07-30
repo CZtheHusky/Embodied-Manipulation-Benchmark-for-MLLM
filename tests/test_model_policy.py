@@ -66,11 +66,9 @@ def _agent_config(
     action_window="all",
     max_images=128,
     max_request_bytes=67_108_864,
-    action_output_mode="action_only",
 ):
     return AgentConfig(
         type="mllm",
-        action_output_mode=action_output_mode,
         model=ModelConfig(require_api_key=False),
         observation=AgentObservationConfig(cameras=("front",), image_max_side=32),
         history=AgentHistoryConfig(
@@ -169,17 +167,17 @@ def test_json_object_requirement_is_present_in_user_input():
 
     policy.act(_context(0))
 
-    assert policy.prompt_version == "mllm_joystick_v4"
+    assert policy.prompt_version == "mllm_joystick_chat_completions_v6"
     request = client.requests[0]
-    assert "mllm_joystick_v4" in request.messages[1]["content"]
+    assert "mllm_joystick_chat_completions_v6" in request.messages[1]["content"]
     user_text = " ".join(
         message["content"]
         for message in request.messages
         if message["role"] == "user" and isinstance(message["content"], str)
     )
     assert "json" in user_text.lower()
-    assert "Reflection" not in request.messages[0]["content"]
-    assert "Reflection" not in user_text
+    assert "top-level string key Reflection" in request.messages[0]["content"]
+    assert "optional case-sensitive string key Reflection" in user_text
 
 
 def test_response_artifact_sanitization_removes_hidden_reasoning():
@@ -227,11 +225,10 @@ def test_response_artifact_sanitization_removes_hidden_reasoning():
     )
 
 
-def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():
+def test_chat_completions_contract_and_history_preserve_reflection():
     client = RecordingClient()
     config = _agent_config(
         image_window=3,
-        action_output_mode="action_with_reflection",
     )
     policy = MLLMPolicy(config, client, "fake-model")
     transition = replace(
@@ -253,7 +250,7 @@ def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():
     assert request.messages[0]["role"] == "system"
     assert "top-level string key Reflection" in request.messages[0]["content"]
     static_instruction = request.messages[1]["content"]
-    assert "mllm_joystick_reflection_v4" in static_instruction
+    assert "mllm_joystick_chat_completions_v6" in static_instruction
     assert "\nTask: pick coke can\nControl:" in static_instruction
     assert "optional case-sensitive string key Reflection" in static_instruction
     assistant_payload = json.loads(
@@ -267,15 +264,14 @@ def test_reflection_mode_changes_prompt_version_shape_and_preserves_history():
         "Reflection": "joystick_0 appears to move right",
         "channels": {"joystick_0": 1.0, "joystick_1": 0.0},
     }
-    assert decision.trace.prompt_version == "mllm_joystick_reflection_v4"
+    assert decision.trace.prompt_version == "mllm_joystick_chat_completions_v6"
 
 
-def test_reflection_mode_includes_only_three_prior_images():
+def test_chat_completions_includes_only_three_prior_images():
     client = RecordingClient()
     policy = MLLMPolicy(
         _agent_config(
             image_window=3,
-            action_output_mode="action_with_reflection",
         ),
         client,
         "fake-model",

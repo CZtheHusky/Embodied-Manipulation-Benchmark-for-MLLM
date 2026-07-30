@@ -36,12 +36,12 @@ from mllm_teleop_benchmark.tasks.robosuite_task import RobosuiteLiftTask
 
 MLLM_CONFIGS = (
     (
-        "configs/robosuite_lift_mllm_reflection.yaml",
+        "configs/robosuite_lift_mllm_chat_completions.yaml",
         "fixed",
         "identity",
     ),
     (
-        "configs/robosuite_lift_mllm_reflection_perturbed.yaml",
+        "configs/robosuite_lift_mllm_chat_completions_perturbed.yaml",
         "permuted_sign_flipped",
         "random_rotation_3d",
     ),
@@ -119,8 +119,8 @@ def test_robosuite_config_uses_worker_play_runtime():
     "config_path",
     (
         "configs/robosuite_lift.yaml",
-        "configs/robosuite_lift_mllm_reflection.yaml",
-        "configs/robosuite_lift_mllm_reflection_perturbed.yaml",
+        "configs/robosuite_lift_mllm_chat_completions.yaml",
+        "configs/robosuite_lift_mllm_chat_completions_perturbed.yaml",
     ),
 )
 def test_robosuite_lift_configs_preserve_upstream_task_camera_framing(config_path):
@@ -143,7 +143,6 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     config = load_config(config_path)
     action_schema = build_action_space(config).schema()
 
-    assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
@@ -224,7 +223,7 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     )
     assert all(
         action_schema[f"joystick_{index}"]
-        == {"kind": "discrete", "values": [-1.0, 0.0, 1.0]}
+        == {"kind": "continuous", "min": -30.0, "max": 30.0}
         for index in range(3)
     )
     assert action_schema["joystick_3"] == {
@@ -235,14 +234,14 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "output-action_with_reflection" in group
+    assert "__output-" not in group
     if mapping_strategy != "fixed":
         assert "mapping-permuted_sign_flipped" in group
         assert "frame-random_rotation_3d" in group
 
 
 def test_robosuite_task_rejects_successful_reset_before_model_request():
-    config = load_config("configs/robosuite_lift_mllm_reflection.yaml")
+    config = load_config("configs/robosuite_lift_mllm_chat_completions.yaml")
     task = RobosuiteLiftTask(config.task)
 
     class StubSim:
@@ -259,7 +258,7 @@ def test_robosuite_task_rejects_successful_reset_before_model_request():
 
 
 def test_robosuite_perturbation_only_changes_motion_channels():
-    config = load_config("configs/robosuite_lift_mllm_reflection_perturbed.yaml")
+    config = load_config("configs/robosuite_lift_mllm_chat_completions_perturbed.yaml")
     mapping = build_mapping(config, config.benchmark.seed)
     controller = build_controller(config, mapping, config.benchmark.seed)
 
@@ -297,7 +296,7 @@ def test_robosuite_perturbation_only_changes_motion_channels():
 
 
 def test_robosuite_hidden_rotation_preserves_all_legal_translation_directions():
-    config = load_config("configs/robosuite_lift_mllm_reflection_perturbed.yaml")
+    config = load_config("configs/robosuite_lift_mllm_chat_completions_perturbed.yaml")
     mapping = build_mapping(config, config.benchmark.seed)
     controller = build_controller(config, mapping, config.benchmark.seed)
     exceeded_before_fit = 0
@@ -477,7 +476,7 @@ def test_robosuite_controller_translation_and_mllm_native_gain():
     sim_action_close = controller.translate(action_close)
     assert sim_action_close.values[6] == 1.0
 
-    mllm_config = load_config("configs/robosuite_lift_mllm_reflection.yaml")
+    mllm_config = load_config("configs/robosuite_lift_mllm_chat_completions.yaml")
     mllm_controller = build_controller(
         mllm_config,
         build_mapping(mllm_config, mllm_config.benchmark.seed),

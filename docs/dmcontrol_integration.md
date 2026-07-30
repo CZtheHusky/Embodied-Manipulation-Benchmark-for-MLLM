@@ -60,13 +60,13 @@ simulator/evaluator boundary. They are not projected into model requests.
 
 | Configuration | Mapping | Frame |
 | --- | --- | --- |
-| `configs/dmcontrol_manipulator_bring_ball_mllm.yaml` | `fixed` | `identity` |
-| `configs/dmcontrol_manipulator_bring_ball_mllm_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_2d` |
+| `configs/dmcontrol_manipulator_bring_ball_mllm_chat_completions.yaml` | `fixed` | `identity` |
+| `configs/dmcontrol_manipulator_bring_ball_mllm_chat_completions_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_2d` |
 
 Both use:
 
 - Chat Completions
-- `action_with_reflection`
+- `chat_completions` with optional Reflection
 - reasoning effort `low`
 - three historical image turns plus the current turn
 - complete normalized action/reflection history
@@ -132,11 +132,11 @@ Run either MLLM condition through the dedicated environment:
 ```bash
 python3 scripts/manage_uv_env.py run dmcontrol -- \
   python scripts/run_benchmark.py \
-  --config configs/dmcontrol_manipulator_bring_ball_mllm.yaml
+  --config configs/dmcontrol_manipulator_bring_ball_mllm_chat_completions.yaml
 
 python3 scripts/manage_uv_env.py run dmcontrol -- \
   python scripts/run_benchmark.py \
-  --config configs/dmcontrol_manipulator_bring_ball_mllm_perturbed.yaml
+  --config configs/dmcontrol_manipulator_bring_ball_mllm_chat_completions_perturbed.yaml
 ```
 
 These commands require the model endpoint variables named in the YAML. The
