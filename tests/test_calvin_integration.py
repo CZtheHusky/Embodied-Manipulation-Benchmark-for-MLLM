@@ -848,6 +848,26 @@ def test_calvin_sim_adapter_reset_step_smoke():
         sim.close()
 
 
+@pytest.mark.parametrize(
+    ("values", "message"),
+    (
+        ((np.nan, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0), "must be finite"),
+        ((0.0, np.inf, 0.0, 0.0, 0.0, 0.0, 1.0), "must be finite"),
+        ((1.01, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0), "must be within"),
+        ((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0), "must be exactly"),
+    ),
+)
+def test_calvin_sim_adapter_rejects_invalid_native_actions(values, message):
+    config = load_config("configs/calvin_delta_eef.yaml")
+    sim = CalvinSimAdapter(config.simulator)
+    sim.env = MagicMock()
+
+    with pytest.raises(ValueError, match=message):
+        sim.step(CalvinAction(values=values))
+
+    sim.env.step.assert_not_called()
+
+
 def test_calvin_real_seeded_resets_are_reproducible_and_distinct():
     pytest.importorskip("calvin_env")
     config = load_config("configs/calvin_delta_eef.yaml")

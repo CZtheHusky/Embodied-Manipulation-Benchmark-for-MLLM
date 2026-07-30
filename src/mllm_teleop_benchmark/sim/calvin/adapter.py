@@ -85,6 +85,12 @@ class CalvinSimAdapter(SimAdapter):
         native_action = np.asarray(action.values, dtype=np.float32)
         if native_action.shape != (7,):
             raise ValueError(f"CALVIN action must contain 7 values, got shape {native_action.shape}")
+        if not np.all(np.isfinite(native_action)):
+            raise ValueError("CALVIN action values must be finite")
+        if np.any(np.abs(native_action[:6]) > 1.0):
+            raise ValueError("CALVIN motion action values must be within [-1, 1]")
+        if native_action[6] not in (-1.0, 1.0):
+            raise ValueError("CALVIN gripper action must be exactly -1 or 1")
 
         step_result = self.env.step(native_action)
         native_obs, reward, terminated, truncated, info = self._normalize_step_result(step_result)
