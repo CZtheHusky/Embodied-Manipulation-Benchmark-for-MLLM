@@ -58,8 +58,9 @@ Cartesian-relative target increments and multiplies native magnitude `1` by
 `0.02 m`. The next three values are increments of the target pose's PyBullet
 XYZ Euler parameters, not an axis-angle vector, and native magnitude `1` changes
 the corresponding parameter by `0.05 rad`. MLLM configs therefore use controller
-scales of `1.0`; applying another benchmark-side `0.1` scale would accidentally
-reduce the effective motion to `0.002 m / 0.005 rad`.
+scales of `1.0` and record the controller frame as `pybullet_world_xyz`;
+applying another benchmark-side `0.1` scale would accidentally reduce the
+effective motion to `0.002 m / 0.005 rad`.
 
 ## MLLM Evaluation Configurations
 

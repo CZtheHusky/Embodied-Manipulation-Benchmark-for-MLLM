@@ -275,6 +275,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
         "dpitch": 1.0,
         "dyaw": 1.0,
     }
+    assert config.controller.frame == "pybullet_world_xyz"
     assert config.controller.params["transform_rotation"] is False
     assert config.control_interface.gripper_open_command == 1.0
     assert config.control_interface.gripper_closed_command == 0.0

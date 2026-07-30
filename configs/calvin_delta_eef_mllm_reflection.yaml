@@ -68,7 +68,7 @@ control_interface:
 
 controller:
   type: calvin_delta_eef
-  frame: controller
+  frame: pybullet_world_xyz
   scales:
     dx: 1.0
     dy: 1.0
