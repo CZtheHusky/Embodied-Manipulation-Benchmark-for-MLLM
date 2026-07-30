@@ -9,7 +9,7 @@ simulator:
   render_mode: rgb_array
   params:
     reset_evaluator_state_fields: [consecutive_grasp, lifted_obj, episode_stats]
-    direct_gripper_substeps: 3
+    absolute_gripper_target: true
 
 task:
   type: simpler_env_generic
@@ -32,7 +32,7 @@ camera:
 control_interface:
   mode: eef_delta_pose
   active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
-  gripper: direct
+  gripper: ternary
   channel_kind: discrete
   channel_values: [-1, 0, 1]
   mapping_strategy: fixed
@@ -52,9 +52,11 @@ control_interface:
     remains fixed for this arm-only benchmark: base +y projects approximately
     toward image left, base +x mainly away from the camera with an upward image
     component, and base +z toward image up while pointing partly toward the
-    camera. The continuous gripper command is absolute: one 0 command reaches
-    the open target, one 1 command reaches the closed target, and 0.5 preserves
-    the target selected by the previous open or close command
+    camera
+  gripper_semantics_description: >-
+    For the final gripper joystick, 0 selects the absolute open target, 1
+    selects the absolute closed target, and 0.5 preserves the target selected
+    by the previous open or close command
   gripper_open_command: 0
   gripper_closed_command: 1
   gripper_hold_command: 0.5

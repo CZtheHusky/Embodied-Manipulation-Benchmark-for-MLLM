@@ -179,7 +179,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
         "lifted_obj",
         "episode_stats",
     ]
-    assert config.simulator.params["direct_gripper_substeps"] == 3
+    assert config.simulator.params["absolute_gripper_target"] is True
     assert config.agent.observation.cameras == PUBLIC_CAMERAS
     assert tuple(camera.name for camera in config.camera.cameras) == PUBLIC_CAMERAS
     assert config.control_interface.active_dimensions == (
@@ -190,7 +190,7 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
         "dpitch",
         "dyaw",
     )
-    assert config.control_interface.gripper == "direct"
+    assert config.control_interface.gripper == "ternary"
     assert config.control_interface.mapping_strategy == mapping_strategy
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
@@ -202,9 +202,8 @@ def test_simpler_env_mllm_configs_are_explicit_and_switchable(
         for index in range(6)
     )
     assert schema["joystick_6"] == {
-        "kind": "continuous",
-        "min": 0.0,
-        "max": 1.0,
+        "kind": "discrete",
+        "values": [0.0, 0.5, 1.0],
     }
 
     control = raw["control_interface"]
@@ -303,9 +302,9 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "base_camera" not in baseline_prompt
     assert "joystick_0 -> dx" in baseline_prompt
     assert "joystick_5 -> dyaw" in baseline_prompt
-    assert "direct control" in baseline_prompt
+    assert "ternary control" in baseline_prompt
     assert "final virtual joystick" in baseline_prompt
-    assert "one 1 command reaches the closed target" in baseline_prompt
+    assert "1 selects the absolute closed target" in baseline_prompt
     assert "0.5 preserves the target selected" in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
@@ -322,7 +321,7 @@ def test_simpler_env_public_prompt_describes_controls_without_hidden_samples():
     assert "base +y projects approximately toward image left" in perturbed_prompt
     assert "base +x mainly away from the camera" in perturbed_prompt
     assert "base +z toward image up" in perturbed_prompt
-    assert "one 1 command reaches the closed target" in perturbed_prompt
+    assert "1 selects the absolute closed target" in perturbed_prompt
     assert "0.5 preserves the target selected" in perturbed_prompt
     assert "base_camera" not in perturbed_prompt
     assert (
@@ -393,7 +392,7 @@ def test_simpler_env_adapter_serializes_pose_like_info():
     }
 
 
-def test_simpler_env_direct_gripper_reaches_absolute_target_in_one_outer_step():
+def test_simpler_env_absolute_gripper_target_uses_one_native_step():
     class FakeActionSpace:
         shape = (7,)
         low = np.full(7, -1.0, dtype=np.float32)
@@ -403,14 +402,54 @@ def test_simpler_env_direct_gripper_reaches_absolute_target_in_one_outer_step():
         def __init__(self):
             self.action_space = FakeActionSpace()
             self.actions = []
-            self.gripper_target = 0.0
+            self.unwrapped = self
+            self.gripper = type(
+                "FakeGripper",
+                (),
+                {
+                    "config": type(
+                        "FakeGripperConfig",
+                        (),
+                        {
+                            "use_target": True,
+                            "clip_target": True,
+                            "small_action_repeat_last_target": True,
+                            "clip_target_thres": 0.01,
+                        },
+                    )(),
+                    "articulation": type(
+                        "FakeArticulation",
+                        (),
+                        {
+                            "get_qlimits": lambda _self: np.asarray(
+                                [[0.0, 1.3], [0.0, 1.3]]
+                            )
+                        },
+                    )(),
+                    "joint_indices": np.asarray([0, 1]),
+                    "target": np.asarray([0.0, 0.0]),
+                    "set_state": lambda self, state: setattr(
+                        self,
+                        "target",
+                        np.asarray(state["target_qpos"]).copy(),
+                    ),
+                },
+            )()
+            self.agent = type(
+                "FakeAgent",
+                (),
+                {
+                    "controller": type(
+                        "FakeCombinedController",
+                        (),
+                        {"controllers": {"gripper": self.gripper}},
+                    )()
+                },
+            )()
 
         def step(self, action):
             values = np.asarray(action, dtype=np.float32).copy()
             self.actions.append(values)
-            self.gripper_target = float(
-                np.clip(self.gripper_target + values[-1], -1.31, 1.31)
-            )
             return {}, 0.0, False, False, {}
 
     config = load_config(BASELINE_CONFIG)
@@ -422,23 +461,28 @@ def test_simpler_env_direct_gripper_reaches_absolute_target_in_one_outer_step():
         values=(0.05, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0)
     )
     opened = adapter.step(open_action)
-    assert fake_env.gripper_target == pytest.approx(-1.31)
+    np.testing.assert_allclose(fake_env.gripper.target, (-0.01, -0.01))
     np.testing.assert_allclose(fake_env.actions[0][:-1], open_action.values[:-1])
-    np.testing.assert_allclose(fake_env.actions[1][:-1], 0.0)
-    np.testing.assert_allclose(fake_env.actions[2][:-1], 0.0)
+    assert fake_env.actions[0][-1] == 0.0
     assert opened.info["step_id"] == 1
-    assert opened.info["native_step_id"] == 3
-    assert opened.info["native_steps_this_action"] == 3
+    assert opened.info["native_step_id"] == 1
+    assert opened.info["native_steps_this_action"] == 1
 
     close_action = SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
     adapter.step(close_action)
-    assert fake_env.gripper_target == pytest.approx(1.31)
+    np.testing.assert_allclose(fake_env.gripper.target, (1.31, 1.31))
+    assert fake_env.actions[1][-1] == 0.0
 
     hold_action = SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
     held = adapter.step(hold_action)
-    assert fake_env.gripper_target == pytest.approx(1.31)
+    np.testing.assert_allclose(fake_env.gripper.target, (1.31, 1.31))
     assert held.info["step_id"] == 3
-    assert held.info["native_step_id"] == 9
+    assert held.info["native_step_id"] == 3
+
+    fake_env.gripper.config.use_target = False
+    with pytest.raises(RuntimeError, match="pinned target-delta controller"):
+        adapter.step(close_action)
+    assert len(fake_env.actions) == 3
 
 
 def test_simpler_env_rejects_evaluator_success_before_model_request(
@@ -549,7 +593,7 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
         sim.close()
 
 
-def test_simpler_env_real_gripper_direct_command_sets_absolute_target():
+def test_simpler_env_real_gripper_command_sets_absolute_target():
     _require_simpler_env()
     config = load_config(BASELINE_CONFIG)
     sim = build_sim(config)
@@ -595,7 +639,43 @@ def test_simpler_env_real_gripper_direct_command_sets_absolute_target():
             atol=1e-7,
         )
         np.testing.assert_allclose(held_target, closed_target, atol=1e-7)
-        assert sim.get_state()["native_step_id"] == 9
+        assert sim.get_state()["native_step_id"] == 3
+    finally:
+        sim.close()
+
+
+def test_simpler_env_model_horizon_matches_native_time_limit():
+    _require_simpler_env()
+    config = load_config(BASELINE_CONFIG)
+    sim = build_sim(config)
+    controller = build_controller(
+        config,
+        build_mapping(config, config.benchmark.seed),
+        config.benchmark.seed,
+    )
+    hold = controller.translate(
+        JoystickAction(
+            {
+                **{f"joystick_{index}": 0.0 for index in range(6)},
+                "joystick_6": 0.5,
+            }
+        )
+    )
+
+    try:
+        sim.reset(config.task, seed=config.benchmark.seed)
+        result = None
+        for _ in range(config.task.max_steps):
+            result = sim.step(hold)
+            if result.terminated or result.truncated:
+                break
+
+        assert result is not None
+        assert result.terminated is False
+        assert result.truncated is True
+        assert result.info["step_id"] == 80
+        assert result.info["native_step_id"] == 80
+        assert result.info["elapsed_steps"] == 80
     finally:
         sim.close()
 

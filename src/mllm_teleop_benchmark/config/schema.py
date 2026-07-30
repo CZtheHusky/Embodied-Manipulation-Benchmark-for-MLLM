@@ -202,7 +202,11 @@ class ControlInterfaceConfig:
             raise ValueError(
                 "control_interface gripper commands require a virtual gripper channel"
             )
-        allowed_values = (0.0, 1.0) if self.gripper == "binary" else None
+        allowed_values = None
+        if self.gripper == "binary":
+            allowed_values = (0.0, 1.0)
+        elif self.gripper == "ternary":
+            allowed_values = (0.0, 0.5, 1.0)
         for name, value in commands.items():
             if allowed_values is not None:
                 if value not in allowed_values:
@@ -229,6 +233,18 @@ class ControlInterfaceConfig:
             raise ValueError(
                 "control_interface gripper hold and neutral commands are mutually exclusive"
             )
+        if self.gripper == "ternary" and (
+            self.gripper_open_command is None
+            or self.gripper_closed_command is None
+            or (
+                self.gripper_hold_command is None
+                and self.gripper_neutral_command is None
+            )
+        ):
+            raise ValueError(
+                "control_interface ternary gripper requires open, closed, and "
+                "hold or neutral commands"
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlInterfaceConfig":
@@ -237,9 +253,10 @@ class ControlInterfaceConfig:
             if dim not in CONTROL_INTERFACE_DIMS:
                 raise ValueError(f"Unsupported control_interface active dimension: {dim}")
         gripper = str(data.get("gripper", "none"))
-        if gripper not in {"none", "direct", "binary", "effort"}:
+        if gripper not in {"none", "direct", "binary", "effort", "ternary"}:
             raise ValueError(
-                "control_interface.gripper must be one of: none, direct, binary, effort"
+                "control_interface.gripper must be one of: none, direct, binary, "
+                "effort, ternary"
             )
         channel_kind = str(data.get("channel_kind", "discrete"))
         return cls(
@@ -312,6 +329,20 @@ class ControlInterfaceConfig:
                 channels[name] = ChannelConfig(kind="continuous", minimum=0.0, maximum=1.0)
             elif dim == "gripper" and self.gripper == "binary":
                 channels[name] = ChannelConfig(kind="discrete", values=(0.0, 1.0))
+            elif dim == "gripper" and self.gripper == "ternary":
+                middle = (
+                    self.gripper_hold_command
+                    if self.gripper_hold_command is not None
+                    else self.gripper_neutral_command
+                )
+                channels[name] = ChannelConfig(
+                    kind="discrete",
+                    values=(
+                        float(self.gripper_open_command),
+                        float(middle),
+                        float(self.gripper_closed_command),
+                    ),
+                )
             elif self.channel_kind == "discrete":
                 channels[name] = ChannelConfig(kind="discrete", values=self.channel_values)
             elif self.channel_kind == "continuous":

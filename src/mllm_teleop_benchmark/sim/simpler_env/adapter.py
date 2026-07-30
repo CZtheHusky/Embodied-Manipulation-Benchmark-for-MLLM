@@ -18,17 +18,12 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.env_id = config.env_id
         if self.env_id is None:
             raise ValueError("SimplerEnv simulator requires simulator.env_id")
-        raw_substeps = config.params.get("direct_gripper_substeps", 1)
-        if (
-            isinstance(raw_substeps, bool)
-            or not isinstance(raw_substeps, int)
-            or raw_substeps < 1
-        ):
+        raw_absolute_gripper = config.params.get("absolute_gripper_target", False)
+        if not isinstance(raw_absolute_gripper, bool):
             raise ValueError(
-                "SimplerEnv simulator.params.direct_gripper_substeps must be "
-                "a positive integer"
+                "SimplerEnv simulator.params.absolute_gripper_target must be boolean"
             )
-        self.direct_gripper_substeps = raw_substeps
+        self.absolute_gripper_target = raw_absolute_gripper
         self.env: Any | None = None
         self.step_id = 0
         self.native_step_id = 0
@@ -60,21 +55,15 @@ class SimplerEnvSimAdapter(SimAdapter):
             raise TypeError(f"SimplerEnvSimAdapter requires SimplerEnvAction, got {type(action).__name__}")
         self._ensure_env()
         native_action, clip_metadata = self._native_action(action)
-        native_steps = 0
-        for substep in range(self.direct_gripper_substeps):
-            substep_action = np.array(native_action, copy=True)
-            if substep:
-                substep_action[..., :-1] = 0.0
-            native_obs, reward, success, truncated, info = (
-                self._normalize_step_result(self.env.step(substep_action))
-            )
-            native_steps += 1
-            if success or truncated:
-                break
+        if self.absolute_gripper_target:
+            native_action = self._set_absolute_gripper_target(native_action)
+        native_obs, reward, success, truncated, info = self._normalize_step_result(
+            self.env.step(native_action)
+        )
 
         self.step_id += 1
-        self.native_step_id += native_steps
-        self.last_native_steps = native_steps
+        self.native_step_id += 1
+        self.last_native_steps = 1
         self.last_native_obs = native_obs
         self.last_reward = self._float_or_none(reward)
         self.last_success = bool(success)
@@ -110,7 +99,7 @@ class SimplerEnvSimAdapter(SimAdapter):
             "step_id": self.step_id,
             "native_step_id": self.native_step_id,
             "native_steps_this_action": self.last_native_steps,
-            "direct_gripper_substeps": self.direct_gripper_substeps,
+            "absolute_gripper_target": self.absolute_gripper_target,
             "env_id": self.env_id,
             "reward": self.last_reward,
             "success": self.last_success,
@@ -245,6 +234,59 @@ class SimplerEnvSimAdapter(SimAdapter):
                 "after": values.tolist() if clipped else None,
             }
         return values, metadata
+
+    def _set_absolute_gripper_target(self, native_action: np.ndarray) -> np.ndarray:
+        values = np.array(native_action, dtype=np.float32, copy=True)
+        flat_values = values.reshape(-1)
+        gripper_command = float(flat_values[-1])
+        if np.isclose(gripper_command, 0.0, atol=1e-7):
+            return values
+        if not np.isclose(abs(gripper_command), 1.0, atol=1e-7):
+            raise ValueError(
+                "SimplerEnv absolute gripper target requires native command -1, 0, or 1"
+            )
+
+        gripper = self._native_gripper_controller()
+        required_flags = (
+            "use_target",
+            "clip_target",
+            "small_action_repeat_last_target",
+        )
+        if any(not bool(getattr(gripper.config, name, False)) for name in required_flags):
+            raise RuntimeError(
+                "SimplerEnv absolute gripper target requires the pinned target-delta "
+                "controller with target clipping and small-action target retention"
+            )
+
+        joint_limits = np.asarray(
+            gripper.articulation.get_qlimits()[gripper.joint_indices],
+            dtype=np.float64,
+        )
+        clip_threshold = float(gripper.config.clip_target_thres)
+        target = (
+            joint_limits[:, 0] - clip_threshold
+            if gripper_command < 0.0
+            else joint_limits[:, 1] + clip_threshold
+        )
+        gripper.set_state({"target_qpos": target})
+        flat_values[-1] = 0.0
+        return values
+
+    def _native_gripper_controller(self) -> Any:
+        unwrapped = getattr(self.env, "unwrapped", self.env)
+        agent = getattr(unwrapped, "agent", None)
+        combined_controller = getattr(agent, "controller", None)
+        controllers = getattr(combined_controller, "controllers", None)
+        if not isinstance(controllers, dict) or "gripper" not in controllers:
+            raise RuntimeError(
+                "SimplerEnv absolute gripper target requires a named gripper controller"
+            )
+        gripper = controllers["gripper"]
+        if not callable(getattr(gripper, "set_state", None)):
+            raise RuntimeError(
+                "SimplerEnv absolute gripper target requires controller.set_state()"
+            )
+        return gripper
 
     def _normalize_step_result(self, step_result: Any) -> tuple[Any, Any, bool, bool, dict[str, Any]]:
         if not isinstance(step_result, tuple):
