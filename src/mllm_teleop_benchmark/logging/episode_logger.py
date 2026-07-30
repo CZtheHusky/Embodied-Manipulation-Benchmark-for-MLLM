@@ -166,6 +166,9 @@ class EpisodeLogger:
                 "num_episodes": self.config.benchmark.num_episodes,
                 "seed": self.config.benchmark.seed,
             },
+            "simulator": {
+                "type": self.config.simulator.type,
+            },
             "task": {
                 "type": self.config.task.type,
                 "max_steps": self.config.task.max_steps,

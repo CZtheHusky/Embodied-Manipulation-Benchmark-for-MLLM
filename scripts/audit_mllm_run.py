@@ -35,6 +35,10 @@ PRIVILEGED_KEYS = {
     "eef_pos",
     "target_position",
     "robot_proprio",
+    "native_action",
+    "benchmark_applied_native_action",
+    "benchmark_absolute_gripper",
+    "target_qpos",
 }
 SECRET_PATTERNS = {
     "authorization": re.compile(
@@ -67,10 +71,18 @@ class RunAuditor:
         self.image_invalid: set[str] = set()
         self.image_mismatches: set[str] = set()
         self.black_screens: dict[str, dict[str, float]] = {}
+        self.native_action_required = False
 
     def run(self) -> dict[str, Any]:
         manifest = self.read_json(self.root / "run_manifest.json", "incomplete")
         summary = self.read_json(self.root / "run_summary.json", "incomplete")
+        simulator_type = _nested_str(manifest, "simulator", "type")
+        benchmark_name = _nested_str(manifest, "benchmark", "name")
+        self.native_action_required = simulator_type == "simpler_env" or (
+            simulator_type is None
+            and isinstance(benchmark_name, str)
+            and benchmark_name.startswith("simpler_env_")
+        )
         source_revision = self.audit_source_revision(manifest)
         requested = _nested_int(manifest, "benchmark", "num_episodes")
         if manifest is not None and requested is None:
@@ -155,6 +167,7 @@ class RunAuditor:
                 "prompt_privacy": privacy,
                 "model_view": self.video_summary(episodes),
                 "source_revision": source_revision,
+                "native_actions": self.native_action_summary(episodes),
             },
             "anomalies": self.anomalies,
         }
@@ -226,6 +239,14 @@ class RunAuditor:
                 "responses_present": 0,
             },
             "agent_trace": {"statuses": {}, "missing": 0},
+            "native_action": {
+                "required": self.native_action_required,
+                "status": (
+                    "incomplete" if self.native_action_required else "not_required"
+                ),
+                "checked_steps": 0,
+                "invalid_steps": 0,
+            },
             "images": {"manifest_references": 0, "unique_pngs": 0},
             "review": {
                 "manifest_status": None,
@@ -284,6 +305,15 @@ class RunAuditor:
                     self.rel(episode_dir / "trajectory.jsonl"),
                     f"step={step_id}, valid={valid!r}",
                 )
+
+            if self.native_action_required:
+                report["native_action"]["checked_steps"] += 1
+                if not self.audit_simpler_native_action(
+                    transition,
+                    episode_dir / "trajectory.jsonl",
+                    step_id,
+                ):
+                    report["native_action"]["invalid_steps"] += 1
 
             trace = transition.get("agent_trace")
             if not isinstance(trace, dict):
@@ -346,6 +376,12 @@ class RunAuditor:
                 )
 
         report["agent_trace"]["statuses"] = dict(sorted(statuses.items()))
+        if self.native_action_required and trajectory:
+            report["native_action"]["status"] = (
+                "fail"
+                if report["native_action"]["invalid_steps"]
+                else "pass"
+            )
         report["images"] = {
             "manifest_references": image_references,
             "unique_pngs": len(episode_images),
@@ -354,6 +390,100 @@ class RunAuditor:
         if any(item["severity"] == "incomplete" for item in self.anomalies[mark:]):
             report["completion_status"] = "incomplete"
         return report
+
+    def audit_simpler_native_action(
+        self,
+        transition: dict[str, Any],
+        trajectory_path: Path,
+        step_id: int,
+    ) -> bool:
+        valid = True
+
+        def fail(code: str, detail: str | None = None) -> None:
+            nonlocal valid
+            valid = False
+            self.add(
+                "error",
+                code,
+                self.rel(trajectory_path),
+                f"step={step_id}" + (f", {detail}" if detail else ""),
+            )
+
+        info = transition.get("info")
+        if not isinstance(info, dict):
+            fail("native_action_info_missing")
+            return False
+        applied = info.get("benchmark_applied_native_action")
+        if not isinstance(applied, dict):
+            fail("native_action_audit_missing")
+            return False
+
+        values = _finite_vector(applied.get("values"), length=7)
+        if applied.get("shape") != [7] or values is None:
+            fail("native_action_audit_invalid")
+            return False
+
+        sim_action = transition.get("sim_action")
+        sim_values = (
+            _finite_vector(sim_action.get("values"), length=7)
+            if isinstance(sim_action, dict)
+            else None
+        )
+        if sim_values is None:
+            fail("sim_action_invalid")
+        elif not np.allclose(values[:6], sim_values[:6], atol=1e-7, rtol=0.0):
+            fail("native_motion_mismatch")
+
+        if info.get("absolute_gripper_target") is not True:
+            fail("absolute_gripper_mode_missing")
+            return valid
+        gripper = info.get("benchmark_absolute_gripper")
+        if not isinstance(gripper, dict):
+            fail("absolute_gripper_audit_missing")
+            return False
+
+        controller_command = gripper.get("controller_command")
+        applied_command = gripper.get("applied_env_command")
+        if (
+            not _is_finite_number(controller_command)
+            or float(controller_command) not in (-1.0, 0.0, 1.0)
+        ):
+            fail("absolute_gripper_controller_command_invalid")
+        if not _is_finite_number(applied_command) or float(applied_command) != 0.0:
+            fail("absolute_gripper_env_command_invalid")
+        if values[6] != 0.0:
+            fail("native_gripper_command_not_zero")
+        if (
+            sim_values is not None
+            and _is_finite_number(controller_command)
+            and not np.isclose(
+                float(controller_command),
+                float(sim_values[6]),
+                atol=1e-7,
+                rtol=0.0,
+            )
+        ):
+            fail("absolute_gripper_controller_mismatch")
+
+        expected_update = (
+            {
+                -1.0: "open",
+                0.0: "preserved",
+                1.0: "closed",
+            }.get(float(controller_command))
+            if _is_finite_number(controller_command)
+            else None
+        )
+        if gripper.get("target_update") != expected_update:
+            fail("absolute_gripper_target_update_invalid")
+        target = gripper.get("target_qpos")
+        try:
+            target_values = np.asarray(target, dtype=np.float64)
+        except (TypeError, ValueError):
+            target_values = np.asarray([], dtype=np.float64)
+        if target_values.size == 0 or not np.all(np.isfinite(target_values)):
+            fail("absolute_gripper_target_invalid")
+        return valid
 
     def audit_images(
         self,
@@ -532,6 +662,31 @@ class RunAuditor:
                 "audio_streams": 0,
             },
             "episode_statuses": dict(sorted(statuses.items())),
+        }
+
+    def native_action_summary(
+        self,
+        episodes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        checked = sum(
+            episode["native_action"]["checked_steps"] for episode in episodes
+        )
+        invalid = sum(
+            episode["native_action"]["invalid_steps"] for episode in episodes
+        )
+        if not self.native_action_required:
+            status = "not_required"
+        elif invalid:
+            status = "fail"
+        elif checked:
+            status = "pass"
+        else:
+            status = "incomplete"
+        return {
+            "required": self.native_action_required,
+            "status": status,
+            "checked_steps": checked,
+            "invalid_steps": invalid,
         }
 
     def read_trajectory(self, path: Path) -> list[dict[str, Any]]:
@@ -795,6 +950,33 @@ def _nested_int(value: dict[str, Any] | None, *keys: str) -> int | None:
             return None
         current = current.get(key)
     return current if _is_int(current) else None
+
+
+def _nested_str(value: dict[str, Any] | None, *keys: str) -> str | None:
+    current: Any = value
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current if isinstance(current, str) else None
+
+
+def _finite_vector(value: object, *, length: int) -> np.ndarray | None:
+    try:
+        vector = np.asarray(value, dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
+    if vector.shape != (length,) or not np.all(np.isfinite(vector)):
+        return None
+    return vector
+
+
+def _is_finite_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and bool(np.isfinite(value))
+    )
 
 
 def _status(anomalies: list[dict[str, str]]) -> str:

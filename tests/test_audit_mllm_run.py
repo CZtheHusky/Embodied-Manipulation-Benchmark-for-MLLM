@@ -236,6 +236,10 @@ def test_prompt_privacy_checks_exact_keys_and_hidden_control_names(
         "eef_pos",
         "target_position",
         "robot_proprio",
+        "native_action",
+        "benchmark_applied_native_action",
+        "benchmark_absolute_gripper",
+        "target_qpos",
     }
     request["request"]["messages"].append(
         {
@@ -262,6 +266,65 @@ def test_prompt_privacy_checks_exact_keys_and_hidden_control_names(
         | {("privileged_key", key) for key in privileged_keys}
     )
     assert all(item["name"] != "target" for item in findings)
+
+
+def test_simpler_native_action_audit_is_required_and_fail_loud(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    manifest_path = run_dir / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["benchmark"]["name"] = "simpler_env_fixture"
+    _write_json(manifest_path, manifest)
+
+    trajectory_path = run_dir / "episode_0000/trajectory.jsonl"
+    transition = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    transition["sim_action"] = {
+        "values": [0.05, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]
+    }
+    transition["info"] = {
+        "absolute_gripper_target": True,
+        "benchmark_applied_native_action": {
+            "shape": [7],
+            "values": [0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        },
+        "benchmark_absolute_gripper": {
+            "controller_command": -1.0,
+            "applied_env_command": 0.0,
+            "target_update": "open",
+            "target_qpos": [0.0, 0.0],
+        },
+    }
+    trajectory_path.write_text(
+        json.dumps(transition) + "\n",
+        encoding="utf-8",
+    )
+    _mock_ffprobe(monkeypatch)
+
+    clean = audit_mllm_run.audit_run(run_dir)
+
+    assert clean["status"] == "pass"
+    assert clean["checks"]["native_actions"] == {
+        "required": True,
+        "status": "pass",
+        "checked_steps": 1,
+        "invalid_steps": 0,
+    }
+
+    transition["info"]["benchmark_applied_native_action"]["values"][6] = 1.0
+    trajectory_path.write_text(
+        json.dumps(transition) + "\n",
+        encoding="utf-8",
+    )
+
+    invalid = audit_mllm_run.audit_run(run_dir)
+
+    assert invalid["status"] == "fail"
+    assert invalid["checks"]["native_actions"]["invalid_steps"] == 1
+    assert "native_gripper_command_not_zero" in {
+        item["code"] for item in invalid["anomalies"]
+    }
 
 
 def test_image_tampering_black_screen_and_secret_leaks_fail(

@@ -183,6 +183,7 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert len(manifest["source"]["git_commit"]) == 40
     assert isinstance(manifest["source"]["git_dirty"], bool)
     assert manifest["source"]["config_path"] == "configs/dummy_reach.yaml"
+    assert manifest["simulator"]["type"] == "dummy"
     assert manifest["model"]["requested_model"] == "fake-model"
     assert manifest["model"]["reasoning_effort"] is None
     assert manifest["model"]["api"] == "chat_completions"

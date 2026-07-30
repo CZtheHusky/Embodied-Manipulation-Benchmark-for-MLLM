@@ -221,6 +221,11 @@ H.264 1280x720 2 FPS no-audio review videos. It prints one JSON report and exits
 nonzero for `fail`, `incomplete`, or `unavailable`. Retries are reported but do
 not by themselves fail an otherwise valid run.
 
+New manifests also record `simulator.type`. For SimplerEnv, the auditor requires
+every completed trajectory step to include a finite seven-value action actually
+applied at the simulator boundary plus the absolute-gripper application record.
+These evaluator-only fields are also forbidden from model requests.
+
 ## Human review video
 
 Automated MLLM episodes can generate an offline review video:
