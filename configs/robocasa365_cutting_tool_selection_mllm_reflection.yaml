@@ -1,0 +1,155 @@
+benchmark:
+  name: robocasa365_cutting_tool_selection_mllm_reflection_v0
+  num_episodes: 10
+  seed: 42
+
+simulator:
+  type: robocasa
+  env_id: robocasa/CuttingToolSelection
+  env_kwargs:
+    split: target
+    obj_registries: [objaverse, lightwheel]
+    camera_widths: 256
+    camera_heights: 256
+    randomize_cameras: false
+  params:
+    asset_revisions:
+      robocasa_assets: 1b92c3d02ca4354984fec961357db0bff7b32166
+      lightwheel: 420a04af939c34873e6839a586b70844baf28aab
+
+task:
+  type: robocasa_generic
+  max_steps: 800
+  success_threshold: 1.0
+  params:
+    instruction: Place the appropriate cutting tool for the food on the cutting board.
+    instruction_from_observation: true
+    instruction_observation_key: annotation.human.task_description
+    reject_initial_success: true
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: robot0_agentview_left
+      width: 256
+      height: 256
+      params:
+        attached_to: robot0_mobile_base
+        fixed_world_basis: false
+    - name: robot0_agentview_right
+      width: 256
+      height: 256
+      params:
+        attached_to: robot0_mobile_base
+        fixed_world_basis: false
+    - name: robot0_eye_in_hand
+      width: 256
+      height: 256
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy, dz, droll, dpitch, dyaw]
+  gripper: binary
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  control_frame_description: >-
+    the PandaOmron OSC robot0_right_center control frame, which is the robot-base
+    frame and moves with the mobile base; translation and axis-angle
+    rotation-vector commands use this moving base frame, normalized native +/-1
+    maps to +/-0.05 m and +/-0.5 rad with no sign compensation, and the
+    robot0_agentview cameras are base-attached rather than fixed in world. In
+    both agentview cameras, base +y projects approximately toward image left,
+    base +z toward image up, and base +x mainly along viewing depth with an
+    upward image component; base +x is slightly image-left in agentview_left and
+    slightly image-right in agentview_right. These base-relative projections
+    remain stable as the mobile base moves. eye_in_hand moves with the wrist, so
+    it has no fixed base-axis projection
+  gripper_open_command: 0
+  gripper_closed_command: 1
+  params:
+    scale_mode: robocasa_normalized_pandaomron_osc_base_delta
+    control_site: robot0_right_center
+    control_frame: robot_base
+    frame_moves_with_base: true
+    native_translation_gain_m: 0.05
+    native_rotation_gain_rad: 0.5
+    sign_compensation: false
+
+controller:
+  type: robocasa_osc
+  scales:
+    dx: 1.0
+    dy: 1.0
+    dz: 1.0
+    droll: 1.0
+    dpitch: 1.0
+    dyaw: 1.0
+    gripper: 1.0
+  params:
+    control_mode: 1.0
+
+agent:
+  type: mllm
+  action_output_mode: action_with_reflection
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras:
+      - robot0_agentview_left
+      - robot0_agentview_right
+      - robot0_eye_in_hand
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/robocasa365_cutting_tool_selection_mllm
+  save_images: false
+  save_video: false
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: robot0_agentview_left
+  window_width: 720
+  window_height: 540
+  info_panel_height: 190
+  fps: 20
+  max_steps: 800
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true
+  mujoco_gl: egl

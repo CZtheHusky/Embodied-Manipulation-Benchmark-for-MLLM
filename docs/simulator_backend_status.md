@@ -41,7 +41,7 @@ documented environment. It does not mean every upstream task has a dedicated con
 
 | Backend | Current state | Missing work |
 | --- | --- | --- |
-| RoboCasa365 | Covered only through the pinned RoboCasa v1.0/RoboCasa365 source release | No separate RoboCasa365 backend or task/config-level human-play entry has been added and verified. |
+| RoboCasa365 | Dedicated config entry added; runtime validation pending | `configs/robocasa365_cutting_tool_selection.yaml` plus fixed and hidden-control MLLM conditions cover one official `composite_unseen` target task. Pinned RoboCasa v1.0 is the RoboCasa365 release, but its current source registry exposes 317 dataset entries; assets, runtime, and upstream 50-scenario comparability remain unverified. |
 
 ## Readiness Rule
 
