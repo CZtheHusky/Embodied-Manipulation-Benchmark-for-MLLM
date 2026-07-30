@@ -1,5 +1,7 @@
 from dataclasses import asdict
+import hashlib
 import json
+import os
 
 import numpy as np
 import pytest
@@ -20,6 +22,7 @@ from mllm_teleop_benchmark.core.registry import (
     control_interface_metadata,
 )
 from mllm_teleop_benchmark.core.types import Observation, RoboCasaAction
+from mllm_teleop_benchmark.sim.robocasa.adapter import RoboCasaSimAdapter
 from mllm_teleop_benchmark.tasks.robocasa_task import RoboCasaGenericTask
 
 
@@ -50,6 +53,34 @@ CONTROLLER_SCALES = {
     "dyaw": 1.0,
     "gripper": 1.0,
 }
+
+
+def _require_robocasa() -> None:
+    os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+    try:
+        __import__("gymnasium")
+        __import__("robocasa")
+    except ImportError as exc:
+        pytest.skip(f"robocasa is unavailable: {exc}")
+    except Exception:
+        if os.environ.get("MLLM_TELEOP_REQUIRE_ROBOCASA") == "1":
+            raise
+        pytest.skip("robocasa failed to import in this optional environment")
+
+
+def _public_rgb_digests(observation: Observation) -> dict[str, str]:
+    digests = {}
+    for camera in PUBLIC_CAMERAS:
+        assert camera in observation.images
+        image = np.asarray(observation.images[camera])
+        assert image.shape == (256, 256, 3)
+        assert image.dtype == np.uint8
+        assert np.any(image != 0)
+        assert float(image.std()) > 1.0
+        digests[camera] = hashlib.sha256(
+            np.ascontiguousarray(image).tobytes()
+        ).hexdigest()
+    return digests
 
 
 class RecordingClient(ModelClient):
@@ -350,3 +381,101 @@ def test_robocasa365_mllm_conditions_differ_only_in_control_complexity():
         data["control_interface"]["frame_visible_to_agent"] = "<condition>"
 
     assert baseline == perturbed
+
+
+def test_robocasa365_experiment_seeds_have_stable_nonblack_public_rgb():
+    _require_robocasa()
+    baseline = load_config(BASELINE_CONFIG)
+    perturbed = load_config(PERTURBED_CONFIG)
+
+    for seed in range(
+        baseline.benchmark.seed,
+        baseline.benchmark.seed + baseline.benchmark.num_episodes,
+    ):
+        baseline_adapter = RoboCasaSimAdapter(baseline.simulator)
+        try:
+            baseline_observation = baseline_adapter.reset(
+                baseline.task,
+                seed,
+            )
+            assert baseline_adapter.get_state()["is_success"] is False
+            instruction = baseline_observation.state[
+                "annotation.human.task_description"
+            ]
+            assert isinstance(instruction, str) and instruction
+            baseline_digests = _public_rgb_digests(
+                baseline_observation
+            )
+        finally:
+            baseline_adapter.close()
+
+        perturbed_adapter = RoboCasaSimAdapter(perturbed.simulator)
+        try:
+            perturbed_observation = perturbed_adapter.reset(
+                perturbed.task,
+                seed,
+            )
+            assert perturbed_adapter.get_state()["is_success"] is False
+            assert (
+                perturbed_observation.state[
+                    "annotation.human.task_description"
+                ]
+                == instruction
+            )
+            assert (
+                _public_rgb_digests(perturbed_observation)
+                == baseline_digests
+            )
+        finally:
+            perturbed_adapter.close()
+
+
+def test_robocasa365_nonzero_controller_action_moves_end_effector():
+    _require_robocasa()
+    config = load_config(BASELINE_CONFIG)
+    adapter = RoboCasaSimAdapter(config.simulator)
+    try:
+        observation = adapter.reset(config.task, config.benchmark.seed)
+        initial_position = np.asarray(
+            observation.state[
+                "state.end_effector_position_relative"
+            ],
+            dtype=float,
+        )
+        initial_images = _public_rgb_digests(observation)
+        mapping = build_mapping(config, config.benchmark.seed)
+        controller = build_controller(
+            config,
+            mapping,
+            config.benchmark.seed,
+        )
+        sim_action = controller.translate(
+            JoystickAction(
+                {
+                    "joystick_0": 1.0,
+                    "joystick_1": 0.0,
+                    "joystick_2": 0.0,
+                    "joystick_3": 0.0,
+                    "joystick_4": 0.0,
+                    "joystick_5": 0.0,
+                    "joystick_6": 0.0,
+                }
+            )
+        )
+
+        result = adapter.step(sim_action)
+
+        final_position = np.asarray(
+            result.observation.state[
+                "state.end_effector_position_relative"
+            ],
+            dtype=float,
+        )
+        assert np.linalg.norm(final_position - initial_position) > 1e-4
+        final_images = _public_rgb_digests(result.observation)
+        assert any(
+            final_images[camera] != initial_images[camera]
+            for camera in PUBLIC_CAMERAS
+        )
+    finally:
+        adapter.close()
