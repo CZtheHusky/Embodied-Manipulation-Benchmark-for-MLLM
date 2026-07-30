@@ -265,9 +265,9 @@ The shared invalid-action handler first imports
 Colosseum RLBench pin, and falls back to the legacy
 `rlbench.task_environment` location for the existing RLBench backend.
 
-## MLLM Evaluation
+## RLBench MLLM Evaluation
 
-Both MLLM configs use the same public instruction source. After reset, the
+Both RLBench MLLM configs use the same public instruction source. After reset, the
 configured fallback text is replaced by the first official `ReachTarget`
 description, for example:
 
@@ -303,7 +303,7 @@ condition and verifies:
 - a Colosseum perturbed canary verifies a nonzero controller vector is rotated
   exactly once into the native world-frame pose delta
 - quaternion and gripper fields satisfy the RLBench action contract
-- prompt v2, reflection history, and three-image-turn behavior
+- prompt v3, reflection history, and three-image-turn behavior
 - hidden state and API-key sentinels do not enter requests or artifacts
 
 This validates the benchmark chain, not task completion by a real model.
@@ -356,6 +356,7 @@ python3 scripts/manage_conda_env.py run rlbench -- \
 python3 scripts/manage_conda_env.py run colosseum -- \
   python scripts/preflight_coppeliasim.py reset-canary \
   --config configs/colosseum_close_box_mllm_reflection.yaml \
+  --planning-delta 0.02 0 0 \
   --output outputs/preflight/colosseum_close_box.json
 ```
 
