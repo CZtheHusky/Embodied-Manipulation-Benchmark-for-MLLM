@@ -201,6 +201,10 @@ CoppeliaSim environment variables and display fallback. Use
 `MLLM_TELEOP_REQUIRE_COLOSSEUM=1` to turn an unavailable external runtime into a
 test failure.
 
+RLBench and Colosseum share the host advisory lock
+`/tmp/mllm-teleop-coppeliasim-v4.1.lock`. Tests may override that path with
+`MLLM_TELEOP_COPPELIASIM_LOCK_PATH`; production runs should use the shared default.
+
 LIBERO:
 
 ```bash

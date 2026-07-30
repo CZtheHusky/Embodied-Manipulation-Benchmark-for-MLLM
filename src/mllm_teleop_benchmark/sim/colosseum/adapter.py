@@ -6,6 +6,9 @@ from typing import Any
 
 from mllm_teleop_benchmark.config.schema import SimulatorConfig, TaskConfig
 from mllm_teleop_benchmark.core.types import Observation
+from mllm_teleop_benchmark.sim.coppeliasim_lock import (
+    CoppeliaSimRuntimeBusyError,
+)
 from mllm_teleop_benchmark.sim.rlbench.adapter import (
     RLBenchSimAdapter,
     _load_invalid_action_error_type,
@@ -132,15 +135,10 @@ class ColosseumSimAdapter(RLBenchSimAdapter):
 
         try:
             self.env = EnvironmentExt(action_mode=self._action_mode(), **kwargs)
-            self.env.launch()
-            self.task = self.env.get_task(task_class)
+            self._launch_environment(task_class)
+        except CoppeliaSimRuntimeBusyError:
+            raise
         except Exception as exc:
-            if self.env is not None:
-                try:
-                    self.env.shutdown()
-                except Exception:
-                    pass
-            self.env = None
             raise RuntimeError(
                 "Failed to launch Colosseum EnvironmentExt with CoppeliaSim "
                 "4.1. Verify the pinned sources, CoppeliaSim environment "
