@@ -128,6 +128,65 @@ def _mock_ffprobe(monkeypatch, streams: list[dict[str, object]] | None = None) -
     )
 
 
+def _make_formal_run(
+    run_dir: Path,
+    *,
+    requested_model: str | None = "test-model",
+) -> None:
+    manifest_path = run_dir / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = 2
+    manifest["source"] = {
+        "status": "reported",
+        "git_commit": "a" * 40,
+        "git_dirty": False,
+        "config_path": "configs/test.yaml",
+    }
+    manifest["model"] = (
+        {"requested_model": requested_model}
+        if requested_model is not None
+        else {}
+    )
+    _write_json(manifest_path, manifest)
+
+
+def _append_completed_step(
+    run_dir: Path,
+    *,
+    step_id: int,
+    response_model: str,
+) -> None:
+    episode_dir = run_dir / "episode_0000"
+    trajectory_path = episode_dir / "trajectory.jsonl"
+    transition = json.loads(
+        trajectory_path.read_text(encoding="utf-8").splitlines()[0]
+    )
+    transition["step_id"] = step_id
+    transition["agent_trace"]["attempts"] = 1
+    transition["agent_trace"]["artifact_dir"] = f"model_calls/step_{step_id:04d}"
+    with trajectory_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(transition) + "\n")
+
+    request = json.loads(
+        (episode_dir / "model_calls/step_0000/request.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    request["images"] = []
+    call_dir = episode_dir / f"model_calls/step_{step_id:04d}"
+    _write_json(call_dir / "request.json", request)
+    _write_json(call_dir / "response.json", {"model": response_model})
+
+    episode_summary_path = episode_dir / "summary.json"
+    episode_summary = json.loads(episode_summary_path.read_text(encoding="utf-8"))
+    episode_summary["steps"] = step_id + 1
+    _write_json(episode_summary_path, episode_summary)
+    run_summary_path = run_dir / "run_summary.json"
+    run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+    run_summary["episodes"][0]["steps"] = step_id + 1
+    _write_json(run_summary_path, run_summary)
+
+
 def test_summary_report_passes_and_counts_retries(monkeypatch, tmp_path):
     run_dir, _image_path = _run_fixture(tmp_path, attempts=3)
     _mock_ffprobe(monkeypatch)
@@ -145,6 +204,13 @@ def test_summary_report_passes_and_counts_retries(monkeypatch, tmp_path):
         "status": "pass",
         "scanned_requests": 1,
         "findings": [],
+    }
+    assert report["checks"]["response_model"] == {
+        "status": "legacy_unreported",
+        "requested": None,
+        "observed": [],
+        "missing_count": 0,
+        "mismatch_paths": [],
     }
     assert report["anomalies"] == []
 
@@ -364,6 +430,7 @@ def test_running_directory_is_incomplete(monkeypatch, tmp_path):
         run_dir / "run_manifest.json",
         {"benchmark": {"num_episodes": 2}},
     )
+    _make_formal_run(run_dir)
     (run_dir / "episode_0000").mkdir(parents=True)
     monkeypatch.setattr(audit_mllm_run.shutil, "which", lambda _name: None)
 
@@ -374,24 +441,55 @@ def test_running_directory_is_incomplete(monkeypatch, tmp_path):
     assert {"run_summary_missing", "summary_missing", "trajectory_missing"} <= {
         item["code"] for item in report["anomalies"]
     }
+    assert report["checks"]["response_model"] == {
+        "status": "pass",
+        "requested": "test-model",
+        "observed": [],
+        "missing_count": 0,
+        "mismatch_paths": [],
+    }
+    assert not {
+        "response_model_missing",
+        "response_model_mismatch",
+        "response_model_mixed",
+    } & {item["code"] for item in report["anomalies"]}
+
+
+def test_in_progress_unwritten_response_is_not_a_model_mismatch(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _make_formal_run(run_dir)
+    (run_dir / "run_summary.json").unlink()
+    (run_dir / "episode_0000/summary.json").unlink()
+    (run_dir / "episode_0000/model_calls/step_0000/response.json").unlink()
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "incomplete"
+    assert report["checks"]["response_model"] == {
+        "status": "pass",
+        "requested": "test-model",
+        "observed": [],
+        "missing_count": 0,
+        "mismatch_paths": [],
+    }
+    assert "model_response_missing" in {
+        item["code"] for item in report["anomalies"]
+    }
+    assert not {
+        "response_model_missing",
+        "response_model_mismatch",
+        "response_model_mixed",
+    } & {item["code"] for item in report["anomalies"]}
 
 
 def test_schema_v2_requires_clean_source_revision(monkeypatch, tmp_path):
     run_dir, _image_path = _run_fixture(tmp_path)
     _mock_ffprobe(monkeypatch)
-    _write_json(
-        run_dir / "run_manifest.json",
-        {
-            "schema_version": 2,
-            "benchmark": {"num_episodes": 1},
-            "source": {
-                "status": "reported",
-                "git_commit": "a" * 40,
-                "git_dirty": False,
-                "config_path": "configs/test.yaml",
-            },
-        },
-    )
+    _make_formal_run(run_dir)
 
     clean = audit_mllm_run.audit_run(run_dir)
 
@@ -402,6 +500,13 @@ def test_schema_v2_requires_clean_source_revision(monkeypatch, tmp_path):
         "git_commit": "a" * 40,
         "git_dirty": False,
         "config_path": "configs/test.yaml",
+    }
+    assert clean["checks"]["response_model"] == {
+        "status": "pass",
+        "requested": "test-model",
+        "observed": ["test-model"],
+        "missing_count": 0,
+        "mismatch_paths": [],
     }
 
     manifest = json.loads(
@@ -415,6 +520,108 @@ def test_schema_v2_requires_clean_source_revision(monkeypatch, tmp_path):
     assert dirty["status"] == "fail"
     assert "source_tree_dirty" in {
         item["code"] for item in dirty["anomalies"]
+    }
+
+
+def test_formal_run_requires_requested_model(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _make_formal_run(run_dir, requested_model=None)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert report["checks"]["response_model"] == {
+        "status": "fail",
+        "requested": None,
+        "observed": ["test-model"],
+        "missing_count": 0,
+        "mismatch_paths": [],
+    }
+    assert "requested_model_missing" in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_response_model_field_is_required_for_formal_runs(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _make_formal_run(run_dir)
+    _write_json(
+        run_dir / "episode_0000/model_calls/step_0000/response.json",
+        {"id": "sanitized-response"},
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert report["checks"]["response_model"] == {
+        "status": "fail",
+        "requested": "test-model",
+        "observed": [],
+        "missing_count": 1,
+        "mismatch_paths": [],
+    }
+    assert "response_model_missing" in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_response_models_prevent_compatible_endpoint_routing_drift(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _make_formal_run(run_dir)
+    response_path = (
+        run_dir / "episode_0000/model_calls/step_0000/response.json"
+    )
+    _write_json(response_path, {"model": "compat-endpoint-routed-model"})
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    # The endpoint response, not a compatible alias, proves which model served the run.
+    mismatch_path = "episode_0000/model_calls/step_0000/response.json"
+    assert report["status"] == "fail"
+    assert report["checks"]["response_model"] == {
+        "status": "fail",
+        "requested": "test-model",
+        "observed": ["compat-endpoint-routed-model"],
+        "missing_count": 0,
+        "mismatch_paths": [mismatch_path],
+    }
+    assert "response_model_mismatch" in {
+        item["code"] for item in report["anomalies"]
+    }
+    assert "response_model_mixed" not in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_mixed_response_models_fail_formal_run(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _make_formal_run(run_dir)
+    _append_completed_step(
+        run_dir,
+        step_id=1,
+        response_model="compat-endpoint-routed-model",
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    mismatch_path = "episode_0000/model_calls/step_0001/response.json"
+    assert report["status"] == "fail"
+    assert report["checks"]["response_model"] == {
+        "status": "fail",
+        "requested": "test-model",
+        "observed": ["compat-endpoint-routed-model", "test-model"],
+        "missing_count": 0,
+        "mismatch_paths": [mismatch_path],
+    }
+    assert {"response_model_mismatch", "response_model_mixed"} <= {
+        item["code"] for item in report["anomalies"]
     }
 
 

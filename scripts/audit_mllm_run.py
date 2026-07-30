@@ -72,10 +72,27 @@ class RunAuditor:
         self.image_mismatches: set[str] = set()
         self.black_screens: dict[str, dict[str, float]] = {}
         self.native_action_required = False
+        self.response_model_required = False
+        self.requested_model: str | None = None
+        self.response_models: dict[str, str] = {}
+        self.response_model_missing: set[str] = set()
+        self.response_model_invalid: set[str] = set()
 
     def run(self) -> dict[str, Any]:
         manifest = self.read_json(self.root / "run_manifest.json", "incomplete")
         summary = self.read_json(self.root / "run_summary.json", "incomplete")
+        schema_version = _nested_int(manifest, "schema_version")
+        self.response_model_required = (
+            schema_version is not None and schema_version >= 2
+        )
+        self.requested_model = _nested_str(manifest, "model", "requested_model")
+        if self.response_model_required and not self.requested_model:
+            self.add(
+                "error",
+                "requested_model_missing",
+                "run_manifest.json",
+                "model.requested_model must be a non-empty string",
+            )
         simulator_type = _nested_str(manifest, "simulator", "type")
         benchmark_name = _nested_str(manifest, "benchmark", "name")
         self.native_action_required = simulator_type == "simpler_env" or (
@@ -117,6 +134,7 @@ class RunAuditor:
             self.audit_episode(episode_id, episode_dirs.get(episode_id))
             for episode_id in sorted(set(episode_dirs) | set(summarized))
         ]
+        response_model = self.response_model_summary()
         privacy = self.scan_prompt_privacy()
         secrets = self.scan_secrets()
         self.anomalies = _dedupe(self.anomalies)
@@ -168,6 +186,7 @@ class RunAuditor:
                 "model_view": self.video_summary(episodes),
                 "source_revision": source_revision,
                 "native_actions": self.native_action_summary(episodes),
+                "response_model": response_model,
             },
             "anomalies": self.anomalies,
         }
@@ -367,6 +386,8 @@ class RunAuditor:
                 )
             if response_path.is_file():
                 report["counts"]["responses_present"] += 1
+                if self.response_model_required:
+                    self.audit_response_model(response_path, step_id)
             else:
                 self.add(
                     "error",
@@ -687,6 +708,77 @@ class RunAuditor:
             "status": status,
             "checked_steps": checked,
             "invalid_steps": invalid,
+        }
+
+    def audit_response_model(self, path: Path, step_id: int) -> None:
+        display = self.rel(path)
+        response = self.read_json(path)
+        if response is None:
+            self.response_model_invalid.add(display)
+            return
+        model = response.get("model")
+        if not isinstance(model, str) or not model:
+            self.response_model_missing.add(display)
+            self.add(
+                "error",
+                "response_model_missing",
+                display,
+                f"step={step_id}, top-level model must be a non-empty string",
+            )
+            return
+        self.response_models[display] = model
+
+    def response_model_summary(self) -> dict[str, Any]:
+        if not self.response_model_required:
+            return {
+                "status": "legacy_unreported",
+                "requested": self.requested_model,
+                "observed": [],
+                "missing_count": 0,
+                "mismatch_paths": [],
+            }
+
+        observed = sorted(set(self.response_models.values()))
+        mismatch_paths = (
+            sorted(
+                path
+                for path, model in self.response_models.items()
+                if model != self.requested_model
+            )
+            if self.requested_model
+            else []
+        )
+        for path in mismatch_paths:
+            self.add(
+                "error",
+                "response_model_mismatch",
+                path,
+                (
+                    f"requested={self.requested_model!r}, "
+                    f"observed={self.response_models[path]!r}"
+                ),
+            )
+        if len(observed) > 1:
+            self.add(
+                "error",
+                "response_model_mixed",
+                ".",
+                f"observed={json.dumps(observed, sort_keys=True)}",
+            )
+
+        failed = (
+            not self.requested_model
+            or self.response_model_missing
+            or self.response_model_invalid
+            or mismatch_paths
+            or len(observed) > 1
+        )
+        return {
+            "status": "fail" if failed else "pass",
+            "requested": self.requested_model,
+            "observed": observed,
+            "missing_count": len(self.response_model_missing),
+            "mismatch_paths": mismatch_paths,
         }
 
     def read_trajectory(self, path: Path) -> list[dict[str, Any]]:
