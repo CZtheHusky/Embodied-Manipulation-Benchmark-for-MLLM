@@ -559,11 +559,12 @@ class RunAuditor:
         if not isinstance(sim_action, dict):
             fail("sim_action_missing")
         else:
-            if _finite_vector(sim_action.get("delta_position"), length=3) is None:
+            if not _is_finite_number_vector(
+                sim_action.get("delta_position"), length=3
+            ):
                 fail("sim_action_delta_position_invalid")
-            if (
-                _finite_vector(sim_action.get("delta_rotation_rpy"), length=3)
-                is None
+            if not _is_finite_number_vector(
+                sim_action.get("delta_rotation_rpy"), length=3
             ):
                 fail("sim_action_delta_rotation_rpy_invalid")
             gripper = sim_action.get("gripper")
@@ -1147,6 +1148,14 @@ def _finite_vector(value: object, *, length: int) -> np.ndarray | None:
     if vector.shape != (length,) or not np.all(np.isfinite(vector)):
         return None
     return vector
+
+
+def _is_finite_number_vector(value: object, *, length: int) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == length
+        and all(_is_finite_number(item) for item in value)
+    )
 
 
 def _is_finite_number(value: object) -> bool:

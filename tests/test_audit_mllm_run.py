@@ -489,7 +489,7 @@ def test_colosseum_action_audit_rejects_non_replayable_values(
         run_dir,
         rejected="false",
         sim_action={
-            "delta_position": [0.0, 0.0],
+            "delta_position": [0.0, "0.0", 0.0],
             "delta_rotation_rpy": [0.0, float("inf"), 0.0],
             "gripper": 1.1,
             "metadata": {"controller": "other_controller"},
