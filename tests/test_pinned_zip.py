@@ -17,6 +17,7 @@ def test_exact_install_replaces_only_archive_roots(tmp_path):
     target = tmp_path / "assets"
     (target / "owned").mkdir(parents=True)
     (target / "owned/stale.txt").write_text("stale", encoding="utf-8")
+    (target / "owned/tracked.xml").write_text("tracked", encoding="utf-8")
     (target / "unrelated").mkdir()
     (target / "unrelated/keep.txt").write_text("keep", encoding="utf-8")
     archive = _zip(
@@ -24,12 +25,20 @@ def test_exact_install_replaces_only_archive_roots(tmp_path):
         {"owned/current.txt": b"current"},
     )
 
-    result = install_zip_exact(archive, target)
+    result = install_zip_exact(
+        archive,
+        target,
+        previous_files=("owned/stale.txt",),
+    )
 
     assert result.roots == ("owned",)
     assert result.file_count == 1
+    assert result.files == ("owned/current.txt",)
     assert (target / "owned/current.txt").read_bytes() == b"current"
     assert not (target / "owned/stale.txt").exists()
+    assert (
+        target / "owned/tracked.xml"
+    ).read_text(encoding="utf-8") == "tracked"
     assert (target / "unrelated/keep.txt").read_text(encoding="utf-8") == "keep"
 
 
@@ -43,3 +52,89 @@ def test_exact_install_rejects_symlink_members(tmp_path):
 
     with pytest.raises(ValueError, match="symbolic link"):
         install_zip_exact(archive_path, tmp_path / "assets")
+
+
+def test_exact_install_handles_file_to_directory_change(tmp_path):
+    target = tmp_path / "assets"
+    target.mkdir()
+    (target / "owned").write_text("old", encoding="utf-8")
+    archive = _zip(
+        tmp_path / "assets.zip",
+        {"owned/current.txt": b"current"},
+    )
+
+    install_zip_exact(
+        archive,
+        target,
+        previous_files=("owned",),
+    )
+
+    assert (target / "owned/current.txt").read_bytes() == b"current"
+
+
+def test_exact_install_handles_directory_to_file_change(tmp_path):
+    target = tmp_path / "assets"
+    (target / "owned").mkdir(parents=True)
+    (target / "owned/stale.txt").write_text("old", encoding="utf-8")
+    archive = _zip(
+        tmp_path / "assets.zip",
+        {"owned": b"current"},
+    )
+
+    install_zip_exact(
+        archive,
+        target,
+        previous_files=("owned/stale.txt",),
+    )
+
+    assert (target / "owned").read_bytes() == b"current"
+
+
+def test_exact_install_rolls_back_when_directory_has_unowned_file(tmp_path):
+    target = tmp_path / "assets"
+    (target / "owned").mkdir(parents=True)
+    (target / "owned/stale.txt").write_text("old", encoding="utf-8")
+    (target / "owned/keep.txt").write_text("keep", encoding="utf-8")
+    archive = _zip(
+        tmp_path / "assets.zip",
+        {"owned": b"current"},
+    )
+
+    with pytest.raises(ValueError, match="non-empty directory"):
+        install_zip_exact(
+            archive,
+            target,
+            previous_files=("owned/stale.txt",),
+        )
+
+    assert (target / "owned/stale.txt").read_text(encoding="utf-8") == "old"
+    assert (target / "owned/keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_exact_install_rejects_traversal_member(tmp_path):
+    archive = _zip(
+        tmp_path / "traversal.zip",
+        {"../outside.txt": b"outside"},
+    )
+
+    with pytest.raises(ValueError, match="escapes extraction directory"):
+        install_zip_exact(archive, tmp_path / "assets")
+
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_exact_install_rejects_symlinked_destination_parent(tmp_path):
+    target = tmp_path / "assets"
+    outside = tmp_path / "outside"
+    target.mkdir()
+    outside.mkdir()
+    (target / "owned").symlink_to(outside, target_is_directory=True)
+    archive = _zip(
+        tmp_path / "assets.zip",
+        {"owned/current.txt": b"current"},
+    )
+
+    with pytest.raises(ValueError, match="symbolic-link parent"):
+        install_zip_exact(archive, target)
+
+    assert not (outside / "current.txt").exists()

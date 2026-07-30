@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import json
 from pathlib import Path
 from typing import Callable
@@ -134,6 +135,8 @@ def download_assets(
 
         download_fn = hf_hub_download
 
+    marker_path = assets_root / MARKER_NAME
+    previous_archives = _load_previous_archives(marker_path)
     groups = {
         "fixtures": (
             "fixtures_lightwheel",
@@ -155,6 +158,7 @@ def download_assets(
                 filenames,
                 target_dir,
                 download_fn=download_fn,
+                previous_archives=previous_archives,
             )
         )
 
@@ -164,7 +168,7 @@ def download_assets(
         "asset_groups": list(selected),
         "archives": installed,
     }
-    (assets_root / MARKER_NAME).write_text(
+    marker_path.write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -176,6 +180,7 @@ def download_group(
     target_dir: Path,
     *,
     download_fn: Callable[..., str],
+    previous_archives: Mapping[str, object],
 ) -> dict[str, dict[str, object]]:
     target_dir.mkdir(parents=True, exist_ok=True)
     installed: dict[str, dict[str, object]] = {}
@@ -191,13 +196,52 @@ def download_group(
             )
         )
         print(f"Extracting {filename} into {target_dir}")
-        result = install_zip_exact(archive, target_dir)
+        result = install_zip_exact(
+            archive,
+            target_dir,
+            previous_files=_previous_files(
+                previous_archives,
+                remote_path,
+            ),
+        )
         installed[remote_path] = {
             "sha256": result.sha256,
             "roots": list(result.roots),
             "file_count": result.file_count,
+            "files": list(result.files),
         }
     return installed
+
+
+def _load_previous_archives(
+    marker_path: Path,
+) -> Mapping[str, object]:
+    if not marker_path.is_file():
+        return {}
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    archives = marker.get("archives") if isinstance(marker, Mapping) else None
+    if not isinstance(archives, Mapping):
+        raise ValueError(
+            f"Invalid Lightwheel asset marker: {marker_path}"
+        )
+    return archives
+
+
+def _previous_files(
+    archives: Mapping[str, object],
+    filename: str,
+) -> tuple[str, ...]:
+    record = archives.get(filename)
+    if not isinstance(record, Mapping):
+        return ()
+    files = record.get("files", ())
+    if not isinstance(files, list) or not all(
+        isinstance(value, str) for value in files
+    ):
+        raise ValueError(
+            f"Invalid previous file manifest for {filename}"
+        )
+    return tuple(files)
 
 
 def _installed_assets_root() -> Path:

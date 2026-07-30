@@ -48,6 +48,21 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
     stale_fixture = assets_root / "fixtures/cabinet/stale.txt"
     stale_fixture.parent.mkdir(parents=True)
     stale_fixture.write_text("stale", encoding="utf-8")
+    (
+        assets_root
+        / download_robocasa_lightwheel_assets.MARKER_NAME
+    ).write_text(
+        json.dumps(
+            {
+                "archives": {
+                    "fixtures_lightwheel/cabinets.zip": {
+                        "files": ["cabinet/stale.txt"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
     download_robocasa_lightwheel_assets.download_assets(
         ("fixtures", "objects"),
@@ -87,6 +102,7 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
                 ).hexdigest(),
                 "roots": ["cabinet"],
                 "file_count": 1,
+                "files": ["cabinet/model.xml"],
             },
             "objects_lightwheel/peeler.zip": {
                 "sha256": hashlib.sha256(
@@ -96,6 +112,7 @@ def test_downloads_pinned_lightwheel_groups_and_writes_marker(
                 ).hexdigest(),
                 "roots": ["peeler"],
                 "file_count": 1,
+                "files": ["peeler/model.xml"],
             },
         },
     }
