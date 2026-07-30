@@ -433,6 +433,9 @@ def test_simpler_env_absolute_gripper_target_uses_one_native_step():
                         "target",
                         np.asarray(state["target_qpos"]).copy(),
                     ),
+                    "get_state": lambda self: {
+                        "target_qpos": np.asarray(self.target).copy()
+                    },
                 },
             )()
             self.agent = type(
@@ -467,17 +470,40 @@ def test_simpler_env_absolute_gripper_target_uses_one_native_step():
     assert opened.info["step_id"] == 1
     assert opened.info["native_step_id"] == 1
     assert opened.info["native_steps_this_action"] == 1
+    np.testing.assert_allclose(
+        opened.info["benchmark_applied_native_action"]["values"],
+        fake_env.actions[0],
+    )
+    assert opened.info["benchmark_applied_native_action"]["shape"] == [7]
+    assert opened.info["benchmark_absolute_gripper"] == {
+        "controller_command": -1.0,
+        "applied_env_command": 0.0,
+        "target_update": "open",
+        "target_qpos": [-0.01, -0.01],
+    }
 
     close_action = SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
-    adapter.step(close_action)
+    closed = adapter.step(close_action)
     np.testing.assert_allclose(fake_env.gripper.target, (1.31, 1.31))
     assert fake_env.actions[1][-1] == 0.0
+    assert closed.info["benchmark_absolute_gripper"] == {
+        "controller_command": 1.0,
+        "applied_env_command": 0.0,
+        "target_update": "closed",
+        "target_qpos": [1.31, 1.31],
+    }
 
     hold_action = SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
     held = adapter.step(hold_action)
     np.testing.assert_allclose(fake_env.gripper.target, (1.31, 1.31))
     assert held.info["step_id"] == 3
     assert held.info["native_step_id"] == 3
+    assert held.info["benchmark_absolute_gripper"] == {
+        "controller_command": 0.0,
+        "applied_env_command": 0.0,
+        "target_update": "preserved",
+        "target_qpos": [1.31, 1.31],
+    }
 
     fake_env.gripper.config.use_target = False
     with pytest.raises(RuntimeError, match="pinned target-delta controller"):
@@ -777,6 +803,8 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert "Segmentation" not in request_text
     assert "pick coke can" in request_text
     assert "success" not in request_text.lower()
+    assert "benchmark_applied_native_action" not in request_text
+    assert "benchmark_absolute_gripper" not in request_text
     for forbidden in (
         *PRIVATE_SENTINELS.values(),
         "PRIVATE_API_KEY_SENTINEL",
@@ -800,6 +828,18 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert all(len(step["sim_action"]["values"]) == 7 for step in trajectory)
     assert all(
         np.all(np.isfinite(step["sim_action"]["values"]))
+        for step in trajectory
+    )
+    assert all(
+        len(step["info"]["benchmark_applied_native_action"]["values"]) == 7
+        for step in trajectory
+    )
+    assert all(
+        step["info"]["benchmark_applied_native_action"]["values"][-1] == 0.0
+        for step in trajectory
+    )
+    assert all(
+        "target_qpos" in step["info"]["benchmark_absolute_gripper"]
         for step in trajectory
     )
 

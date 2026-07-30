@@ -55,8 +55,11 @@ class SimplerEnvSimAdapter(SimAdapter):
             raise TypeError(f"SimplerEnvSimAdapter requires SimplerEnvAction, got {type(action).__name__}")
         self._ensure_env()
         native_action, clip_metadata = self._native_action(action)
+        gripper_application: dict[str, Any] | None = None
         if self.absolute_gripper_target:
-            native_action = self._set_absolute_gripper_target(native_action)
+            native_action, gripper_application = self._set_absolute_gripper_target(
+                native_action
+            )
         native_obs, reward, success, truncated, info = self._normalize_step_result(
             self.env.step(native_action)
         )
@@ -69,6 +72,12 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.last_success = bool(success)
         self.last_truncated = bool(truncated)
         self.last_info = self._jsonable_mapping(info)
+        self.last_info["benchmark_applied_native_action"] = {
+            "shape": list(native_action.shape),
+            "values": self._jsonable(native_action),
+        }
+        if gripper_application is not None:
+            self.last_info["benchmark_absolute_gripper"] = gripper_application
         if clip_metadata["clipped"]:
             self.last_info["action_clip"] = clip_metadata
         return StepResult(
@@ -235,13 +244,17 @@ class SimplerEnvSimAdapter(SimAdapter):
             }
         return values, metadata
 
-    def _set_absolute_gripper_target(self, native_action: np.ndarray) -> np.ndarray:
+    def _set_absolute_gripper_target(
+        self,
+        native_action: np.ndarray,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
         values = np.array(native_action, dtype=np.float32, copy=True)
         flat_values = values.reshape(-1)
         gripper_command = float(flat_values[-1])
-        if np.isclose(gripper_command, 0.0, atol=1e-7):
-            return values
-        if not np.isclose(abs(gripper_command), 1.0, atol=1e-7):
+        if not (
+            np.isclose(gripper_command, 0.0, atol=1e-7)
+            or np.isclose(abs(gripper_command), 1.0, atol=1e-7)
+        ):
             raise ValueError(
                 "SimplerEnv absolute gripper target requires native command -1, 0, or 1"
             )
@@ -258,19 +271,38 @@ class SimplerEnvSimAdapter(SimAdapter):
                 "controller with target clipping and small-action target retention"
             )
 
-        joint_limits = np.asarray(
-            gripper.articulation.get_qlimits()[gripper.joint_indices],
-            dtype=np.float64,
-        )
-        clip_threshold = float(gripper.config.clip_target_thres)
-        target = (
-            joint_limits[:, 0] - clip_threshold
-            if gripper_command < 0.0
-            else joint_limits[:, 1] + clip_threshold
-        )
-        gripper.set_state({"target_qpos": target})
+        target_update = "preserved"
+        if not np.isclose(gripper_command, 0.0, atol=1e-7):
+            joint_limits = np.asarray(
+                gripper.articulation.get_qlimits()[gripper.joint_indices],
+                dtype=np.float64,
+            )
+            clip_threshold = float(gripper.config.clip_target_thres)
+            if gripper_command < 0.0:
+                target = joint_limits[:, 0] - clip_threshold
+                target_update = "open"
+            else:
+                target = joint_limits[:, 1] + clip_threshold
+                target_update = "closed"
+            gripper.set_state({"target_qpos": target})
+
+        get_state = getattr(gripper, "get_state", None)
+        if not callable(get_state):
+            raise RuntimeError(
+                "SimplerEnv absolute gripper target requires controller.get_state()"
+            )
+        gripper_state = self._jsonable_mapping(get_state())
+        if "target_qpos" not in gripper_state:
+            raise RuntimeError(
+                "SimplerEnv absolute gripper controller state is missing target_qpos"
+            )
         flat_values[-1] = 0.0
-        return values
+        return values, {
+            "controller_command": gripper_command,
+            "applied_env_command": 0.0,
+            "target_update": target_update,
+            "target_qpos": gripper_state["target_qpos"],
+        }
 
     def _native_gripper_controller(self) -> Any:
         unwrapped = getattr(self.env, "unwrapped", self.env)

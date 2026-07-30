@@ -138,6 +138,15 @@ once, so the official 80-step horizon remains 80 model decisions. This
 behavior is verified against the real pinned upstream gripper controller and
 its joint limits.
 
+Each trajectory step keeps the controller-produced `sim_action` and separately
+records the post-adapter action actually passed to upstream SimplerEnv under
+`info.benchmark_applied_native_action`. The evaluator-only
+`info.benchmark_absolute_gripper` record includes the controller command, the
+zero gripper command passed to `env.step`, whether the target was opened,
+closed, or preserved, and the resulting target joint positions. These fields
+make the adapter transformation replayable and are excluded from model
+requests by the public-input projection.
+
 ## Observation
 
 The observation provider first tries to extract RGB frames from the native observation dict, then falls back to SimplerEnv's official `get_image_from_maniskill2_obs_dict(env, obs)` helper, and finally to `env.render()`.
