@@ -47,7 +47,13 @@ class RobosuiteSimAdapter(SimAdapter):
             camera_widths=camera_width,
             camera_heights=camera_height,
             controller_configs=suite.load_controller_config(default_controller="OSC_POSE"),
-            ignore_done=False,
+            horizon=int(
+                self.config.params.get(
+                    "max_episode_steps",
+                    task_config.max_steps,
+                )
+            ),
+            ignore_done=True,
             hard_reset=False,
         )
 

@@ -38,7 +38,9 @@ class LiberoSimAdapter(SimAdapter):
         self.last_reward = None
         self.last_done = False
         self.last_info = {}
-        self._max_steps = int(task_config.max_steps)
+        self._max_steps = int(
+            self.config.params.get("max_episode_steps", task_config.max_steps)
+        )
 
         suite_name = str(task_config.params.get("suite_name", self.config.params.get("suite_name", "libero_spatial")))
         task_id = int(task_config.params.get("task_id", self.config.params.get("task_id", 0)))
@@ -199,7 +201,10 @@ class LiberoSimAdapter(SimAdapter):
         env_args.setdefault("camera_widths", width)
         env_args.setdefault("use_camera_obs", True)
         policy_horizon = int(
-            self.config.params.get("horizon", task_config.max_steps)
+            self.config.params.get(
+                "max_episode_steps",
+                self.config.params.get("horizon", task_config.max_steps),
+            )
         )
         required_native_horizon = policy_horizon + self._settling_steps()
         if "horizon" in env_args and int(env_args["horizon"]) < required_native_horizon:

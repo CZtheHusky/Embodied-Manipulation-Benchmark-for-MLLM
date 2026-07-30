@@ -156,7 +156,22 @@ class CalvinSimAdapter(SimAdapter):
 
         kwargs = dict(self.config.env_kwargs)
         if self.env_id:
+            kwargs.setdefault(
+                "max_episode_steps",
+                int(self.config.params["max_episode_steps"]),
+            )
             self.env = self._make_registered_env(kwargs)
+            expected_horizon = self.config.params["max_episode_steps"]
+            actual_horizon = getattr(self.env, "_max_episode_steps", None)
+            if (
+                actual_horizon is not None
+                and int(actual_horizon) < int(expected_horizon)
+            ):
+                self.close()
+                raise RuntimeError(
+                    "CALVIN horizon is smaller than the required simulator "
+                    f"execution budget: {actual_horizon} < {expected_horizon}"
+                )
             return
 
         self.env = self._make_hydra_env(kwargs)

@@ -123,6 +123,18 @@ class MetaworldSimAdapter(SimAdapter):
 
         kwargs = self._make_kwargs(seed, task_config)
         self.env = gym.make(self.env_id, **kwargs)
+        expected_horizon = self.config.params.get("max_episode_steps")
+        actual_horizon = getattr(self.env, "_max_episode_steps", None)
+        if (
+            expected_horizon is not None
+            and actual_horizon is not None
+            and int(actual_horizon) < int(expected_horizon)
+        ):
+            self.close()
+            raise RuntimeError(
+                "Meta-World environment horizon is smaller than the required "
+                f"simulator execution budget: {actual_horizon} < {expected_horizon}"
+            )
 
     def _make_kwargs(self, seed: int | None, task_config: TaskConfig | None) -> dict[str, Any]:
         kwargs = dict(self.config.env_kwargs)

@@ -195,6 +195,7 @@ def test_model_review_projection_excludes_oracle_and_debug_is_whitelisted(tmp_pa
         "target_position",
         "eef_position",
         "simulator_action",
+        "simulator_substeps",
     }
     assert "PRIVATE_INFO_SENTINEL" not in json.dumps(debug_record, sort_keys=True)
 
@@ -206,7 +207,8 @@ def test_renderer_pairs_current_images_in_camera_order_and_writes_manifest(
     cameras = ("wrist", "front")
     transition = _transition(0, cameras)
     original_hashes = _write_request_artifacts(tmp_path, transition, cameras)
-    renderer = ReviewVideoRenderer(_config(tmp_path, debug=True, cameras=cameras), tmp_path)
+    config = _config(tmp_path, debug=True, cameras=cameras)
+    renderer = ReviewVideoRenderer(config, tmp_path)
     captured = {}
     monkeypatch.setattr(ReviewVideoRenderer, "_ffmpeg_version", lambda _self: "ffmpeg test")
     monkeypatch.setattr(ReviewVideoRenderer, "_encode_video", _fake_encoder(captured))
@@ -223,6 +225,10 @@ def test_renderer_pairs_current_images_in_camera_order_and_writes_manifest(
     assert result.model_view == "review/model_view.mp4"
     assert result.evaluator_debug == "review/evaluator_debug.mp4"
     assert [item["camera"] for item in manifest["steps"][0]["images"]] == list(cameras)
+    assert manifest["step_budget_unit"] == "agent_command"
+    assert manifest["max_agent_steps"] == config.task.max_steps
+    assert manifest["agent_steps"] == 1
+    assert manifest["simulator_substeps"] == 1
     assert {
         item["camera"]: item["sha256"] for item in manifest["steps"][0]["images"]
     } == original_hashes

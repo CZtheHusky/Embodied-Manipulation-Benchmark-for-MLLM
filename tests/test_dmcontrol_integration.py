@@ -521,7 +521,7 @@ def test_dmcontrol_planar_eef_gripper_zero_opens_and_one_closes():
     assert apertures[0.0] > apertures[1.0] + 0.04
 
 
-def test_dmcontrol_model_horizon_covers_official_native_time_limit():
+def test_dmcontrol_native_time_limit_does_not_preempt_agent_command_budget():
     pytest.importorskip("dm_control")
     pytest.importorskip("mujoco")
     config = load_config(BASELINE_MLLM_CONFIG)
@@ -551,7 +551,7 @@ def test_dmcontrol_model_horizon_covers_official_native_time_limit():
 
         assert result is not None
         assert result.terminated is False
-        assert result.truncated is True
+        assert result.truncated is False
         assert result.info["step_id"] == 250
         assert result.info["native_step_id"] == 1000
     finally:

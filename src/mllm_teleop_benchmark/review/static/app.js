@@ -156,7 +156,7 @@ async function selectEpisode(episodeId) {
   elements.stepFilter.value = "";
   const episode = currentEpisode();
   elements.episodeStatus.textContent =
-    `${episode.steps} steps | ${episode.termination_reason} | ` +
+    `${episode.steps} agent steps | ${episode.termination_reason} | ` +
     `${episode.success ? "success" : "not successful"}`;
   elements.promptVersion.textContent = episode.prompt_version || "unknown";
   elements.dialogVersion.textContent = episode.prompt_version || "Unknown prompt version";

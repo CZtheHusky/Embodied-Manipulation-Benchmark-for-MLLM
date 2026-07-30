@@ -53,10 +53,15 @@ class DMControlSimAdapter(SimAdapter):
                 "DMControl simulator.params.action_repeat must be a positive integer"
             )
         self.action_repeat = raw_action_repeat
+        task_kwargs = dict(config.env_kwargs)
+        task_kwargs["time_limit"] = float("inf")
+        environment_kwargs = dict(config.params.get("environment_kwargs", {}))
+        environment_kwargs.pop("time_limit", None)
         self.env = suite.load(
             domain_name=domain_name,
             task_name=task_name,
-            task_kwargs=config.env_kwargs,
+            task_kwargs=task_kwargs,
+            environment_kwargs=environment_kwargs,
             visualize_reward=False,
         )
 

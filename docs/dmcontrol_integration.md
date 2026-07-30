@@ -46,11 +46,11 @@ current MuJoCo physics state, computes the x/z translational Jacobian for the
 `grasp` site, and applies a Cartesian impedance command through the four arm
 motors. Bias forces are compensated and native controls are clipped to the
 upstream action spec. The gripper command is converted from public `[0, 1]` to
-the native `[-1, 1]` grasp motor range. Each model action is held for four
-native control steps. For Cartesian actions the target is sampled once, while
-the impedance force is recomputed on every native step from the current pose.
-This makes 250 model decisions cover the upstream 1000-step, 10-second task
-horizon.
+the native `[-1, 1]` grasp motor range. Each bounded simulator substep is held
+for four native control steps. For Cartesian actions the target is sampled
+once per bounded substep, while the impedance force is recomputed on every
+native step from the current pose. The upstream time limit is disabled so it
+cannot preempt the benchmark's 250 agent-command budget.
 
 Physics state, Jacobians, joint state, actuator controls, rewards, object and
 target positions, seeds, and sampled control perturbations remain inside the
@@ -106,8 +106,8 @@ The tests verify:
 - positive and negative single-axis commands move the real `grasp` site in
   the expected world x/z direction;
 - gripper `0` opens and gripper `1` closes in real physics;
-- 250 model decisions advance exactly 1000 native steps and reach the official
-  time limit;
+- 250 unit-magnitude model decisions advance exactly 1000 native steps without
+  an upstream time-limit truncation;
 - real reset, step, named-camera render, and worker-process shutdown;
 - fixed and hand RGB frames are non-black;
 - a four-step Fake Client episode preserves image/action history;

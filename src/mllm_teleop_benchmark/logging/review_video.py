@@ -78,6 +78,13 @@ class ReviewVideoRenderer:
             "fps": self.config.logging.video.fps,
             "step_hold_seconds": self.config.logging.video.step_hold_seconds,
             "terminal_hold_seconds": self.config.logging.video.terminal_hold_seconds,
+            "step_budget_unit": "agent_command",
+            "max_agent_steps": self.config.task.max_steps,
+            "agent_steps": episode_result.steps,
+            "simulator_substeps": episode_result.metrics.get(
+                "simulator_substeps",
+                sum(transition.simulator_substeps for transition in transitions),
+            ),
             "ffmpeg": {"binary": self.ffmpeg_binary, "version": None},
             "steps": [],
             "terminal": None,
@@ -543,6 +550,7 @@ def evaluator_debug_record(transition: StepTransition) -> dict[str, Any]:
         "target_position": _first_value(info, state, keys=_ORACLE_TARGET_KEYS),
         "eef_position": _first_value(info, state, keys=_ORACLE_EEF_KEYS),
         "simulator_action": to_jsonable(transition.sim_action),
+        "simulator_substeps": transition.simulator_substeps,
     }
 
 

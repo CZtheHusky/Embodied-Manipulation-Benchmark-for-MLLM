@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from mllm_teleop_benchmark.core.types import (
     AgentTrace,
-    CompoundSimulatorAction,
     StepTransition,
 )
 
@@ -28,10 +27,7 @@ class MetricsRecorder:
 
     def update(self, transition: StepTransition) -> None:
         self.steps += 1
-        if isinstance(transition.sim_action, CompoundSimulatorAction):
-            self.simulator_steps += len(transition.sim_action.actions)
-        else:
-            self.simulator_steps += 1
+        self.simulator_steps += transition.simulator_substeps
         if not transition.validation.is_valid:
             self.invalid_action_count += 1
 
@@ -65,6 +61,8 @@ class MetricsRecorder:
             "success": success,
             "steps": self.steps,
             "simulator_steps": self.simulator_steps,
+            "agent_steps": self.steps,
+            "simulator_substeps": self.simulator_steps,
             "invalid_action_count": self.invalid_action_count,
         }
         if self.model_decision_count:

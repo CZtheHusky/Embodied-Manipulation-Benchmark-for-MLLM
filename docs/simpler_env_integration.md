@@ -134,10 +134,11 @@ simulator boundary, the adapter uses the pinned controller's public
 `set_state()` interface to select the appropriate clipped joint target, then
 passes native zero for the gripper while applying the requested arm action.
 The pinned controller's `small_action_repeat_last_target` behavior preserves
-that selected target. Every model decision still calls `env.step()` exactly
-once, so the official 80-step horizon remains 80 model decisions. This
-behavior is verified against the real pinned upstream gripper controller and
-its joint limits.
+that selected target. `task.max_steps` counts model commands. A command whose
+motion magnitude exceeds one can use multiple bounded `env.step()` calls, so
+the adapter's native horizon is expanded to cover the worst-case simulator
+substeps without reducing the model-command budget. This behavior is verified
+against the real pinned upstream gripper controller and its joint limits.
 
 Each trajectory step keeps the controller-produced `sim_action` and separately
 records the post-adapter action actually passed to upstream SimplerEnv under

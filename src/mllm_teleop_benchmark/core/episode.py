@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 
 from mllm_teleop_benchmark.action.joystick import JoystickAction
@@ -9,6 +10,10 @@ from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.agents.base import Agent, AgentContext
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.control.controller import Controller
+from mllm_teleop_benchmark.core.execution_budget import (
+    STEP_BUDGET_UNIT,
+    execution_budget,
+)
 from mllm_teleop_benchmark.core.registry import control_interface_metadata
 from mllm_teleop_benchmark.core.types import (
     CompoundSimulatorAction,
@@ -54,6 +59,7 @@ class EpisodeManager:
         self.run_id = run_id
         self.run_group = run_group
         self.source_revision = dict(source_revision or {})
+        self.execution_budget = execution_budget(config)
 
     def run_episode(self, episode_id: int, seed: int) -> EpisodeResult:
         logger = EpisodeLogger(
@@ -84,7 +90,10 @@ class EpisodeManager:
     ) -> EpisodeResult:
         self.observation_provider.configure_sim(self.sim)
         self.task.reset(self.sim, seed)
-        observation = self.observation_provider.get_observation(self.sim)
+        observation = self._agent_observation(
+            self.observation_provider.get_observation(self.sim),
+            agent_step_id=0,
+        )
         logger.start(
             {
                 "task_instruction": self.task.instruction(),
@@ -92,13 +101,18 @@ class EpisodeManager:
                 "controller": self.controller.metadata(),
                 "control_interface": control_interface_metadata(self.config, seed),
                 "agent": self.agent.metadata(),
+                "step_budget": self.execution_budget.metadata(),
             }
         )
 
         success = self.task.is_success(observation, self.sim.get_state())
         termination_reason = "success" if success else "max_steps"
         last_valid_action: JoystickAction | None = None
-        while not success and len(history) < self.config.task.max_steps:
+        agent_step_id = 0
+        while (
+            not success
+            and agent_step_id < self.execution_budget.max_agent_steps
+        ):
             context = AgentContext(
                 observation=observation,
                 task_instruction=self.task.instruction(),
@@ -107,6 +121,10 @@ class EpisodeManager:
                 metadata={
                     "controller": self._public_controller_metadata(),
                     "control_interface": control_interface_metadata(self.config, seed),
+                    "step_budget": {
+                        "unit": STEP_BUDGET_UNIT,
+                        "max_agent_steps": self.execution_budget.max_agent_steps,
+                    },
                 },
                 history=self._agent_history(history),
             )
@@ -132,38 +150,50 @@ class EpisodeManager:
                 step_result,
                 next_observation,
                 success,
+                simulator_substeps,
             ) = self._execute_action(
                 action_to_execute,
             )
-            reached_max_steps = len(history) + 1 >= self.config.task.max_steps
+            next_agent_step_id = agent_step_id + 1
+            next_observation = self._agent_observation(
+                next_observation,
+                agent_step_id=next_agent_step_id,
+            )
+            reached_max_steps = (
+                next_agent_step_id >= self.execution_budget.max_agent_steps
+            )
             truncated = reached_max_steps and not success
             transition = StepTransition(
-                step_id=observation.step_id,
+                step_id=agent_step_id,
                 observation=observation,
                 raw_action=decision.action,
                 parsed_action=parsed_action.as_dict() if validation.is_valid else None,
                 validation=validation,
                 sim_action=sim_action,
                 next_observation=next_observation,
-                terminated=success or step_result.terminated,
-                truncated=truncated or step_result.truncated,
+                terminated=success or (
+                    step_result.terminated and not reached_max_steps
+                ),
+                truncated=(truncated or step_result.truncated) and not success,
                 info=step_result.info,
                 agent_trace=decision.trace,
                 reflection=reflection,
+                simulator_substeps=simulator_substeps,
             )
             logger.record_step(transition)
             metrics.update(transition)
             history.append(transition)
             observation = next_observation
+            agent_step_id = next_agent_step_id
 
             if success:
                 termination_reason = "success"
+            elif reached_max_steps:
+                termination_reason = "max_steps"
             elif step_result.terminated:
                 termination_reason = "simulator_terminated"
             elif step_result.truncated:
-                termination_reason = "simulator_truncated"
-            elif reached_max_steps:
-                termination_reason = "max_steps"
+                termination_reason = "execution_budget_violation"
 
             if transition.terminated or transition.truncated:
                 break
@@ -173,7 +203,7 @@ class EpisodeManager:
             episode_id=episode_id,
             seed=seed,
             success=success,
-            steps=len(history),
+            steps=agent_step_id,
             metrics=final_metrics,
             log_dir=str(logger.episode_dir),
             termination_reason=termination_reason,
@@ -230,7 +260,7 @@ class EpisodeManager:
     def _execute_action(
         self,
         action: JoystickAction,
-    ) -> tuple[SimulatorAction, StepResult, Observation, bool]:
+    ) -> tuple[SimulatorAction, StepResult, Observation, bool, int]:
         sim_actions: list[SimulatorAction] = []
         step_result: StepResult | None = None
         next_observation: Observation | None = None
@@ -264,7 +294,27 @@ class EpisodeManager:
                     "substep_count": len(sim_actions),
                 },
             )
-        return logged_action, step_result, next_observation, success
+        return (
+            logged_action,
+            step_result,
+            next_observation,
+            success,
+            len(sim_actions),
+        )
+
+    def _agent_observation(
+        self,
+        observation: Observation,
+        *,
+        agent_step_id: int,
+    ) -> Observation:
+        metadata = dict(observation.metadata)
+        metadata["simulator_step_id"] = observation.step_id
+        return replace(
+            observation,
+            step_id=agent_step_id,
+            metadata=metadata,
+        )
 
     def _execution_actions(
         self,

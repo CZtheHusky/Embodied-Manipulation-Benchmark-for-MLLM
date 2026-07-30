@@ -133,6 +133,11 @@ directory. Each run root contains `run_manifest.json` and `run_summary.json`;
 the latter distinguishes the requested model from model names actually reported
 by the endpoint.
 
+`task.max_steps` counts agent commands, not internal simulator substeps. The
+manifest and summaries record both `agent_steps` and `simulator_substeps`; a
+native horizon that ends an episode before the command budget is exhausted is
+reported as `execution_budget_violation`.
+
 ## Run ManiSkill
 
 ManiSkill uses the `maniskill-cpu` uv environment by default:

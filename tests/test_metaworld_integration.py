@@ -503,7 +503,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

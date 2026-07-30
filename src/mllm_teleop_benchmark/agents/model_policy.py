@@ -13,7 +13,7 @@ from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, Agent
 from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_name
 
 
-PROMPT_VERSION = "mllm_joystick_chat_completions_v6"
+PROMPT_VERSION = "mllm_joystick_chat_completions_v7"
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
@@ -408,10 +408,21 @@ def _static_instruction(
         "The only permitted top-level keys are channels and the optional "
         "case-sensitive string key Reflection. "
     )
+    step_budget = context.metadata.get("step_budget")
+    budget_instruction = ""
+    if isinstance(step_budget, dict):
+        max_agent_steps = int(step_budget["max_agent_steps"])
+        budget_instruction = (
+            "Interaction budget: The episode allows at most "
+            f"{max_agent_steps} agent commands. One returned joystick command "
+            "counts as one agent interaction regardless of how many bounded "
+            "internal substeps it uses.\n"
+        )
     return (
         f"Prompt version: {prompt_version}.\n"
         f"Task: {context.task_instruction}\n"
         f"Control: {control.text}\n"
+        f"{budget_instruction}"
         f"Action schema: {schema}.\n"
         f"{format_requirement}"
         f"Return valid JSON using this required output shape: {example}"

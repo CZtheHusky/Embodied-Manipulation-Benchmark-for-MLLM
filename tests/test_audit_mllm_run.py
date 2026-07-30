@@ -361,6 +361,25 @@ def test_zero_step_episode_is_not_counted_as_model_trajectory(monkeypatch, tmp_p
     }
 
 
+def test_execution_budget_violation_is_not_a_valid_benchmark_run(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    summary_path = run_dir / "episode_0000/summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["termination_reason"] = "execution_budget_violation"
+    _write_json(summary_path, summary)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert "execution_budget_violation" in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
 def test_prompt_privacy_checks_exact_keys_and_hidden_control_names(
     monkeypatch,
     tmp_path,

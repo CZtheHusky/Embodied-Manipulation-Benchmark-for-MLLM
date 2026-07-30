@@ -681,7 +681,7 @@ def test_simpler_env_real_gripper_command_sets_absolute_target():
         sim.close()
 
 
-def test_simpler_env_model_horizon_matches_native_time_limit():
+def test_simpler_env_native_time_limit_does_not_preempt_agent_command_budget():
     _require_simpler_env()
     config = load_config(BASELINE_CONFIG)
     sim = build_sim(config)
@@ -709,7 +709,7 @@ def test_simpler_env_model_horizon_matches_native_time_limit():
 
         assert result is not None
         assert result.terminated is False
-        assert result.truncated is True
+        assert result.truncated is False
         assert result.info["step_id"] == 80
         assert result.info["native_step_id"] == 80
         assert result.info["elapsed_steps"] == 80
@@ -870,7 +870,7 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
     assert manifest["simulator"]["type"] == "simpler_env"
     assert manifest["history"]["action_window"] == "all"
     assert manifest["history"]["image_window"] == 3

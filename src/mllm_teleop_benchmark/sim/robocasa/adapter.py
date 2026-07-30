@@ -37,6 +37,18 @@ class RoboCasaSimAdapter(SimAdapter):
         env_id = self.config.env_id or str(task_config.params.get("env_id", DEFAULT_ENV_ID))
         env_kwargs = self._env_kwargs(task_config, seed)
         self._env = gym.make(env_id, **env_kwargs)
+        expected_horizon = self.config.params.get("max_episode_steps")
+        actual_horizon = getattr(self._env, "_max_episode_steps", None)
+        if (
+            expected_horizon is not None
+            and actual_horizon is not None
+            and int(actual_horizon) < int(expected_horizon)
+        ):
+            self.close()
+            raise RuntimeError(
+                "RoboCasa horizon is smaller than the required simulator "
+                f"execution budget: {actual_horizon} < {expected_horizon}"
+            )
         obs, info = self._reset_env(seed)
 
         self._last_reward = 0.0
@@ -105,6 +117,15 @@ class RoboCasaSimAdapter(SimAdapter):
             kwargs["split"] = task_config.params["split"]
         kwargs.setdefault("split", "pretrain")
         kwargs.setdefault("seed", seed)
+        kwargs.setdefault(
+            "max_episode_steps",
+            int(
+                self.config.params.get(
+                    "max_episode_steps",
+                    task_config.max_steps,
+                )
+            ),
+        )
         return kwargs
 
     def _reset_env(self, seed: int) -> tuple[Any, dict[str, Any]]:

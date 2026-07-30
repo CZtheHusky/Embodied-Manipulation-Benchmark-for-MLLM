@@ -14,6 +14,20 @@ scale them by the configured magnitude-1 step. A gripper channel is exposed
 only when the task and embodiment support it; direct gripper control uses
 `[0, 1]` and is not covered by motion-channel clipping.
 
+`task.max_steps` is an agent-command budget. One accepted model output,
+including an invalid output recovered as noop, consumes one step. Internal
+bounded simulator substeps do not consume additional agent steps, and API
+retries or errors that execute no command consume none. Model observations,
+trajectory steps, request artifacts, and review frames therefore use
+consecutive agent step IDs. Evaluator logs separately record
+`simulator_substeps`.
+
+Before simulator creation, the benchmark derives the worst-case execution
+horizon as `task.max_steps * max_internal_substeps_per_agent_step` and raises
+configurable native horizons to at least that value. A native truncation that
+still occurs before the agent-command budget is exhausted is an
+`execution_budget_violation`, not a valid benchmark truncation.
+
 For Reacher-style planar tasks, the current interface uses two virtual joysticks for planar motion. The benchmark can tell the agent that planar motion channels exist without revealing the exact joystick-to-physical-axis relationship when mapping or frame complexity is enabled.
 
 The v0 implementation intentionally uses a dummy simulator and a reach-target task so the benchmark pipeline can be tested before binding to ManiSkill, LIBERO, RLBench, robosuite, OmniGibson, BEHAVIOR-1K, Isaac Sim, or other environments.

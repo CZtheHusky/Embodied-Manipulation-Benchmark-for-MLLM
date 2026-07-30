@@ -34,8 +34,10 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.last_success: bool | None = None
         self.last_truncated = False
         self.last_render: Any = None
+        self._task_max_steps: int | None = None
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
+        self._task_max_steps = task_config.max_steps
         self._ensure_env()
         self.step_id = 0
         self.native_step_id = 0
@@ -147,7 +149,24 @@ class SimplerEnvSimAdapter(SimAdapter):
 
         kwargs = dict(self.config.env_kwargs)
         kwargs.update(dict(self.config.params.get("make_kwargs", {})))
+        configured_horizon = self.config.params.get("max_episode_steps")
+        if configured_horizon is None:
+            configured_horizon = self._task_max_steps
+        if configured_horizon is not None:
+            kwargs.setdefault("max_episode_steps", int(configured_horizon))
         self.env = simpler_env.make(self.env_id, **kwargs)
+        expected_horizon = configured_horizon
+        actual_horizon = getattr(self.env, "_max_episode_steps", None)
+        if (
+            expected_horizon is not None
+            and actual_horizon is not None
+            and int(actual_horizon) < int(expected_horizon)
+        ):
+            self.close()
+            raise RuntimeError(
+                "SimplerEnv horizon is smaller than the required simulator "
+                f"execution budget: {actual_horizon} < {expected_horizon}"
+            )
 
     def _reset_native(self, seed: int) -> tuple[Any, dict[str, Any]]:
         reset_kwargs = dict(self.config.params.get("reset_kwargs", {}))

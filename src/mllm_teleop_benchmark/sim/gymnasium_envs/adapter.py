@@ -29,6 +29,18 @@ class GymnasiumSimAdapter(SimAdapter):
         if "max_episode_steps" in config.params:
             kwargs["max_episode_steps"] = int(config.params["max_episode_steps"])
         self.env = gym.make(self.env_id, **kwargs)
+        expected_horizon = config.params.get("max_episode_steps")
+        actual_horizon = getattr(self.env, "_max_episode_steps", None)
+        if (
+            expected_horizon is not None
+            and actual_horizon is not None
+            and int(actual_horizon) < int(expected_horizon)
+        ):
+            self.env.close()
+            raise RuntimeError(
+                "Gymnasium environment horizon is smaller than the required "
+                f"simulator execution budget: {actual_horizon} < {expected_horizon}"
+            )
         self.step_id = 0
         self.last_native_obs: Any = None
         self.last_info: dict[str, Any] = {}

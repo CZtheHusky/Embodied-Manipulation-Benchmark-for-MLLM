@@ -17,6 +17,9 @@ from mllm_teleop_benchmark.control.maniskill import ManiSkillDeltaEEFController
 from mllm_teleop_benchmark.control.metaworld import MetaworldBoxActionController
 from mllm_teleop_benchmark.control.rlbench import RLBenchDeltaEEFController
 from mllm_teleop_benchmark.control.simpler_env import SimplerEnvDeltaEEFController
+from mllm_teleop_benchmark.core.execution_budget import (
+    simulator_config_for_execution_budget,
+)
 from mllm_teleop_benchmark.mapping.frame_transform import ControlFrameTransform, IdentityControlFrameTransform, RotationControlFrameTransform
 from mllm_teleop_benchmark.mapping.joystick_mapping import FixedJoystickMapping, JoystickMapping
 from mllm_teleop_benchmark.observation.camera import (
@@ -44,53 +47,54 @@ def build_frame_transform(config: BenchmarkConfig, seed: int | None = None) -> C
 
 
 def build_sim(config: BenchmarkConfig) -> SimAdapter:
-    if config.simulator.type == "dummy":
-        return DummySimAdapter(config.simulator)
-    if config.simulator.type == "gymnasium":
+    simulator_config = simulator_config_for_execution_budget(config)
+    if simulator_config.type == "dummy":
+        return DummySimAdapter(simulator_config)
+    if simulator_config.type == "gymnasium":
         from mllm_teleop_benchmark.sim.gymnasium_envs.adapter import GymnasiumSimAdapter
 
-        return GymnasiumSimAdapter(config.simulator)
-    if config.simulator.type == "maniskill":
+        return GymnasiumSimAdapter(simulator_config)
+    if simulator_config.type == "maniskill":
         from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
 
-        return ManiSkillSimAdapter(config.simulator)
-    if config.simulator.type == "metaworld":
+        return ManiSkillSimAdapter(simulator_config)
+    if simulator_config.type == "metaworld":
         from mllm_teleop_benchmark.sim.metaworld.adapter import MetaworldSimAdapter
 
-        return MetaworldSimAdapter(config.simulator)
-    if config.simulator.type == "simpler_env":
+        return MetaworldSimAdapter(simulator_config)
+    if simulator_config.type == "simpler_env":
         from mllm_teleop_benchmark.sim.simpler_env.adapter import SimplerEnvSimAdapter
 
-        return SimplerEnvSimAdapter(config.simulator)
-    if config.simulator.type == "robosuite":
+        return SimplerEnvSimAdapter(simulator_config)
+    if simulator_config.type == "robosuite":
         from mllm_teleop_benchmark.sim.robosuite_adapter import RobosuiteSimAdapter
 
-        return RobosuiteSimAdapter(config.simulator)
-    if config.simulator.type == "robocasa":
+        return RobosuiteSimAdapter(simulator_config)
+    if simulator_config.type == "robocasa":
         from mllm_teleop_benchmark.sim.robocasa.adapter import RoboCasaSimAdapter
 
-        return RoboCasaSimAdapter(config.simulator)
-    if config.simulator.type == "dmcontrol":
+        return RoboCasaSimAdapter(simulator_config)
+    if simulator_config.type == "dmcontrol":
         from mllm_teleop_benchmark.sim.dmcontrol.adapter import DMControlSimAdapter
 
-        return DMControlSimAdapter(config.simulator)
-    if config.simulator.type == "calvin":
+        return DMControlSimAdapter(simulator_config)
+    if simulator_config.type == "calvin":
         from mllm_teleop_benchmark.sim.calvin.adapter import CalvinSimAdapter
 
-        return CalvinSimAdapter(config.simulator)
-    if config.simulator.type == "rlbench":
+        return CalvinSimAdapter(simulator_config)
+    if simulator_config.type == "rlbench":
         from mllm_teleop_benchmark.sim.rlbench.adapter import RLBenchSimAdapter
 
-        return RLBenchSimAdapter(config.simulator)
-    if config.simulator.type == "colosseum":
+        return RLBenchSimAdapter(simulator_config)
+    if simulator_config.type == "colosseum":
         from mllm_teleop_benchmark.sim.colosseum.adapter import ColosseumSimAdapter
 
-        return ColosseumSimAdapter(config.simulator)
-    if config.simulator.type == "libero":
+        return ColosseumSimAdapter(simulator_config)
+    if simulator_config.type == "libero":
         from mllm_teleop_benchmark.sim.libero.adapter import LiberoSimAdapter
 
-        return LiberoSimAdapter(config.simulator)
-    raise ValueError(f"Unsupported simulator type: {config.simulator.type}")
+        return LiberoSimAdapter(simulator_config)
+    raise ValueError(f"Unsupported simulator type: {simulator_config.type}")
 
 
 def build_task(config: BenchmarkConfig) -> Task:

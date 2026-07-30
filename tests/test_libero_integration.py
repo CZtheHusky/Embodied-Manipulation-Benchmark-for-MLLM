@@ -525,7 +525,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_chat_completions_v6" in group
+    assert "prompt-mllm_joystick_chat_completions_v7" in group
     assert "__output-" not in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -780,7 +780,9 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     episode = BenchmarkRunner(config).run((0,)).episodes[0]
 
     assert episode.steps == 4
-    assert episode.termination_reason == "simulator_truncated"
+    assert episode.termination_reason == "max_steps"
+    assert episode.metrics["agent_steps"] == 4
+    assert episode.metrics["simulator_substeps"] == 4
     assert len(client.requests) == 4
     assert len(native_actions) == 4
     assert len(oracle_checks) == 4
@@ -809,7 +811,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v7" in request_text
     assert f"Task: {TASK_TEXT}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -888,9 +890,13 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
         (episode_dir.parent / "run_manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["model"]["api"] == "chat_completions"
+    assert manifest["step_budget_unit"] == "agent_command"
+    assert manifest["max_agent_steps"] == 4
+    assert manifest["required_simulator_steps"] == 120
+    assert manifest["configured_simulator_step_horizon"] == 120
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

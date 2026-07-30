@@ -155,6 +155,8 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
 
     assert episode.steps == 3
     assert episode.termination_reason == "max_steps"
+    assert episode.metrics["agent_steps"] == 3
+    assert episode.metrics["simulator_substeps"] == 3
     assert [_image_count(request) for request in client.requests] == expected_counts
     assert episode.metrics["model_call_count"] == 3
     assert episode.metrics["model_api_error_count"] == 0
@@ -182,11 +184,16 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert (
         group_dir.name
         == f"model-fake-model__reasoning-default__api-chat_completions"
-        f"__prompt-mllm_joystick_chat_completions_v6"
+        f"__prompt-mllm_joystick_chat_completions_v7"
         f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
     )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
+    assert manifest["step_budget_unit"] == "agent_command"
+    assert manifest["max_agent_steps"] == 3
+    assert manifest["max_internal_substeps_per_agent_step"] == 30
+    assert manifest["required_simulator_steps"] == 90
+    assert manifest["configured_simulator_step_horizon"] == 90
     assert manifest["source"]["status"] == "reported"
     assert len(manifest["source"]["git_commit"]) == 40
     assert isinstance(manifest["source"]["git_dirty"], bool)
@@ -201,6 +208,16 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     run_summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
     assert run_summary["observed_response_models"] == ["fake-model"]
     assert run_summary["aggregate_metrics"]["num_episodes"] == 1
+    assert run_summary["step_budget_unit"] == "agent_command"
+    assert run_summary["episodes"][0]["agent_steps"] == 3
+    assert run_summary["episodes"][0]["simulator_substeps"] == 3
+    summary = json.loads(
+        (episode_dir / "summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["step_budget_unit"] == "agent_command"
+    assert summary["max_agent_steps"] == 3
+    assert summary["agent_steps"] == 3
+    assert summary["simulator_substeps"] == 3
     for artifact in episode_dir.rglob("*"):
         if artifact.is_file():
             assert b"VERY_PRIVATE_API_KEY_SENTINEL" not in artifact.read_bytes()
@@ -219,7 +236,7 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
 
     assert make_experiment_group(config) == (
         "model-fake-model__reasoning-default__api-chat_completions"
-        "__prompt-mllm_joystick_chat_completions_v6"
+        "__prompt-mllm_joystick_chat_completions_v7"
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
@@ -265,10 +282,10 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         "joystick_0 may control horizontal motion"
     )
     run_dir = episode_dir.parent
-    assert "__prompt-mllm_joystick_chat_completions_v6__" in run_dir.parent.name
+    assert "__prompt-mllm_joystick_chat_completions_v7__" in run_dir.parent.name
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
 
 
 def test_responses_experiment_group_records_prompt_version(tmp_path):
@@ -284,7 +301,7 @@ def test_responses_experiment_group_records_prompt_version(tmp_path):
     group = make_experiment_group(config)
 
     assert group is not None
-    assert "__api-responses__prompt-mllm_joystick_responses_v6__history-full__" in group
+    assert "__api-responses__prompt-mllm_joystick_responses_v7__history-full__" in group
 
 
 def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):
@@ -297,6 +314,8 @@ def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_pa
 
     assert episode.steps == 0
     assert episode.termination_reason == "agent_error"
+    assert episode.metrics["agent_steps"] == 0
+    assert episode.metrics["simulator_substeps"] == 0
     assert len(client.requests) == 1
     assert episode.metrics["invalid_action_count"] == 0
     assert episode.metrics["model_api_error_count"] == 1
@@ -322,6 +341,8 @@ def test_invalid_model_json_executes_noop_without_extra_api_request(monkeypatch,
 
     assert episode.steps == 3
     assert episode.termination_reason == "max_steps"
+    assert episode.metrics["agent_steps"] == 3
+    assert episode.metrics["simulator_substeps"] == 3
     assert len(client.requests) == 3
     assert episode.metrics["invalid_action_count"] == 3
     assert episode.metrics["model_api_error_count"] == 0
@@ -351,7 +372,10 @@ def test_model_motion_is_clipped_then_scaled_by_the_default_unit(
     )
 
     assert len(sim_actions) == 30
+    assert episode.steps == 1
+    assert episode.metrics["agent_steps"] == 1
     assert episode.metrics["simulator_steps"] == 30
+    assert episode.metrics["simulator_substeps"] == 30
     assert tuple(
         sum(action.delta_position[index] for action in sim_actions)
         for index in range(3)
@@ -379,6 +403,90 @@ def test_model_motion_is_clipped_then_scaled_by_the_default_unit(
         "substep_count": 30,
     }
     assert len(trajectory[0]["sim_action"]["actions"]) == 30
+    assert trajectory[0]["simulator_substeps"] == 30
+
+
+def test_large_commands_use_agent_step_ids_and_one_command_each(
+    monkeypatch,
+    tmp_path,
+):
+    response = (
+        '{"channels":{"joystick_0":30,"joystick_1":0,'
+        '"joystick_2":0,"joystick_3":0,"joystick_4":0,'
+        '"joystick_5":0,"joystick_6":0.5}}'
+    )
+    config = _config(tmp_path, "all")
+    config = replace(
+        config,
+        task=replace(config.task, max_steps=3, success_threshold=-1.0),
+    )
+    sim_actions = _capture_dummy_actions(monkeypatch)
+    client = FakeClient(response_text=response)
+
+    episode = _run_with_fake(monkeypatch, config, client)
+
+    assert episode.termination_reason == "max_steps"
+    assert episode.steps == 3
+    assert episode.metrics["agent_steps"] == 3
+    assert episode.metrics["simulator_substeps"] == 90
+    assert len(sim_actions) == 90
+    current_steps = [
+        next(
+            item["text"]
+            for item in request.messages[-1]["content"]
+            if item["type"] == "text"
+        )
+        for request in client.requests
+    ]
+    assert current_steps == [
+        "Observation step 0. Camera order: front.",
+        "Observation step 1. Camera order: front.",
+        "Observation step 2. Camera order: front.",
+    ]
+
+    trajectory = [
+        json.loads(line)
+        for line in (
+            Path(episode.log_dir) / "trajectory.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+    ]
+    assert [transition["step_id"] for transition in trajectory] == [0, 1, 2]
+    assert [
+        transition["observation"]["metadata"]["simulator_step_id"]
+        for transition in trajectory
+    ] == [0, 30, 60]
+    assert [
+        transition["next_observation"]["metadata"]["simulator_step_id"]
+        for transition in trajectory
+    ] == [30, 60, 90]
+    assert [transition["simulator_substeps"] for transition in trajectory] == [
+        30,
+        30,
+        30,
+    ]
+
+
+def test_native_truncation_before_agent_budget_is_execution_budget_violation(
+    monkeypatch,
+    tmp_path,
+):
+    original_step = DummySimAdapter.step
+
+    def truncate_early(sim, action):
+        return replace(original_step(sim, action), truncated=True)
+
+    monkeypatch.setattr(DummySimAdapter, "step", truncate_early)
+    episode = _run_with_fake(
+        monkeypatch,
+        _config(tmp_path, 0),
+        FakeClient(),
+    )
+
+    assert episode.steps == 1
+    assert episode.success is False
+    assert episode.termination_reason == "execution_budget_violation"
+    assert episode.metrics["agent_steps"] == 1
+    assert episode.metrics["simulator_substeps"] == 1
 
 
 def test_model_motion_substeps_stop_when_task_succeeds(

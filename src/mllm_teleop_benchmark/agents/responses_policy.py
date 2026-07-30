@@ -27,7 +27,7 @@ from mllm_teleop_benchmark.config.schema import AgentConfig
 from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, AgentTrace, Observation, StepTransition
 
 
-PROMPT_VERSION = "mllm_joystick_responses_v6"
+PROMPT_VERSION = "mllm_joystick_responses_v7"
 
 
 @dataclass(frozen=True)

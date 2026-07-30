@@ -11,6 +11,8 @@ from mllm_teleop_benchmark.agents.model_client import (
     ModelResponse,
     ModelUsage,
 )
+from mllm_teleop_benchmark.core.execution_budget import execution_budget
+from mllm_teleop_benchmark.core.registry import build_sim
 from mllm_teleop_benchmark.logging.episode_logger import make_experiment_group
 
 
@@ -91,15 +93,16 @@ PUSHER_MATRIX = (
 
 
 class PusherFakeClient:
-    def __init__(self) -> None:
+    def __init__(self, motion_value: float = 0.0) -> None:
         self.requests = []
+        self.motion_value = motion_value
 
     def complete(self, request):
         self.requests.append(request)
         text = json.dumps(
             {
                 "channels": {
-                    "joystick_0": 0,
+                    "joystick_0": self.motion_value,
                     "joystick_1": 0,
                     "joystick_2": 0,
                 },
@@ -166,6 +169,11 @@ def test_pusher_matrix_configs_are_explicit_and_distinct(
     assert config.control_interface.frame_transform == frame_transform
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
+    budget = execution_budget(config)
+    assert budget.max_agent_steps == 120
+    assert budget.max_internal_substeps_per_agent_step == 30
+    assert budget.required_simulator_steps == 3600
+    assert budget.configured_simulator_step_horizon == 3600
 
     description = config.control_interface.control_frame_description
     assert description is not None
@@ -186,6 +194,81 @@ def test_pusher_matrix_configs_are_explicit_and_distinct(
     if mapping_strategy != "fixed":
         assert "mapping-permuted_sign_flipped" in group
         assert "frame-random_rotation_3d" in group
+
+
+def test_pusher_native_horizon_covers_worst_case_agent_command_budget():
+    pytest.importorskip("gymnasium")
+    config = load_config("configs/pusher_delta_eef_mllm_chat_completions.yaml")
+
+    sim = build_sim(config)
+    try:
+        assert sim.config.params["max_episode_steps"] == 3600
+        assert sim.env._max_episode_steps == 3600
+    finally:
+        sim.close()
+
+
+def test_gymnasium_preflight_rejects_unadjustable_short_native_horizon(
+    monkeypatch,
+):
+    gym = pytest.importorskip("gymnasium")
+    config = load_config("configs/pusher_delta_eef_mllm_chat_completions.yaml")
+
+    class ShortHorizonEnv:
+        _max_episode_steps = 500
+
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    env = ShortHorizonEnv()
+    monkeypatch.setattr(gym, "make", lambda *_args, **_kwargs: env)
+
+    with pytest.raises(
+        RuntimeError,
+        match="horizon is smaller than the required simulator execution budget",
+    ):
+        build_sim(config)
+
+    assert env.closed is True
+
+
+def test_pusher_large_commands_reach_agent_budget_after_old_native_limit(
+    monkeypatch,
+    tmp_path,
+):
+    pytest.importorskip("gymnasium")
+    client = PusherFakeClient(motion_value=30)
+    monkeypatch.setenv("MLLM_TELEOP_MODEL", "fake-pusher-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://fake.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-api-key")
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.core.registry.OpenAICompatibleClient",
+        lambda **_kwargs: client,
+    )
+    monkeypatch.setattr(
+        "mllm_teleop_benchmark.sim.gymnasium_envs.adapter.GymnasiumSimAdapter.render",
+        lambda *_args: np.full((16, 16, 3), 127, dtype=np.uint8),
+    )
+    config = load_config(
+        "configs/pusher_delta_eef_mllm_chat_completions.yaml",
+        (
+            "task.max_steps=18",
+            "task.success_threshold=-1",
+            f"logging.output_dir={tmp_path}",
+            "logging.save_video=false",
+        ),
+    )
+
+    episode = BenchmarkRunner(config).run((0,)).episodes[0]
+
+    assert len(client.requests) == 18
+    assert episode.steps == 18
+    assert episode.termination_reason == "max_steps"
+    assert episode.metrics["agent_steps"] == 18
+    assert episode.metrics["simulator_substeps"] == 540
 
 
 @pytest.mark.parametrize(
@@ -237,6 +320,8 @@ def test_pusher_fake_client_closes_privilege_safe_visual_loop(
 
     assert episode.steps == 2
     assert episode.termination_reason == "max_steps"
+    assert episode.metrics["agent_steps"] == 2
+    assert episode.metrics["simulator_substeps"] == 2
     assert len(client.requests) == 2
     request_text = "\n".join(
         request.encoded_body().decode("utf-8") for request in client.requests
@@ -251,6 +336,8 @@ def test_pusher_fake_client_closes_privilege_safe_visual_loop(
     assert "Gymnasium Pusher world x, y, and z axes" in request_text
     assert "moves the end-effector target by 0.01 meters" in request_text
     assert "Move the white cylinder to the red goal disk" in request_text
+    assert "at most 2 agent commands" in request_text
+    assert "regardless of how many bounded internal substeps it uses" in request_text
     if camera_condition == "random_view":
         assert "front camera pose is randomly sampled at episode reset" in request_text
         assert "remains fixed for that episode" in request_text

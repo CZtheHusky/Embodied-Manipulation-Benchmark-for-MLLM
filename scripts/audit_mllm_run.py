@@ -305,6 +305,12 @@ class RunAuditor:
         if summary is not None:
             report["success"] = summary.get("success")
             report["termination_reason"] = summary.get("termination_reason")
+            if report["termination_reason"] == "execution_budget_violation":
+                self.add(
+                    "error",
+                    "execution_budget_violation",
+                    self.rel(episode_dir / "summary.json"),
+                )
             if not trajectory:
                 self.add(
                     "error",

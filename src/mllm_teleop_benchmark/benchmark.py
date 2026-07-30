@@ -8,6 +8,7 @@ from mllm_teleop_benchmark.action.parser import ActionParser
 from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.core.episode import EpisodeManager
+from mllm_teleop_benchmark.core.execution_budget import execution_budget
 from mllm_teleop_benchmark.core.registry import (
     build_agent,
     build_action_space,
@@ -119,6 +120,7 @@ class BenchmarkRunner:
         aggregate_metrics: dict[str, object],
     ) -> None:
         run_dir = Path(self.config.logging.output_dir) / run_group / run_id
+        budget = execution_budget(self.config)
         observed_models: set[str] = set()
         for result in results:
             trajectory_path = Path(result.log_dir) / "trajectory.jsonl"
@@ -135,6 +137,7 @@ class BenchmarkRunner:
         summary = {
             "run_id": run_id,
             "experiment_group": run_group,
+            **budget.metadata(),
             "observed_response_models": sorted(observed_models),
             "aggregate_metrics": aggregate_metrics,
             "episodes": [
@@ -143,6 +146,11 @@ class BenchmarkRunner:
                     "seed": result.seed,
                     "success": result.success,
                     "steps": result.steps,
+                    "agent_steps": result.steps,
+                    "simulator_substeps": result.metrics.get(
+                        "simulator_substeps",
+                        0,
+                    ),
                     "termination_reason": result.termination_reason,
                     "log_dir": str(Path(result.log_dir).relative_to(run_dir)),
                 }

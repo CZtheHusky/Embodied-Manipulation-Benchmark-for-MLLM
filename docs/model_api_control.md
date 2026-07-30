@@ -24,8 +24,8 @@ randomization values, or other simulator metadata. Those values remain
 available to evaluators and debug logs, but not to the model client.
 
 Chat Completions uses prompt version
-`mllm_joystick_chat_completions_v6`. Responses uses
-`mllm_joystick_responses_v6`. Static system text, task text, control
+`mllm_joystick_chat_completions_v7`. Responses uses
+`mllm_joystick_responses_v7`. Static system text, task text, control
 instructions, and schema are placed before episode turns. Request IDs,
 timestamps, and other per-call values are not inserted into prompt text.
 
@@ -304,8 +304,8 @@ agent trace. The server does not expose arbitrary files: image routes are
 restricted to PNG artifacts named in request manifests, and evaluator
 state/info are not returned by its API.
 
-`mllm_joystick_chat_completions_v6` and
-`mllm_joystick_responses_v6` are prompt contract versions, not model versions.
+`mllm_joystick_chat_completions_v7` and
+`mllm_joystick_responses_v7` are prompt contract versions, not model versions.
 They identify the system instruction, public-input projection, history layout,
 image policy, and joystick response schema. A behavior-changing prompt update
 must use a new version so results remain attributable and comparable.

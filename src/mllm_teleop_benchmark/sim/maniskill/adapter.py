@@ -110,6 +110,18 @@ class ManiSkillSimAdapter(SimAdapter):
 
         env = gym.make(self.env_id, **kwargs)
         self.env = self._wrap_cpu(env)
+        expected_horizon = self.config.params.get("max_episode_steps")
+        actual_horizon = getattr(env, "_max_episode_steps", None)
+        if (
+            expected_horizon is not None
+            and actual_horizon is not None
+            and int(actual_horizon) < int(expected_horizon)
+        ):
+            self.close()
+            raise RuntimeError(
+                "ManiSkill environment horizon is smaller than the required "
+                f"simulator execution budget: {actual_horizon} < {expected_horizon}"
+            )
 
     def _wrap_cpu(self, env: Any) -> Any:
         if "cpu_gym_wrapper" not in self.config.wrappers:

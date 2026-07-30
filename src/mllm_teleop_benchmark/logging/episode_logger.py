@@ -18,6 +18,7 @@ from mllm_teleop_benchmark.agents.responses_policy import (
     PROMPT_VERSION as RESPONSES_PROMPT_VERSION,
 )
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
+from mllm_teleop_benchmark.core.execution_budget import execution_budget
 from mllm_teleop_benchmark.core.types import AgentArtifact, EpisodeResult, Observation, StepTransition
 from mllm_teleop_benchmark.logging.review_video import (
     ReviewVideoRenderer,
@@ -43,6 +44,7 @@ class EpisodeLogger:
         self.run_id = run_id or make_run_id()
         self.run_group = run_group
         self.source_revision = dict(source_revision or {})
+        self.execution_budget = execution_budget(config)
         relative_run_dir = (
             Path(run_group) / self.run_id if run_group is not None else Path(self.run_id)
         )
@@ -144,6 +146,10 @@ class EpisodeLogger:
             "seed": self.seed,
             "success": result.success,
             "steps": result.steps,
+            "step_budget_unit": "agent_command",
+            "max_agent_steps": self.execution_budget.max_agent_steps,
+            "agent_steps": result.steps,
+            "simulator_substeps": result.metrics.get("simulator_substeps", 0),
             "termination_reason": result.termination_reason,
             "metrics": result.metrics,
             "metadata": self.metadata,
@@ -156,9 +162,10 @@ class EpisodeLogger:
         model = self.config.agent.model
         agent_metadata = self.metadata.get("agent", {})
         manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": self.run_id,
             "experiment_group": self.run_group,
+            **self.execution_budget.metadata(),
             "source": self.source_revision,
             "benchmark": {
                 "name": self.config.benchmark.name,

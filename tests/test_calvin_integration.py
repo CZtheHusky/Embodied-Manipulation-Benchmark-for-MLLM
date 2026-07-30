@@ -1162,7 +1162,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v6" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v7" in request_text
     assert (
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
@@ -1248,7 +1248,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v6"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

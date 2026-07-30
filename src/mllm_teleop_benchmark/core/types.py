@@ -175,6 +175,7 @@ class StepTransition:
     info: dict[str, Any] = field(default_factory=dict)
     agent_trace: AgentTrace | None = None
     reflection: str | None = None
+    simulator_substeps: int = 1
 
 
 @dataclass(frozen=True)
