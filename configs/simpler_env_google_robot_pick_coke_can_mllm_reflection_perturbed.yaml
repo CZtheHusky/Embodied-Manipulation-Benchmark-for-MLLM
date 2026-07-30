@@ -16,7 +16,7 @@ task:
   max_steps: 80
   success_threshold: 1.0
   params:
-    instruction: pick coke can
+    instruction: pick coke can.
     success_key: success
     reject_initial_success: true
 

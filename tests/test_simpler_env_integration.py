@@ -259,7 +259,7 @@ def test_simpler_env_mllm_task_text_is_identical_between_control_modes():
     perturbed = load_config(PERTURBED_CONFIG)
 
     assert baseline.task.params["instruction"] == perturbed.task.params["instruction"]
-    assert baseline.task.params["instruction"] == "pick coke can"
+    assert baseline.task.params["instruction"] == "pick coke can."
     assert "joystick" not in baseline.task.params["instruction"].lower()
     assert "rotation" not in baseline.task.params["instruction"].lower()
 
