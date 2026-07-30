@@ -275,6 +275,11 @@ def test_ten_seed_canary_rejects_initial_success_and_records_planning_rate():
         "acceptances": 5,
         "errors": 0,
         "acceptance_required": False,
+        "minimum_eef_displacement_meters": 1e-6,
+        "displacement_evidence_count": 0,
+        "missing_displacement_evidence_count": 0,
+        "moving_acceptances": 0,
+        "displacement_magnitudes_meters": [],
         "rejection_rate": pytest.approx(4 / 9),
         "recordable": True,
     }
@@ -314,6 +319,105 @@ def test_nonzero_planning_probe_fails_when_every_action_is_rejected():
         "not accepted for any reset seed" in failure
         for failure in report["failures"]
     )
+
+
+def test_nonzero_planning_probe_passes_with_measured_eef_displacement():
+    class MovingAdapter(FakeAdapter):
+        def step(self, action):
+            result = super().step(action)
+            if not self.last_action_rejected:
+                pose = self.last_native_obs.gripper_pose.copy()
+                pose[:3] += np.asarray(action.delta_position)
+                self.last_native_obs.gripper_pose = pose
+            return result
+
+    report = run_reset_canary(
+        MovingAdapter(),
+        SimpleNamespace(),
+        (SimpleNamespace(name="front"),),
+        tuple(range(3)),
+        planning_delta=(0.02, 0.0, 0.0),
+    )
+
+    assert report["status"] == "pass"
+    assert report["planning_probe"]["acceptances"] == 2
+    assert report["planning_probe"]["displacement_evidence_count"] == 2
+    assert report["planning_probe"]["missing_displacement_evidence_count"] == 0
+    assert report["planning_probe"]["moving_acceptances"] == 2
+    assert report["planning_probe"][
+        "displacement_magnitudes_meters"
+    ] == pytest.approx([0.02, 0.02])
+    assert report["seeds"][0]["planning"][
+        "eef_displacement_magnitude_meters"
+    ] == pytest.approx(0.02)
+
+
+def test_nonzero_planning_probe_requires_motion_beyond_float_noise():
+    class NoisyAcceptedAdapter(FakeAdapter):
+        def step(self, action):
+            result = super().step(action)
+            if not self.last_action_rejected:
+                pose = self.last_native_obs.gripper_pose.copy()
+                pose[0] += 5e-7
+                self.last_native_obs.gripper_pose = pose
+            return result
+
+    report = run_reset_canary(
+        NoisyAcceptedAdapter(),
+        SimpleNamespace(),
+        (SimpleNamespace(name="front"),),
+        tuple(range(3)),
+        planning_delta=(0.02, 0.0, 0.0),
+    )
+
+    # Planner acceptance and float jitter do not prove the arm executed the target.
+    assert report["planning_probe"]["acceptances"] == 2
+    assert report["planning_probe"]["displacement_evidence_count"] == 2
+    assert report["planning_probe"]["moving_acceptances"] == 0
+    assert report["planning_probe"][
+        "displacement_magnitudes_meters"
+    ] == pytest.approx([5e-7, 5e-7])
+    assert report["status"] == "fail"
+    assert any(
+        "no accepted nonzero planning probe moved the end effector" in failure
+        for failure in report["failures"]
+    )
+
+
+def test_nonzero_accepted_probe_fails_without_post_step_pose_evidence():
+    class MissingPostStepPoseAdapter(FakeAdapter):
+        def step(self, action):
+            result = super().step(action)
+            if not self.last_action_rejected:
+                self.last_native_obs.gripper_pose = None
+            return result
+
+    report = run_reset_canary(
+        MissingPostStepPoseAdapter(),
+        SimpleNamespace(),
+        (SimpleNamespace(name="front"),),
+        (0,),
+        planning_delta=(0.02, 0.0, 0.0),
+    )
+
+    assert report["planning_probe"]["acceptances"] == 1
+    assert report["planning_probe"]["displacement_evidence_count"] == 0
+    assert report["planning_probe"]["missing_displacement_evidence_count"] == 1
+    assert report["status"] == "fail"
+    assert any(
+        "accepted nonzero planning probe lacks finite gripper pose evidence"
+        in failure
+        for failure in report["failures"]
+    )
+    planning_report = report["seeds"][0]["planning"]
+    assert planning_report == {
+        "attempted": True,
+        "action_rejected": False,
+        "displacement_evidence_available": False,
+    }
+    serialized = json.dumps(report)
+    assert "gripper_pose" not in serialized
+    assert "[0.0, 0.0, 2.0]" not in serialized
 
 
 def test_ten_seed_canary_fails_when_camera_becomes_black():

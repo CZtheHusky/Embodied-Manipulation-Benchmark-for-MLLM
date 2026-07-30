@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 from PIL import Image
+import pytest
 
 from scripts import audit_mllm_run
 
@@ -185,6 +186,39 @@ def _append_completed_step(
     run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
     run_summary["episodes"][0]["steps"] = step_id + 1
     _write_json(run_summary_path, run_summary)
+
+
+def _set_simulator_type(run_dir: Path, simulator_type: str) -> None:
+    manifest_path = run_dir / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["simulator"] = {"type": simulator_type}
+    _write_json(manifest_path, manifest)
+
+
+def _set_rlbench_action_evidence(
+    run_dir: Path,
+    *,
+    step_id: int = 0,
+    rejected: object = False,
+    sim_action: object | None = None,
+) -> None:
+    trajectory_path = run_dir / "episode_0000/trajectory.jsonl"
+    transitions = [
+        json.loads(line)
+        for line in trajectory_path.read_text(encoding="utf-8").splitlines()
+    ]
+    transition = transitions[step_id]
+    transition["sim_action"] = sim_action or {
+        "delta_position": [0.01, -0.02, 0.03],
+        "delta_rotation_rpy": [0.0, 0.0, 0.0],
+        "gripper": 1.0,
+        "metadata": {"controller": "rlbench_delta_eef"},
+    }
+    transition["info"] = {"action_rejected": rejected}
+    trajectory_path.write_text(
+        "".join(json.dumps(item) + "\n" for item in transitions),
+        encoding="utf-8",
+    )
 
 
 def test_summary_report_passes_and_counts_retries(monkeypatch, tmp_path):
@@ -375,6 +409,7 @@ def test_simpler_native_action_audit_is_required_and_fail_loud(
         "required": True,
         "status": "pass",
         "checked_steps": 1,
+        "rejected_steps": 0,
         "invalid_steps": 0,
     }
 
@@ -390,6 +425,113 @@ def test_simpler_native_action_audit_is_required_and_fail_loud(
     assert invalid["checks"]["native_actions"]["invalid_steps"] == 1
     assert "native_gripper_command_not_zero" in {
         item["code"] for item in invalid["anomalies"]
+    }
+
+
+@pytest.mark.parametrize("simulator_type", ["rlbench", "colosseum"])
+def test_rlbench_format_action_audit_reports_accepted_and_rejected_steps(
+    monkeypatch,
+    tmp_path,
+    simulator_type,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, simulator_type)
+    _set_rlbench_action_evidence(run_dir)
+    _append_completed_step(run_dir, step_id=1, response_model="test-model")
+    _set_rlbench_action_evidence(run_dir, step_id=1, rejected=True)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    # One accepted action proves the episode exercised the simulator motion path.
+    expected = {
+        "required": True,
+        "status": "pass",
+        "checked_steps": 2,
+        "rejected_steps": 1,
+        "invalid_steps": 0,
+    }
+    assert report["status"] == "pass"
+    assert report["checks"]["native_actions"] == expected
+    assert report["episodes"][0]["native_action"] == expected
+
+
+def test_rlbench_action_audit_fails_loud_when_evidence_is_missing(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, "rlbench")
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert report["checks"]["native_actions"] == {
+        "required": True,
+        "status": "fail",
+        "checked_steps": 1,
+        "rejected_steps": 0,
+        "invalid_steps": 1,
+    }
+    assert {"sim_action_missing", "sim_action_info_missing"} <= {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_colosseum_action_audit_rejects_non_replayable_values(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, "colosseum")
+    _set_rlbench_action_evidence(
+        run_dir,
+        rejected="false",
+        sim_action={
+            "delta_position": [0.0, 0.0],
+            "delta_rotation_rpy": [0.0, float("inf"), 0.0],
+            "gripper": 1.1,
+            "metadata": {"controller": "other_controller"},
+        },
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    # Offline audit evidence must be numeric and unambiguous enough to replay.
+    assert report["status"] == "fail"
+    assert report["checks"]["native_actions"]["invalid_steps"] == 1
+    assert {
+        "sim_action_delta_position_invalid",
+        "sim_action_delta_rotation_rpy_invalid",
+        "sim_action_gripper_invalid",
+        "sim_action_controller_invalid",
+        "sim_action_rejection_invalid",
+    } <= {item["code"] for item in report["anomalies"]}
+
+
+def test_all_rejected_rlbench_actions_fail_without_counting_invalid_evidence(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, "rlbench")
+    _set_rlbench_action_evidence(run_dir, rejected=True)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert report["checks"]["native_actions"] == {
+        "required": True,
+        "status": "fail",
+        "checked_steps": 1,
+        "rejected_steps": 1,
+        "invalid_steps": 0,
+    }
+    assert "episode_all_simulator_actions_rejected" in {
+        item["code"] for item in report["anomalies"]
     }
 
 

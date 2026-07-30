@@ -72,6 +72,7 @@ class RunAuditor:
         self.image_mismatches: set[str] = set()
         self.black_screens: dict[str, dict[str, float]] = {}
         self.native_action_required = False
+        self.rlbench_action_required = False
         self.response_model_required = False
         self.requested_model: str | None = None
         self.response_models: dict[str, str] = {}
@@ -100,6 +101,7 @@ class RunAuditor:
             and isinstance(benchmark_name, str)
             and benchmark_name.startswith("simpler_env_")
         )
+        self.rlbench_action_required = simulator_type in {"rlbench", "colosseum"}
         source_revision = self.audit_source_revision(manifest)
         requested = _nested_int(manifest, "benchmark", "num_episodes")
         if manifest is not None and requested is None:
@@ -241,6 +243,9 @@ class RunAuditor:
 
     def audit_episode(self, episode_id: int, episode_dir: Path | None) -> dict[str, Any]:
         path = episode_dir or self.root / f"episode_{episode_id:04d}"
+        action_audit_required = (
+            self.native_action_required or self.rlbench_action_required
+        )
         report = {
             "episode_id": episode_id,
             "path": self.rel(path),
@@ -259,11 +264,12 @@ class RunAuditor:
             },
             "agent_trace": {"statuses": {}, "missing": 0},
             "native_action": {
-                "required": self.native_action_required,
+                "required": action_audit_required,
                 "status": (
-                    "incomplete" if self.native_action_required else "not_required"
+                    "incomplete" if action_audit_required else "not_required"
                 ),
                 "checked_steps": 0,
+                "rejected_steps": 0,
                 "invalid_steps": 0,
             },
             "images": {"manifest_references": 0, "unique_pngs": 0},
@@ -325,13 +331,23 @@ class RunAuditor:
                     f"step={step_id}, valid={valid!r}",
                 )
 
-            if self.native_action_required:
+            if action_audit_required:
                 report["native_action"]["checked_steps"] += 1
-                if not self.audit_simpler_native_action(
-                    transition,
-                    episode_dir / "trajectory.jsonl",
-                    step_id,
-                ):
+                if self.native_action_required:
+                    action_valid = self.audit_simpler_native_action(
+                        transition,
+                        episode_dir / "trajectory.jsonl",
+                        step_id,
+                    )
+                else:
+                    action_valid, rejected = self.audit_rlbench_sim_action(
+                        transition,
+                        episode_dir / "trajectory.jsonl",
+                        step_id,
+                    )
+                    if rejected:
+                        report["native_action"]["rejected_steps"] += 1
+                if not action_valid:
                     report["native_action"]["invalid_steps"] += 1
 
             trace = transition.get("agent_trace")
@@ -397,10 +413,25 @@ class RunAuditor:
                 )
 
         report["agent_trace"]["statuses"] = dict(sorted(statuses.items()))
-        if self.native_action_required and trajectory:
+        if action_audit_required and trajectory:
+            all_actions_rejected = (
+                self.rlbench_action_required
+                and report["native_action"]["rejected_steps"]
+                == report["native_action"]["checked_steps"]
+            )
+            if all_actions_rejected:
+                self.add(
+                    "error",
+                    "episode_all_simulator_actions_rejected",
+                    self.rel(episode_dir / "trajectory.jsonl"),
+                    (
+                        f"episode={episode_id}, "
+                        f"steps={report['native_action']['checked_steps']}"
+                    ),
+                )
             report["native_action"]["status"] = (
                 "fail"
-                if report["native_action"]["invalid_steps"]
+                if report["native_action"]["invalid_steps"] or all_actions_rejected
                 else "pass"
             )
         report["images"] = {
@@ -505,6 +536,54 @@ class RunAuditor:
         if target_values.size == 0 or not np.all(np.isfinite(target_values)):
             fail("absolute_gripper_target_invalid")
         return valid
+
+    def audit_rlbench_sim_action(
+        self,
+        transition: dict[str, Any],
+        trajectory_path: Path,
+        step_id: int,
+    ) -> tuple[bool, bool]:
+        valid = True
+
+        def fail(code: str, detail: str | None = None) -> None:
+            nonlocal valid
+            valid = False
+            self.add(
+                "error",
+                code,
+                self.rel(trajectory_path),
+                f"step={step_id}" + (f", {detail}" if detail else ""),
+            )
+
+        sim_action = transition.get("sim_action")
+        if not isinstance(sim_action, dict):
+            fail("sim_action_missing")
+        else:
+            if _finite_vector(sim_action.get("delta_position"), length=3) is None:
+                fail("sim_action_delta_position_invalid")
+            if (
+                _finite_vector(sim_action.get("delta_rotation_rpy"), length=3)
+                is None
+            ):
+                fail("sim_action_delta_rotation_rpy_invalid")
+            gripper = sim_action.get("gripper")
+            if not _is_finite_number(gripper) or not 0.0 <= float(gripper) <= 1.0:
+                fail("sim_action_gripper_invalid")
+            metadata = sim_action.get("metadata")
+            if not isinstance(metadata, dict):
+                fail("sim_action_metadata_invalid")
+            elif metadata.get("controller") != "rlbench_delta_eef":
+                fail("sim_action_controller_invalid")
+
+        info = transition.get("info")
+        if not isinstance(info, dict):
+            fail("sim_action_info_missing")
+            return valid, False
+        rejected = info.get("action_rejected")
+        if not isinstance(rejected, bool):
+            fail("sim_action_rejection_invalid")
+            return valid, False
+        return valid, rejected
 
     def audit_images(
         self,
@@ -695,18 +774,25 @@ class RunAuditor:
         invalid = sum(
             episode["native_action"]["invalid_steps"] for episode in episodes
         )
-        if not self.native_action_required:
+        rejected = sum(
+            episode["native_action"]["rejected_steps"] for episode in episodes
+        )
+        required = self.native_action_required or self.rlbench_action_required
+        if not required:
             status = "not_required"
-        elif invalid:
+        elif invalid or any(
+            episode["native_action"]["status"] == "fail" for episode in episodes
+        ):
             status = "fail"
         elif checked:
             status = "pass"
         else:
             status = "incomplete"
         return {
-            "required": self.native_action_required,
+            "required": required,
             "status": status,
             "checked_steps": checked,
+            "rejected_steps": rejected,
             "invalid_steps": invalid,
         }
 

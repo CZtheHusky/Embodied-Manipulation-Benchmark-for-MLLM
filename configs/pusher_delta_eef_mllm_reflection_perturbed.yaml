@@ -52,7 +52,12 @@ control_interface:
   mapping_visible_to_agent: false
   frame_transform: random_rotation_3d
   frame_visible_to_agent: false
-  control_frame_description: the Gymnasium Pusher world x, y, and z axes
+  control_frame_description: >-
+    the Gymnasium Pusher world x, y, and z axes. A mapped magnitude-1
+    translation command moves the end-effector target by 0.025 meters. The
+    front camera pose is randomly sampled at episode reset and then remains
+    fixed for that episode, so image directions do not have a fixed world-axis
+    projection across episodes
   params:
     scale_mode: uniform_env_eef_step_scale_0.025m
 

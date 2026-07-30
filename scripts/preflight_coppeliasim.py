@@ -22,6 +22,7 @@ from mllm_teleop_benchmark.utils.seeding import episode_seed
 REPORT_VERSION = "coppeliasim_preflight_v1"
 DEFAULT_AXIS_OFFSET_METERS = 0.05
 DEFAULT_MIN_PIXEL_DISPLACEMENT = 2.0
+MIN_EEF_DISPLACEMENT_METERS = 1e-6
 
 
 class PreflightFailure(RuntimeError):
@@ -280,6 +281,7 @@ def run_reset_canary(
     delta = tuple(float(value) for value in planning_delta)
     if len(delta) != 3 or not all(np.isfinite(delta)):
         raise PreflightFailure("Planning delta must contain three finite values")
+    planning_acceptance_required = any(value != 0.0 for value in delta)
     camera_names = tuple(str(spec.name) for spec in camera_specs)
     if not camera_names:
         raise PreflightFailure("Reset canary requires at least one camera")
@@ -291,6 +293,10 @@ def run_reset_canary(
     planning_attempts = 0
     planning_rejections = 0
     planning_errors = 0
+    displacement_evidence_count = 0
+    missing_displacement_evidence_count = 0
+    moving_acceptances = 0
+    displacement_magnitudes: list[float] = []
 
     for seed in seeds:
         seed_report: dict[str, object] = {
@@ -358,6 +364,11 @@ def run_reset_canary(
             if not initial_success:
                 seed_report["planning"] = {"attempted": True}
                 planning_attempts += 1
+                eef_position_before = (
+                    _finite_eef_position(sim)
+                    if planning_acceptance_required
+                    else None
+                )
                 try:
                     step_result = sim.step(
                         RLBenchAction(
@@ -381,6 +392,54 @@ def run_reset_canary(
                         "attempted": True,
                         "action_rejected": rejected,
                     }
+                    if planning_acceptance_required and not rejected:
+                        eef_position_after = _finite_eef_position(sim)
+                        if (
+                            eef_position_before is None
+                            or eef_position_after is None
+                        ):
+                            missing_displacement_evidence_count += 1
+                            seed_report["planning"][
+                                "displacement_evidence_available"
+                            ] = False
+                            failures.append(
+                                f"seed {seed}: accepted nonzero planning probe "
+                                "lacks finite gripper pose evidence before or "
+                                "after the step"
+                            )
+                        else:
+                            displacement = float(
+                                np.linalg.norm(
+                                    eef_position_after - eef_position_before
+                                )
+                            )
+                            if not np.isfinite(displacement):
+                                missing_displacement_evidence_count += 1
+                                seed_report["planning"][
+                                    "displacement_evidence_available"
+                                ] = False
+                                failures.append(
+                                    f"seed {seed}: accepted nonzero planning "
+                                    "probe produced non-finite end-effector "
+                                    "displacement evidence"
+                                )
+                            else:
+                                moved = (
+                                    displacement
+                                    > MIN_EEF_DISPLACEMENT_METERS
+                                )
+                                displacement_evidence_count += 1
+                                moving_acceptances += int(moved)
+                                displacement_magnitudes.append(displacement)
+                                seed_report["planning"].update(
+                                    {
+                                        "displacement_evidence_available": True,
+                                        "eef_displacement_magnitude_meters": (
+                                            displacement
+                                        ),
+                                        "moved": moved,
+                                    }
+                                )
                 except Exception as exc:
                     planning_errors += 1
                     message = f"{type(exc).__name__}: {exc}"
@@ -411,12 +470,14 @@ def run_reset_canary(
     planning_acceptances = (
         planning_attempts - planning_rejections - planning_errors
     )
-    planning_acceptance_required = any(
-        not np.isclose(value, 0.0) for value in delta
-    )
     if planning_acceptance_required and planning_acceptances == 0:
         failures.append(
             "nonzero planning probe was not accepted for any reset seed"
+        )
+    elif planning_acceptance_required and moving_acceptances == 0:
+        failures.append(
+            "no accepted nonzero planning probe moved the end effector beyond "
+            f"{MIN_EEF_DISPLACEMENT_METERS:g} meters"
         )
 
     return {
@@ -436,6 +497,15 @@ def run_reset_canary(
             "acceptances": planning_acceptances,
             "errors": planning_errors,
             "acceptance_required": planning_acceptance_required,
+            "minimum_eef_displacement_meters": (
+                MIN_EEF_DISPLACEMENT_METERS
+            ),
+            "displacement_evidence_count": displacement_evidence_count,
+            "missing_displacement_evidence_count": (
+                missing_displacement_evidence_count
+            ),
+            "moving_acceptances": moving_acceptances,
+            "displacement_magnitudes_meters": displacement_magnitudes,
             "rejection_rate": (
                 float(planning_rejections / planning_attempts)
                 if planning_attempts
@@ -899,6 +969,22 @@ def _native_value(native_observation: Any, key: str) -> Any:
     if isinstance(native_observation, Mapping):
         return native_observation.get(key)
     return getattr(native_observation, key, None)
+
+
+def _finite_eef_position(sim: Any) -> np.ndarray | None:
+    try:
+        pose = np.asarray(
+            _native_value(
+                getattr(sim, "last_native_obs", None),
+                "gripper_pose",
+            ),
+            dtype=np.float64,
+        )
+    except (TypeError, ValueError):
+        return None
+    if pose.ndim != 1 or pose.size < 3 or not np.all(np.isfinite(pose[:3])):
+        return None
+    return pose[:3].copy()
 
 
 def _write_report(report: Mapping[str, object], output: str | None) -> None:

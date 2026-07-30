@@ -54,7 +54,8 @@ control_interface:
     to the position from the latest observed absolute gripper pose, clamps the
     target to the configured workspace bounds, and sends a native absolute
     world-frame planning pose. The gripper is fixed open and is not
-    controllable; no joystick gripper channel exists. The front camera pose
+    controllable; no joystick gripper channel exists. front is a scene camera,
+    not a wrist camera, and its pose remains fixed during each episode. Its pose
     comes from the official task scene; without runtime extrinsics, this control
     contract does not assign world axes to image directions
   params:

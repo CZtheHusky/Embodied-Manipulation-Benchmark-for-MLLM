@@ -151,7 +151,7 @@ class CalvinSimAdapter(SimAdapter):
         except ImportError as exc:
             raise ImportError(
                 "CALVIN backend requires calvin_env from https://github.com/mees/calvin_env. "
-                "Install it in the mllm-teleop-calvin conda env."
+                "Create the uv backend with `python3 scripts/manage_uv_env.py create calvin`."
             ) from exc
 
         kwargs = dict(self.config.env_kwargs)

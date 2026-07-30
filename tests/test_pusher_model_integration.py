@@ -87,7 +87,11 @@ def test_pusher_reflection_configs_are_explicit_and_distinct(
     assert config.control_interface.mapping_visible_to_agent is visible
     assert config.control_interface.frame_visible_to_agent is visible
     assert config.control_interface.control_frame_description == (
-        "the Gymnasium Pusher world x, y, and z axes"
+        "the Gymnasium Pusher world x, y, and z axes. A mapped magnitude-1 "
+        "translation command moves the end-effector target by 0.025 meters. "
+        "The front camera pose is randomly sampled at episode reset and then "
+        "remains fixed for that episode, so image directions do not have a "
+        "fixed world-axis projection across episodes"
     )
     group = make_experiment_group(config)
     assert group is not None
@@ -136,6 +140,10 @@ def test_pusher_fake_client_closes_public_visual_loop(
     request_text = client.requests[-1].encoded_body().decode("utf-8")
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "Gymnasium Pusher world x, y, and z axes" in request_text
+    assert "moves the end-effector target by 0.025 meters" in request_text
+    assert "front camera pose is randomly sampled at episode reset" in request_text
+    assert "remains fixed for that episode" in request_text
+    assert "do not have a fixed world-axis projection across episodes" in request_text
     assert "Move the white cylinder to the red goal disk" in request_text
     if visible:
         assert "joystick_0 -> dx" in request_text

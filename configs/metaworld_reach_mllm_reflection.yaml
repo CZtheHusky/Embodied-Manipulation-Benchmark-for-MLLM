@@ -51,7 +51,10 @@ control_interface:
   control_frame_description: >-
     the Meta-World world frame: +x points right in topview, +y points toward
     the far edge of the table (up in topview), and +z points upward away from
-    the tabletop
+    the tabletop. A mapped magnitude-1 translation command moves the mocap
+    target by 0.01 meters per model decision. topview is a fixed external
+    world camera. behindGripper is wrist-mounted on the gripper and moves with
+    it, so its image directions do not have a fixed world-axis projection
   params:
     scale_mode: metaworld_normalized_box
 

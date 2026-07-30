@@ -194,6 +194,7 @@ def test_metaworld_runtime_reset_step_render_close_when_installed():
         observation = adapter.reset(config.task, seed=config.benchmark.seed)
         assert observation.step_id == 0
         assert observation.metadata["simulator"] == "metaworld"
+        assert adapter.env.unwrapped.action_scale == pytest.approx(0.01)
 
         controller = build_controller(config, build_mapping(config, config.benchmark.seed), config.benchmark.seed)
         sim_action = controller.translate(JoystickAction({"joystick_0": 0.0, "joystick_1": 0.0, "joystick_2": 0.0}))
@@ -241,7 +242,11 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
     assert config.control_interface.control_frame_description == (
         "the Meta-World world frame: +x points right in topview, +y points "
         "toward the far edge of the table (up in topview), and +z points "
-        "upward away from the tabletop"
+        "upward away from the tabletop. A mapped magnitude-1 translation "
+        "command moves the mocap target by 0.01 meters per model decision. "
+        "topview is a fixed external world camera. behindGripper is "
+        "wrist-mounted on the gripper and moves with it, so its image "
+        "directions do not have a fixed world-axis projection"
     )
     assert config.agent.action_output_mode == "action_with_reflection"
     assert config.agent.model is not None
@@ -298,7 +303,12 @@ def test_metaworld_mllm_prompt_describes_public_xyz_only():
     assert "+x points right in topview" in baseline_prompt
     assert "+y points toward the far edge of the table" in baseline_prompt
     assert "+z points upward away from the tabletop" in baseline_prompt
-    assert "gripper" not in baseline_prompt
+    assert "moves the mocap target by 0.01 meters per model decision" in baseline_prompt
+    assert "topview is a fixed external world camera" in baseline_prompt
+    assert "behindGripper is wrist-mounted on the gripper" in baseline_prompt
+    assert "moves with it" in baseline_prompt
+    assert "A gripper channel is available" not in baseline_prompt
+    assert "joystick_3" not in baseline_prompt
     assert "No additional control-frame rotation is applied" in baseline_prompt
 
     perturbed = load_config(

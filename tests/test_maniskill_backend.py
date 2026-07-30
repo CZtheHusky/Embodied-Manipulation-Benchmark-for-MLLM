@@ -44,7 +44,10 @@ MANISKILL_CONTROL_FRAME = (
     "+x points from the robot base toward the table center, +y runs laterally "
     "across the table toward the render_camera side, and +z points upward; "
     "translation deltas and rotation-vector axes are root-aligned rather than "
-    "tool-local, and render_camera views the workspace from the +x,+y quadrant"
+    "tool-local. A mapped magnitude-1 translation command is 0.1 meters and a "
+    "mapped magnitude-1 rotation-vector command is 0.1 radians. render_camera "
+    "is a fixed external human-render camera that views the workspace from the "
+    "+x,+y quadrant and does not move with the wrist"
 )
 
 
@@ -241,7 +244,10 @@ def test_maniskill_mllm_request_exposes_public_rules_without_privileged_inputs(p
     assert "Panda root/base frame" in request_text
     assert "+x points from the robot base toward the table center" in request_text
     assert "root-aligned rather than tool-local" in request_text
-    assert "render_camera views the workspace from the +x,+y quadrant" in request_text
+    assert "magnitude-1 translation command is 0.1 meters" in request_text
+    assert "rotation-vector command is 0.1 radians" in request_text
+    assert "render_camera is a fixed external human-render camera" in request_text
+    assert "does not move with the wrist" in request_text
     assert request_text.count('"role":"assistant"') == 1
     for forbidden in (
         "PRIVATE_STATE",

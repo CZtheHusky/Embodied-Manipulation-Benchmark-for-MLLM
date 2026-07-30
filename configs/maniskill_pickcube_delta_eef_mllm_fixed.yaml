@@ -53,7 +53,10 @@ control_interface:
     +x points from the robot base toward the table center, +y runs laterally
     across the table toward the render_camera side, and +z points upward;
     translation deltas and rotation-vector axes are root-aligned rather than
-    tool-local, and render_camera views the workspace from the +x,+y quadrant
+    tool-local. A mapped magnitude-1 translation command is 0.1 meters and a
+    mapped magnitude-1 rotation-vector command is 0.1 radians. render_camera
+    is a fixed external human-render camera that views the workspace from the
+    +x,+y quadrant and does not move with the wrist
   gripper_open_command: 0
   gripper_closed_command: 1
   params:

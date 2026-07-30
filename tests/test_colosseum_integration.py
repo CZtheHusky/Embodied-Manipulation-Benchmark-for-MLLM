@@ -318,6 +318,8 @@ def test_colosseum_mllm_configs_are_explicit_and_switchable(
     assert "translation as the only active motion" in frame_description
     assert "gripper is fixed open and is not controllable" in frame_description
     assert "no joystick gripper channel exists" in frame_description
+    assert "front is a scene camera, not a wrist camera" in frame_description
+    assert "pose remains fixed during each episode" in frame_description
     if visible:
         assert "Colosseum/RLBench world Cartesian x, y, and z axes" in frame_description
         assert "without sign compensation" in frame_description
