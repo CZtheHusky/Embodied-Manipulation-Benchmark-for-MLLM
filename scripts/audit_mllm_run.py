@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from collections import Counter
 from fractions import Fraction
 import hashlib
@@ -71,6 +72,9 @@ class RunAuditor:
         self.image_invalid: set[str] = set()
         self.image_mismatches: set[str] = set()
         self.black_screens: dict[str, dict[str, float]] = {}
+        self.image_evidence: dict[tuple[int, str, int], str] = {}
+        self.image_reference_hash_conflicts: set[tuple[int, str, int]] = set()
+        self.frozen_cameras: set[tuple[int, str]] = set()
         self.native_action_required = False
         self.rlbench_action_required = False
         self.response_model_required = False
@@ -272,7 +276,11 @@ class RunAuditor:
                 "rejected_steps": 0,
                 "invalid_steps": 0,
             },
-            "images": {"manifest_references": 0, "unique_pngs": 0},
+            "images": {
+                "manifest_references": 0,
+                "unique_pngs": 0,
+                "cameras": {},
+            },
             "review": {
                 "manifest_status": None,
                 "model_view_status": "fail",
@@ -398,7 +406,11 @@ class RunAuditor:
             if request is not None:
                 report["counts"]["requests_present"] += 1
                 image_references += self.audit_images(
-                    request, request_path, episode_dir, episode_images
+                    request,
+                    request_path,
+                    episode_id,
+                    episode_dir,
+                    episode_images,
                 )
             if response_path.is_file():
                 report["counts"]["responses_present"] += 1
@@ -434,13 +446,25 @@ class RunAuditor:
                 if report["native_action"]["invalid_steps"] or all_actions_rejected
                 else "pass"
             )
-        report["images"] = {
-            "manifest_references": image_references,
-            "unique_pngs": len(episode_images),
-        }
         report["review"] = self.audit_video(episode_dir)
         if any(item["severity"] == "incomplete" for item in self.anomalies[mark:]):
             report["completion_status"] = "incomplete"
+        camera_summary = self.image_camera_summary(episode_id)
+        if report["completion_status"] == "complete":
+            self.audit_frozen_cameras(
+                episode_id,
+                episode_dir,
+                camera_summary,
+                visual_change_expected=any(
+                    _has_nonzero_parsed_action(transition)
+                    for transition in trajectory
+                ),
+            )
+        report["images"] = {
+            "manifest_references": image_references,
+            "unique_pngs": len(episode_images),
+            "cameras": camera_summary,
+        }
         return report
 
     def audit_simpler_native_action(
@@ -590,6 +614,7 @@ class RunAuditor:
         self,
         request: dict[str, Any],
         request_path: Path,
+        episode_id: int,
         episode_dir: Path,
         episode_images: set[str],
     ) -> int:
@@ -601,10 +626,30 @@ class RunAuditor:
             self.image_references += 1
             artifact = record.get("artifact") if isinstance(record, dict) else None
             expected = record.get("sha256") if isinstance(record, dict) else None
+            camera = record.get("camera") if isinstance(record, dict) else None
+            step_id = record.get("step_id") if isinstance(record, dict) else None
             path = self.safe_path(episode_dir, artifact)
-            if path is None or not isinstance(expected, str):
+            if (
+                path is None
+                or not isinstance(expected, str)
+                or not isinstance(camera, str)
+                or not camera
+                or not _is_int(step_id)
+            ):
                 self.add("error", "request_image_record_invalid", self.rel(request_path))
                 continue
+            evidence_key = (episode_id, camera, step_id)
+            previous_hash = self.image_evidence.get(evidence_key)
+            if previous_hash is None:
+                self.image_evidence[evidence_key] = expected
+            elif previous_hash != expected:
+                self.image_reference_hash_conflicts.add(evidence_key)
+                self.add(
+                    "error",
+                    "model_image_reference_hash_conflict",
+                    self.rel(request_path),
+                    f"episode={episode_id}, camera={camera!r}, step={step_id}",
+                )
             display = self.rel(path)
             episode_images.add(display)
             if not path.is_file():
@@ -629,6 +674,51 @@ class RunAuditor:
                 }
                 self.add("error", "model_image_black_screen", display)
         return len(records)
+
+    def image_camera_summary(
+        self,
+        episode_id: int | None = None,
+    ) -> dict[str, dict[str, int]]:
+        steps_by_camera: dict[str, set[tuple[int, int]]] = {}
+        hashes_by_camera: dict[str, set[str]] = {}
+        for (observed_episode, camera, step_id), digest in self.image_evidence.items():
+            if episode_id is not None and observed_episode != episode_id:
+                continue
+            steps_by_camera.setdefault(camera, set()).add(
+                (observed_episode, step_id)
+            )
+            hashes_by_camera.setdefault(camera, set()).add(digest)
+        return {
+            camera: {
+                "observed_steps": len(steps_by_camera[camera]),
+                "unique_hashes": len(hashes_by_camera[camera]),
+            }
+            for camera in sorted(steps_by_camera)
+        }
+
+    def audit_frozen_cameras(
+        self,
+        episode_id: int,
+        episode_dir: Path,
+        camera_summary: dict[str, dict[str, int]],
+        *,
+        visual_change_expected: bool,
+    ) -> None:
+        if not visual_change_expected:
+            return
+        for camera, counts in camera_summary.items():
+            if counts["observed_steps"] < 2 or counts["unique_hashes"] != 1:
+                continue
+            self.frozen_cameras.add((episode_id, camera))
+            self.add(
+                "error",
+                "model_image_camera_frozen",
+                self.rel(episode_dir),
+                (
+                    f"episode={episode_id}, camera={camera!r}, "
+                    f"observed_steps={counts['observed_steps']}"
+                ),
+            )
 
     def scan_prompt_privacy(self) -> dict[str, Any]:
         findings: list[dict[str, str]] = []
@@ -724,11 +814,14 @@ class RunAuditor:
             or self.image_invalid
             or self.image_mismatches
             or self.black_screens
+            or self.image_reference_hash_conflicts
+            or self.frozen_cameras
         )
         return {
             "status": "fail" if failed else "pass",
             "manifest_references": self.image_references,
             "unique_pngs": len(self.image_files),
+            "cameras": self.image_camera_summary(),
             "missing_paths": sorted(self.image_missing),
             "invalid_png_paths": sorted(self.image_invalid),
             "hash_mismatch_paths": sorted(self.image_mismatches),
@@ -1155,6 +1248,14 @@ def _is_finite_number_vector(value: object, *, length: int) -> bool:
         isinstance(value, list)
         and len(value) == length
         and all(_is_finite_number(item) for item in value)
+    )
+
+
+def _has_nonzero_parsed_action(transition: Mapping[str, object]) -> bool:
+    action = transition.get("parsed_action")
+    return isinstance(action, Mapping) and any(
+        _is_finite_number(value) and float(value) != 0.0
+        for value in action.values()
     )
 
 

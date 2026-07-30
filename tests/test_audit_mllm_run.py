@@ -16,7 +16,7 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _png(path: Path, *, black: bool = False) -> str:
+def _png(path: Path, *, black: bool = False, pixel_offset: int = 0) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", (4, 4))
     if black:
@@ -24,7 +24,11 @@ def _png(path: Path, *, black: bool = False) -> str:
     else:
         image.putdata(
             [
-                (10 + index * 7, 30 + (index % 4) * 20, 60 + (index % 3) * 30)
+                (
+                    10 + index * 7 + pixel_offset,
+                    30 + (index % 4) * 20 + pixel_offset,
+                    60 + (index % 3) * 30 + pixel_offset,
+                )
                 for index in range(16)
             ]
         )
@@ -94,6 +98,8 @@ def _run_fixture(
             },
             "images": [
                 {
+                    "step_id": 0,
+                    "camera": "front",
                     "artifact": "model_calls/images/step_0000/front.png",
                     "sha256": digest,
                 }
@@ -156,6 +162,7 @@ def _append_completed_step(
     *,
     step_id: int,
     response_model: str,
+    images: list[dict[str, object]] | None = None,
 ) -> None:
     episode_dir = run_dir / "episode_0000"
     trajectory_path = episode_dir / "trajectory.jsonl"
@@ -173,7 +180,7 @@ def _append_completed_step(
             encoding="utf-8"
         )
     )
-    request["images"] = []
+    request["images"] = [] if images is None else images
     call_dir = episode_dir / f"model_calls/step_{step_id:04d}"
     _write_json(call_dir / "request.json", request)
     _write_json(call_dir / "response.json", {"model": response_model})
@@ -245,6 +252,12 @@ def test_summary_report_passes_and_counts_retries(monkeypatch, tmp_path):
         "observed": [],
         "missing_count": 0,
         "mismatch_paths": [],
+    }
+    assert report["episodes"][0]["images"]["cameras"] == {
+        "front": {"observed_steps": 1, "unique_hashes": 1}
+    }
+    assert report["checks"]["images"]["cameras"] == {
+        "front": {"observed_steps": 1, "unique_hashes": 1}
     }
     assert report["anomalies"] == []
 
@@ -564,6 +577,189 @@ def test_image_tampering_black_screen_and_secret_leaks_fail(
     serialized = json.dumps(report)
     assert "SECRET_AUTHORIZATION_123" not in serialized
     assert "SECRET_API_KEY_123" not in serialized
+
+
+def test_repeated_history_images_count_once_while_changed_rgb_passes(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_dir = run_dir / "episode_0000"
+    first_request = json.loads(
+        (episode_dir / "model_calls/step_0000/request.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    current_path = episode_dir / "model_calls/images/step_0001/front.png"
+    current_digest = _png(current_path, pixel_offset=1)
+    _append_completed_step(
+        run_dir,
+        step_id=1,
+        response_model="test-model",
+        images=[
+            first_request["images"][0],
+            {
+                "step_id": 1,
+                "camera": "front",
+                "artifact": "model_calls/images/step_0001/front.png",
+                "sha256": current_digest,
+            },
+        ],
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    expected = {"front": {"observed_steps": 2, "unique_hashes": 2}}
+    assert report["status"] == "pass"
+    assert report["episodes"][0]["images"] == {
+        "manifest_references": 3,
+        "unique_pngs": 2,
+        "cameras": expected,
+    }
+    assert report["checks"]["images"]["cameras"] == expected
+
+
+def test_nonblack_but_frozen_model_rgb_fails_temporal_audit(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_dir = run_dir / "episode_0000"
+    first_request = json.loads(
+        (episode_dir / "model_calls/step_0000/request.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    current_path = episode_dir / "model_calls/images/step_0001/front.png"
+    current_digest = _png(current_path)
+    trajectory_path = episode_dir / "trajectory.jsonl"
+    transition = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    transition["parsed_action"] = {"joystick_0": 1.0}
+    trajectory_path.write_text(
+        json.dumps(transition) + "\n",
+        encoding="utf-8",
+    )
+    _append_completed_step(
+        run_dir,
+        step_id=1,
+        response_model="test-model",
+        images=[
+            first_request["images"][0],
+            {
+                "step_id": 1,
+                "camera": "front",
+                "artifact": "model_calls/images/step_0001/front.png",
+                "sha256": current_digest,
+            },
+        ],
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    # Spatial variance rejects black frames; temporal hash variance rejects
+    # a nonblack camera that silently serves the same RGB at every step.
+    expected = {"front": {"observed_steps": 2, "unique_hashes": 1}}
+    assert report["status"] == "fail"
+    assert report["checks"]["images"]["status"] == "fail"
+    assert report["checks"]["images"]["black_screens"] == []
+    assert report["episodes"][0]["images"]["cameras"] == expected
+    assert report["checks"]["images"]["cameras"] == expected
+    assert "model_image_camera_frozen" in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_unchanged_rgb_is_valid_when_model_only_requests_noops(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_dir = run_dir / "episode_0000"
+    trajectory_path = episode_dir / "trajectory.jsonl"
+    transition = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    transition["parsed_action"] = {"joystick_0": 0.0}
+    trajectory_path.write_text(
+        json.dumps(transition) + "\n",
+        encoding="utf-8",
+    )
+    first_request = json.loads(
+        (episode_dir / "model_calls/step_0000/request.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    current_path = episode_dir / "model_calls/images/step_0001/front.png"
+    current_digest = _png(current_path)
+    _append_completed_step(
+        run_dir,
+        step_id=1,
+        response_model="test-model",
+        images=[
+            first_request["images"][0],
+            {
+                "step_id": 1,
+                "camera": "front",
+                "artifact": "model_calls/images/step_0001/front.png",
+                "sha256": current_digest,
+            },
+        ],
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    # A stationary image alone is not a renderer failure when the agent never
+    # asks the simulator to change state.
+    assert report["status"] == "pass"
+    assert report["checks"]["images"]["cameras"] == {
+        "front": {"observed_steps": 2, "unique_hashes": 1}
+    }
+    assert "model_image_camera_frozen" not in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_repeated_image_tuple_must_keep_the_same_hash(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_dir = run_dir / "episode_0000"
+    repeated_path = (
+        episode_dir / "model_calls/images/step_0000/front_repeated.png"
+    )
+    repeated_digest = _png(repeated_path, pixel_offset=1)
+    _append_completed_step(
+        run_dir,
+        step_id=1,
+        response_model="test-model",
+        images=[
+            {
+                "step_id": 0,
+                "camera": "front",
+                "artifact": (
+                    "model_calls/images/step_0000/front_repeated.png"
+                ),
+                "sha256": repeated_digest,
+            }
+        ],
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    # Both files match their own manifests; only tuple-level consistency can
+    # prove that repeated history did not change after its first request.
+    assert report["status"] == "fail"
+    assert report["checks"]["images"]["hash_mismatch_paths"] == []
+    assert report["checks"]["images"]["black_screens"] == []
+    assert report["checks"]["images"]["cameras"] == {
+        "front": {"observed_steps": 1, "unique_hashes": 1}
+    }
+    assert "model_image_reference_hash_conflict" in {
+        item["code"] for item in report["anomalies"]
+    }
 
 
 def test_running_directory_is_incomplete(monkeypatch, tmp_path):
