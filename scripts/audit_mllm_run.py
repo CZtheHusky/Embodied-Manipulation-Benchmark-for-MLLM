@@ -76,6 +76,7 @@ class RunAuditor:
         self.image_reference_hash_conflicts: set[tuple[int, str, int]] = set()
         self.frozen_cameras: set[tuple[int, str]] = set()
         self.native_action_required = False
+        self.robocasa_action_required = False
         self.rlbench_action_required = False
         self.response_model_required = False
         self.requested_model: str | None = None
@@ -104,6 +105,11 @@ class RunAuditor:
             simulator_type is None
             and isinstance(benchmark_name, str)
             and benchmark_name.startswith("simpler_env_")
+        )
+        self.robocasa_action_required = simulator_type == "robocasa" or (
+            simulator_type is None
+            and isinstance(benchmark_name, str)
+            and benchmark_name.startswith("robocasa_")
         )
         self.rlbench_action_required = simulator_type in {"rlbench", "colosseum"}
         source_revision = self.audit_source_revision(manifest)
@@ -248,7 +254,9 @@ class RunAuditor:
     def audit_episode(self, episode_id: int, episode_dir: Path | None) -> dict[str, Any]:
         path = episode_dir or self.root / f"episode_{episode_id:04d}"
         action_audit_required = (
-            self.native_action_required or self.rlbench_action_required
+            self.native_action_required
+            or self.robocasa_action_required
+            or self.rlbench_action_required
         )
         report = {
             "episode_id": episode_id,
@@ -343,6 +351,12 @@ class RunAuditor:
                 report["native_action"]["checked_steps"] += 1
                 if self.native_action_required:
                     action_valid = self.audit_simpler_native_action(
+                        transition,
+                        episode_dir / "trajectory.jsonl",
+                        step_id,
+                    )
+                elif self.robocasa_action_required:
+                    action_valid = self.audit_robocasa_sim_action(
                         transition,
                         episode_dir / "trajectory.jsonl",
                         step_id,
@@ -559,6 +573,84 @@ class RunAuditor:
             target_values = np.asarray([], dtype=np.float64)
         if target_values.size == 0 or not np.all(np.isfinite(target_values)):
             fail("absolute_gripper_target_invalid")
+        return valid
+
+    def audit_robocasa_sim_action(
+        self,
+        transition: dict[str, Any],
+        trajectory_path: Path,
+        step_id: int,
+    ) -> bool:
+        valid = True
+
+        def fail(code: str) -> None:
+            nonlocal valid
+            valid = False
+            self.add(
+                "error",
+                code,
+                self.rel(trajectory_path),
+                f"step={step_id}",
+            )
+
+        sim_action = transition.get("sim_action")
+        if not isinstance(sim_action, dict):
+            fail("robocasa_sim_action_missing")
+            return False
+        values = sim_action.get("values")
+        if not isinstance(values, dict):
+            fail("robocasa_sim_action_values_invalid")
+            return False
+
+        expected = {
+            "action.end_effector_position",
+            "action.end_effector_rotation",
+            "action.gripper_close",
+            "action.base_motion",
+            "action.control_mode",
+        }
+        if set(values) != expected:
+            fail("robocasa_sim_action_keys_invalid")
+
+        position = _finite_vector(
+            values.get("action.end_effector_position"),
+            length=3,
+        )
+        rotation = _finite_vector(
+            values.get("action.end_effector_rotation"),
+            length=3,
+        )
+        if position is None or np.any(np.abs(position) > 1.0):
+            fail("robocasa_sim_action_position_invalid")
+        if rotation is None or np.any(np.abs(rotation) > 1.0):
+            fail("robocasa_sim_action_rotation_invalid")
+
+        gripper = _finite_vector(
+            values.get("action.gripper_close"),
+            length=1,
+        )
+        if gripper is None or float(gripper[0]) not in {0.0, 1.0}:
+            fail("robocasa_sim_action_gripper_invalid")
+
+        base = _finite_vector(
+            values.get("action.base_motion"),
+            length=4,
+        )
+        if base is None or not np.allclose(base, 0.0):
+            fail("robocasa_sim_action_base_invalid")
+
+        control_mode = _finite_vector(
+            values.get("action.control_mode"),
+            length=1,
+        )
+        if control_mode is None or float(control_mode[0]) != 1.0:
+            fail("robocasa_sim_action_control_mode_invalid")
+
+        metadata = sim_action.get("metadata")
+        if not isinstance(metadata, dict):
+            fail("robocasa_sim_action_metadata_invalid")
+        elif metadata.get("controller") != "robocasa_osc":
+            fail("robocasa_sim_action_controller_invalid")
         return valid
 
     def audit_rlbench_sim_action(
@@ -871,7 +963,11 @@ class RunAuditor:
         rejected = sum(
             episode["native_action"]["rejected_steps"] for episode in episodes
         )
-        required = self.native_action_required or self.rlbench_action_required
+        required = (
+            self.native_action_required
+            or self.robocasa_action_required
+            or self.rlbench_action_required
+        )
         if not required:
             status = "not_required"
         elif invalid or any(

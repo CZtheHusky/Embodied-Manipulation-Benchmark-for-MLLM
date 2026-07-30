@@ -228,6 +228,32 @@ def _set_rlbench_action_evidence(
     )
 
 
+def _set_robocasa_action_evidence(
+    run_dir: Path,
+    *,
+    values: object | None = None,
+) -> None:
+    trajectory_path = run_dir / "episode_0000/trajectory.jsonl"
+    transition = json.loads(
+        trajectory_path.read_text(encoding="utf-8")
+    )
+    transition["sim_action"] = {
+        "values": values
+        or {
+            "action.end_effector_position": [1.0, 0.0, -1.0],
+            "action.end_effector_rotation": [0.0, 1.0, 0.0],
+            "action.gripper_close": [1.0],
+            "action.base_motion": [0.0, 0.0, 0.0, 0.0],
+            "action.control_mode": [1.0],
+        },
+        "metadata": {"controller": "robocasa_osc"},
+    }
+    trajectory_path.write_text(
+        json.dumps(transition) + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_summary_report_passes_and_counts_retries(monkeypatch, tmp_path):
     run_dir, _image_path = _run_fixture(tmp_path, attempts=3)
     _mock_ffprobe(monkeypatch)
@@ -438,6 +464,69 @@ def test_simpler_native_action_audit_is_required_and_fail_loud(
     assert invalid["checks"]["native_actions"]["invalid_steps"] == 1
     assert "native_gripper_command_not_zero" in {
         item["code"] for item in invalid["anomalies"]
+    }
+
+
+def test_robocasa_action_contract_is_required(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, "robocasa")
+    _set_robocasa_action_evidence(run_dir)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "pass"
+    assert report["checks"]["native_actions"] == {
+        "required": True,
+        "status": "pass",
+        "checked_steps": 1,
+        "rejected_steps": 0,
+        "invalid_steps": 0,
+    }
+
+
+def test_legacy_robocasa_name_requires_action_contract(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    manifest_path = run_dir / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["benchmark"]["name"] = "robocasa_fixture"
+    _write_json(manifest_path, manifest)
+    _set_robocasa_action_evidence(run_dir)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "pass"
+    assert report["checks"]["native_actions"]["required"] is True
+
+
+def test_robocasa_action_contract_rejects_mobile_base_motion(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    _set_simulator_type(run_dir, "robocasa")
+    _set_robocasa_action_evidence(
+        run_dir,
+        values={
+            "action.end_effector_position": [1.0, 0.0, -1.0],
+            "action.end_effector_rotation": [0.0, 1.0, 0.0],
+            "action.gripper_close": [1.0],
+            "action.base_motion": [0.0, 0.1, 0.0, 0.0],
+            "action.control_mode": [1.0],
+        },
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert report["checks"]["native_actions"]["invalid_steps"] == 1
+    assert "robocasa_sim_action_base_invalid" in {
+        item["code"] for item in report["anomalies"]
     }
 
 
