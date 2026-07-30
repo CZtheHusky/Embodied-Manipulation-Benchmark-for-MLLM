@@ -26,6 +26,7 @@ class PlayerRuntimeResult:
     terminated: bool = False
     truncated: bool = False
     error: str | None = None
+    evaluator_state: dict[str, Any] | None = None
 
 
 class PlayerRuntime(ABC):
@@ -170,14 +171,35 @@ def sim_adapter_worker_entry(config: BenchmarkConfig, command_queue: mp.Queue, r
                     camera_manager.reset(config.benchmark.seed)
                     observation_provider.configure_sim(sim)
                     task.reset(sim, config.benchmark.seed)
+                    evaluator_state = dict(sim.get_state())
                     observation = observation_provider.get_observation(sim)
-                    result_queue.put(_result_from_observation(config, hooks, observation, sim, camera_manager))
+                    result_queue.put(
+                        _result_from_observation(
+                            config,
+                            hooks,
+                            observation,
+                            sim,
+                            camera_manager,
+                            evaluator_state=evaluator_state,
+                        )
+                    )
                 elif command.kind == "step":
                     if command.action is None:
                         raise ValueError("Player step command requires a simulator action")
                     step_result = sim.step(command.action)
+                    evaluator_state = dict(sim.get_state())
                     observation = observation_provider.get_observation(sim)
-                    result_queue.put(_result_from_observation(config, hooks, observation, sim, camera_manager, step_result=step_result))
+                    result_queue.put(
+                        _result_from_observation(
+                            config,
+                            hooks,
+                            observation,
+                            sim,
+                            camera_manager,
+                            evaluator_state=evaluator_state,
+                            step_result=step_result,
+                        )
+                    )
                 elif command.kind == "close":
                     break
                 else:
@@ -196,6 +218,7 @@ def _result_from_observation(
     sim: Any,
     camera_manager: Any,
     *,
+    evaluator_state: dict[str, Any],
     step_result: StepResult | None = None,
 ) -> PlayerRuntimeResult:
     frame_name, frame = hooks.select_frame(config, observation, sim, camera_manager)
@@ -224,6 +247,7 @@ def _result_from_observation(
         step_result=normalized_step_result,
         terminated=normalized_step_result.terminated,
         truncated=normalized_step_result.truncated,
+        evaluator_state=evaluator_state,
     )
 
 

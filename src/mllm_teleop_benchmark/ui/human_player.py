@@ -91,6 +91,7 @@ class PygameHumanPlayer:
         try:
             initial = self.runtime.reset()
             frame, observation = self._frame_observation(initial)
+            evaluator_state = self._evaluator_state(initial)
             self._configure_canvas_from_frame(frame)
             screen = pygame.display.set_mode((self.width, self.height))
             pygame.display.set_caption(self.config.benchmark.name)
@@ -119,8 +120,10 @@ class PygameHumanPlayer:
                         elif event.key == pygame.K_r:
                             result = self.runtime.reset()
                             frame, next_observation = self._frame_observation(result)
+                            next_evaluator_state = self._evaluator_state(result)
                             before_state = observation.state
                             observation = next_observation
+                            evaluator_state = next_evaluator_state
                             frame_debug.record_frame(frame, step_id=observation.step_id, prefix="reset")
                             control_debug.record(
                                 control_debug.build_event_record(
@@ -151,6 +154,7 @@ class PygameHumanPlayer:
                             sim_action = controller.translate(parsed_action)
                             result = self.runtime.step(sim_action)
                             frame, next_observation = self._frame_observation(result)
+                            next_evaluator_state = self._evaluator_state(result)
                             steps += 1
                             frame_debug.record_frame(frame, step_id=next_observation.step_id, prefix="step")
                             control_record = control_debug.build_step_record(
@@ -164,7 +168,7 @@ class PygameHumanPlayer:
                                 state_after=next_observation.state,
                             )
                             control_debug.record(control_record)
-                            success = task.is_success(next_observation, next_observation.state)
+                            success = task.is_success(next_observation, next_evaluator_state)
                             truncated = steps >= self.max_steps and not success
                             step_result = result.step_result or StepResult(
                                 observation=next_observation,
@@ -188,6 +192,7 @@ class PygameHumanPlayer:
                             metrics.update(transition)
                             history.append(transition)
                             observation = next_observation
+                            evaluator_state = next_evaluator_state
                             self._draw(screen, font, frame, steps, last_action, panel_lines, success)
                             pygame.display.flip()
                             if transition.terminated or transition.truncated:
@@ -198,8 +203,8 @@ class PygameHumanPlayer:
             self.runtime.close()
             pygame.quit()
 
-        final_state = observation.state if "observation" in locals() else {}
-        final_metrics = metrics.finalize(success, task.metrics(final_state))
+        final_evaluator_state = evaluator_state if "evaluator_state" in locals() else {}
+        final_metrics = metrics.finalize(success, task.metrics(final_evaluator_state))
         result = EpisodeResult(
             episode_id=0,
             seed=seed,
@@ -218,6 +223,11 @@ class PygameHumanPlayer:
         if result.observation is None:
             raise RuntimeError("Player runtime returned no observation")
         return result.frame, result.observation
+
+    def _evaluator_state(self, result: PlayerRuntimeResult) -> dict[str, Any]:
+        if result.evaluator_state is None:
+            raise RuntimeError("Player runtime returned no evaluator state")
+        return result.evaluator_state
 
     def _parse_and_validate(self, parser: ActionParser, validator: ActionValidator, action_space: Any, raw_action: dict[str, float]) -> tuple[JoystickAction, ValidationResult]:
         try:
