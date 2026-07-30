@@ -9,6 +9,10 @@ import numpy as np
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
 from mllm_teleop_benchmark.core.types import Observation, RLBenchAction, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
+from mllm_teleop_benchmark.sim.coppeliasim_lock import (
+    CoppeliaSimRuntimeBusyError,
+    CoppeliaSimRuntimeLock,
+)
 from mllm_teleop_benchmark.utils.math import clamp
 
 
@@ -33,6 +37,7 @@ class RLBenchSimAdapter(SimAdapter):
         self.variation_index: int | None = None
         self._camera_specs: tuple[CameraSpec, ...] = ()
         self._invalid_action_error_type: type[Exception] | None = None
+        self._runtime_lock = CoppeliaSimRuntimeLock(self.simulator_type)
 
     def set_camera_configuration(self, camera_specs: tuple[CameraSpec, ...]) -> None:
         if self.env is not None:
@@ -131,10 +136,27 @@ class RLBenchSimAdapter(SimAdapter):
         return state
 
     def close(self) -> None:
-        if self.env is not None:
-            self.env.shutdown()
+        try:
+            if self.env is not None:
+                self.env.shutdown()
+        finally:
             self.env = None
             self.task = None
+            self._runtime_lock.release()
+
+    def _launch_environment(self, task_class: type[Any]) -> None:
+        if self.env is None:
+            raise RuntimeError("Cannot launch CoppeliaSim without an environment")
+        try:
+            self._runtime_lock.acquire()
+            self.env.launch()
+            self.task = self.env.get_task(task_class)
+        except Exception:
+            try:
+                self.close()
+            except Exception:
+                pass
+            raise
 
     def _ensure_task(self, task_config: TaskConfig | None) -> None:
         if self.task is not None:
@@ -166,15 +188,10 @@ class RLBenchSimAdapter(SimAdapter):
 
         try:
             self.env = Environment(action_mode=action_mode, **kwargs)
-            self.env.launch()
-            self.task = self.env.get_task(task_class)
+            self._launch_environment(task_class)
+        except CoppeliaSimRuntimeBusyError:
+            raise
         except Exception as exc:
-            if self.env is not None:
-                try:
-                    self.env.shutdown()
-                except Exception:
-                    pass
-            self.env = None
             raise RuntimeError(
                 "Failed to launch RLBench/CoppeliaSim. Verify CoppeliaSim v4.1.0, PyRep, "
                 "COPPELIASIM_ROOT, LD_LIBRARY_PATH, QT_QPA_PLATFORM_PLUGIN_PATH, and DISPLAY/headless GPU setup."
