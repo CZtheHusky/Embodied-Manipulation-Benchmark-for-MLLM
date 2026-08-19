@@ -23,6 +23,14 @@ Frame transforms are cross-environment control-layer components. `rotation_2d` r
 
 Agents consume `AgentContext` and return `AgentDecision`, which carries a raw action, `AgentTrace`, and optional artifacts. `MLLMPolicy` projects that broad internal context into a strict public request containing only task text, public RGB, public controls/schema, and the model's normalized action history. `ModelClient` receives the projected request and never receives simulator state. The legacy text prompt helper exposes camera names rather than raw observation metadata.
 
+`EpisodeManager` also owns the MLLM magnifier state. A valid normalized `xyxy`
+command selects one public RGB key and persists across agent interactions. The
+crop is recomputed from each new original `Observation.images` array before
+model-input resizing; it is exposed as an auxiliary public image without
+modifying simulator adapters or source camera images. Tool validation and
+feedback are independent of joystick validation, so a rejected lens update
+does not suppress the action in the same model response.
+
 `ControlInstructionBuilder` is the shared source for MLLM control instructions and human-play UI panel lines. Human evaluators should see the same control mode, joystick count, scale summary, visible fixed mapping, and complexity-presence flags that an MLLM would receive at episode start. Exact permutation, sign flips, and frame rotation parameters are not disclosed for hidden or complex control settings.
 
 Control-interface mapping strategies only confuse motion dimensions (`dx`, `dy`, `dz`, `droll`, `dpitch`, `dyaw`). If a gripper exists, it is always the final virtual joystick and is never permuted or sign-flipped.
@@ -36,6 +44,8 @@ Episode logging writes:
 - `trajectory.jsonl`
 - `model_calls/step_NNNN/{request,response,error}.json` for API agents
 - `model_calls/images/step_NNNN/<camera>.png` for exact model inputs
+- `model_calls/images/step_NNNN/magnifier/<source>.png` when the persistent
+  magnifier is active
 - `review/model_view.mp4` and `review/manifest.json` when automated MLLM
   review video is enabled
 - `review/evaluator_debug.mp4` only when evaluator debug video is explicitly

@@ -33,8 +33,8 @@ camera:
   cameras:
     - name: front
       type: mujoco_rgb
-      width: 256
-      height: 256
+      width: 512
+      height: 512
 
 control_interface:
   mode: eef_delta_pose

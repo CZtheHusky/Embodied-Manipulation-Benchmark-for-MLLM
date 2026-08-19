@@ -18,6 +18,7 @@ from mllm_teleop_benchmark.core.registry import control_interface_metadata
 from mllm_teleop_benchmark.core.types import (
     CompoundSimulatorAction,
     EpisodeResult,
+    MagnifierUpdate,
     Observation,
     SimulatorAction,
     StepResult,
@@ -27,6 +28,7 @@ from mllm_teleop_benchmark.core.types import (
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
+from mllm_teleop_benchmark.observation.magnifier import Magnifier
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.tasks.base import Task
 
@@ -90,8 +92,9 @@ class EpisodeManager:
     ) -> EpisodeResult:
         self.observation_provider.configure_sim(self.sim)
         self.task.reset(self.sim, seed)
+        magnifier = Magnifier(self.config.agent.observation.cameras)
         observation = self._agent_observation(
-            self.observation_provider.get_observation(self.sim),
+            magnifier.observe(self.observation_provider.get_observation(self.sim)),
             agent_step_id=0,
         )
         logger.start(
@@ -125,6 +128,10 @@ class EpisodeManager:
                         "unit": STEP_BUDGET_UNIT,
                         "max_agent_steps": self.execution_budget.max_agent_steps,
                     },
+                    "source_rgb_keys": list(
+                        self.config.agent.observation.cameras
+                        or tuple(sorted(str(key) for key in observation.images))
+                    ),
                 },
                 history=self._agent_history(history),
             )
@@ -136,8 +143,13 @@ class EpisodeManager:
                 termination_reason = "agent_error"
                 break
 
-            parsed_action, validation, reflection = self._parse_and_validate(
+            parsed_action, validation, reflection, magnifier_update = self._parse_and_validate(
                 decision.action
+            )
+
+            magnifier_result = magnifier.apply_update(
+                magnifier_update,
+                observation,
             )
 
             if validation.is_valid:
@@ -156,7 +168,7 @@ class EpisodeManager:
             )
             next_agent_step_id = agent_step_id + 1
             next_observation = self._agent_observation(
-                next_observation,
+                magnifier.observe(next_observation, magnifier_result),
                 agent_step_id=next_agent_step_id,
             )
             reached_max_steps = (
@@ -178,6 +190,8 @@ class EpisodeManager:
                 info=step_result.info,
                 agent_trace=decision.trace,
                 reflection=reflection,
+                magnifier_update=magnifier_update,
+                magnifier_result=magnifier_result,
                 simulator_substeps=simulator_substeps,
             )
             logger.record_step(transition)
@@ -224,7 +238,7 @@ class EpisodeManager:
     def _parse_and_validate(
         self,
         raw_action: object,
-    ) -> tuple[JoystickAction, ValidationResult, str | None]:
+    ) -> tuple[JoystickAction, ValidationResult, str | None, MagnifierUpdate]:
         try:
             if self.config.agent.type == "mllm":
                 parsed_output = self.parser.parse_model_output(
@@ -232,14 +246,17 @@ class EpisodeManager:
                 )
                 parsed_action = parsed_output.action
                 reflection = parsed_output.reflection
+                magnifier_update = parsed_output.magnifier_update
             else:
                 parsed_action = self.parser.parse(raw_action)
                 reflection = None
+                magnifier_update = MagnifierUpdate()
         except ActionParseError as exc:
             return (
                 self._noop_joystick_action(),
                 ValidationResult(False, (str(exc),)),
                 None,
+                MagnifierUpdate(),
             )
         if self.config.agent.type == "mllm":
             motion_channel_count = len(
@@ -255,7 +272,7 @@ class EpisodeManager:
         validation = self.validator.validate(parsed_action)
         if not validation.is_valid and self.config.agent.invalid_action_recovery != "noop":
             raise ValueError(f"Unsupported invalid action recovery: {self.config.agent.invalid_action_recovery}")
-        return parsed_action, validation, reflection
+        return parsed_action, validation, reflection, magnifier_update
 
     def _execute_action(
         self,

@@ -22,10 +22,10 @@ camera:
   manager: fixed
   visible_metadata: true
   cameras:
-    - name: default
+    - name: image/overhead_camera
       type: simpler_env_rgb
-      width: 320
-      height: 240
+      width: 512
+      height: 410
 
 control_interface:
   mode: eef_delta_pose
@@ -75,4 +75,4 @@ logging:
 ui:
   backend: pygame
   runtime: sim_adapter_worker
-  frame_camera: default
+  frame_camera: image/overhead_camera

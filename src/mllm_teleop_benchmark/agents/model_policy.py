@@ -9,11 +9,19 @@ from mllm_teleop_benchmark.agents.base import Agent, AgentContext
 from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.agents.model_client import ModelClient, ModelClientError, ModelRequest, ModelResponse
 from mllm_teleop_benchmark.config.schema import AgentConfig, HistoryWindow
-from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, AgentTrace, Observation, StepTransition
+from mllm_teleop_benchmark.core.types import (
+    AgentArtifact,
+    AgentDecision,
+    AgentTrace,
+    NormalizedBBox,
+    Observation,
+    StepTransition,
+)
 from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_name
 
 
-PROMPT_VERSION = "mllm_joystick_chat_completions_v7"
+PROMPT_VERSION = "mllm_joystick_chat_completions_v10"
+TASK_REMINDER_INTERVAL = 10
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
@@ -45,6 +53,9 @@ class EncodedImage:
     sha256: str
     artifact_path: str
     data_url: str
+    kind: str = "rgb"
+    source_rgb_key: str | None = None
+    bbox_xyxy: NormalizedBBox | None = None
 
 
 class MLLMPolicy(Agent):
@@ -55,7 +66,7 @@ class MLLMPolicy(Agent):
         self.client = client
         self.model_name = model_name
         self.prompt_version = PROMPT_VERSION
-        self._image_cache: dict[tuple[int, str], EncodedImage] = {}
+        self._image_cache: dict[tuple[int, str, str], EncodedImage] = {}
         self._previous_message_stream = b""
 
     def act(self, context: AgentContext) -> AgentDecision:
@@ -147,6 +158,7 @@ class MLLMPolicy(Agent):
             "model": self.model_name,
             "reasoning_effort": self.config.model.reasoning_effort,
             "prompt_version": self.prompt_version,
+            "visual_tools": ["magnifier"],
         }
 
     def _build_request(
@@ -156,13 +168,12 @@ class MLLMPolicy(Agent):
         assert self.config.model is not None
         cameras = self._camera_names(context.observation)
         history = context.history
-        image_count = (
-            1
-            + sum(
-                _selected(index, len(history), self.config.history.image_window)
-                for index in range(len(history))
-            )
-        ) * len(cameras)
+        image_count = self._observation_image_count(context.observation, cameras)
+        image_count += sum(
+            self._observation_image_count(transition.observation, cameras)
+            for index, transition in enumerate(history)
+            if _selected(index, len(history), self.config.history.image_window)
+        )
         if image_count > self.config.history.max_images_per_request:
             raise ModelInputError(
                 "Model request contains "
@@ -193,6 +204,7 @@ class MLLMPolicy(Agent):
                 transition.observation,
                 cameras,
                 include_images=include_image,
+                task_instruction=context.task_instruction,
             )
             messages.append(observation_message)
             images.extend(turn_images)
@@ -211,6 +223,7 @@ class MLLMPolicy(Agent):
             context.observation,
             cameras,
             include_images=True,
+            task_instruction=context.task_instruction,
         )
         messages.append(current_message)
         images.extend(current_images)
@@ -255,13 +268,35 @@ class MLLMPolicy(Agent):
         cameras: tuple[str, ...],
         *,
         include_images: bool,
+        task_instruction: str | None = None,
     ) -> tuple[dict[str, Any], tuple[EncodedImage, ...]]:
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
-                "text": f"Observation step {observation.step_id}. Camera order: {', '.join(cameras)}.",
+                "text": (
+                    f"Observation step {observation.step_id}. Camera order and available "
+                    f"source RGB keys: {', '.join(cameras)}."
+                ),
             }
         ]
+        if (
+            task_instruction
+            and observation.step_id > 0
+            and observation.step_id % TASK_REMINDER_INTERVAL == 0
+        ):
+            content.append(
+                {
+                    "type": "text",
+                    "text": (
+                        f"Task reminder at agent step {observation.step_id}: "
+                        f"{task_instruction}"
+                    ),
+                }
+            )
+        for feedback in observation.tool_feedback:
+            content.append(
+                {"type": "text", "text": f"Magnifier feedback: {feedback}"}
+            )
         images: list[EncodedImage] = []
         for camera in cameras:
             content.append({"type": "text", "text": f"Camera {camera}:"})
@@ -272,7 +307,11 @@ class MLLMPolicy(Agent):
                 raise ModelInputError(
                     f"Observation step {observation.step_id} is missing configured camera {camera!r}"
                 )
-            encoded = self._encoded_image(observation.step_id, camera, observation.images[camera])
+            encoded = self._encoded_image(
+                observation.step_id,
+                camera,
+                observation.images[camera],
+            )
             images.append(encoded)
             content.append(
                 {
@@ -280,10 +319,60 @@ class MLLMPolicy(Agent):
                     "image_url": {"url": encoded.data_url},
                 }
             )
+        if observation.magnifier is not None:
+            bbox = json.dumps(
+                list(observation.magnifier.bbox_xyxy),
+                ensure_ascii=True,
+                separators=(",", ":"),
+            )
+            content.append(
+                {
+                    "type": "text",
+                    "text": (
+                        "Magnifier view from original source RGB key "
+                        f"{observation.magnifier.source_rgb_key!r}, "
+                        f"normalized bbox_xyxy={bbox}:"
+                    ),
+                }
+            )
+            if not include_images:
+                content.append({"type": "text", "text": IMAGE_OMITTED})
+            else:
+                encoded = self._encoded_image(
+                    observation.step_id,
+                    f"magnifier:{observation.magnifier.source_rgb_key}",
+                    observation.magnifier.image,
+                    kind="magnifier",
+                    source_rgb_key=observation.magnifier.source_rgb_key,
+                    bbox_xyxy=observation.magnifier.bbox_xyxy,
+                )
+                images.append(encoded)
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": encoded.data_url},
+                    }
+                )
         return {"role": "user", "content": content}, tuple(images)
 
-    def _encoded_image(self, step_id: int, camera: str, value: Any) -> EncodedImage:
-        key = (step_id, camera)
+    def _observation_image_count(
+        self,
+        observation: Observation,
+        cameras: tuple[str, ...],
+    ) -> int:
+        return len(cameras) + int(observation.magnifier is not None)
+
+    def _encoded_image(
+        self,
+        step_id: int,
+        camera: str,
+        value: Any,
+        *,
+        kind: str = "rgb",
+        source_rgb_key: str | None = None,
+        bbox_xyxy: NormalizedBBox | None = None,
+    ) -> EncodedImage:
+        key = (step_id, kind, camera)
         cached = self._image_cache.get(key)
         if cached is not None:
             return cached
@@ -293,7 +382,13 @@ class MLLMPolicy(Agent):
         except Exception as exc:
             raise ModelInputError(f"Failed to encode camera {camera!r} as PNG: {type(exc).__name__}") from exc
         safe_camera = safe_artifact_name(camera)
-        artifact_path = f"model_calls/images/step_{step_id:04d}/{safe_camera}.png"
+        if kind == "magnifier":
+            safe_source = safe_artifact_name(source_rgb_key or "unknown")
+            artifact_path = (
+                f"model_calls/images/step_{step_id:04d}/magnifier/{safe_source}.png"
+            )
+        else:
+            artifact_path = f"model_calls/images/step_{step_id:04d}/{safe_camera}.png"
         encoded = EncodedImage(
             step_id=step_id,
             camera=camera,
@@ -303,6 +398,9 @@ class MLLMPolicy(Agent):
             sha256=png.sha256,
             artifact_path=artifact_path,
             data_url="data:image/png;base64," + base64.b64encode(png.content).decode("ascii"),
+            kind=kind,
+            source_rgb_key=source_rgb_key,
+            bbox_xyxy=bbox_xyxy,
         )
         self._image_cache[key] = encoded
         return encoded
@@ -322,6 +420,9 @@ class MLLMPolicy(Agent):
                 "height": image.height,
                 "sha256": image.sha256,
                 "artifact": image.artifact_path,
+                "kind": image.kind,
+                "source_rgb_key": image.source_rgb_key,
+                "bbox_xyxy": list(image.bbox_xyxy) if image.bbox_xyxy is not None else None,
             }
             for image in images
         ]
@@ -376,10 +477,11 @@ def _system_prompt() -> str:
         "You control a robot through a virtual joystick. "
         "Return exactly one JSON object and no prose outside that object. "
         "Use the current observation and the permitted history only. "
-        "You may include the top-level string key Reflection. "
-        "When included, Reflection must concisely summarize your current "
-        "hypothesis about what each joystick channel controls, based only on "
-        "public observations and your own action history."
+        "You may include the top-level string key Reflection and the top-level "
+        "magnifier key. "
+        "When included, Reflection may contain any information you believe "
+        "will help with future decisions, based only on public observations "
+        "and your own action history."
     )
 
 
@@ -392,10 +494,19 @@ def _static_instruction(
         context.action_schema,
     )
     schema = json.dumps(context.action_schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    source_rgb_keys = context.metadata.get("source_rgb_keys")
+    if not isinstance(source_rgb_keys, (list, tuple)) or not source_rgb_keys:
+        source_rgb_keys = tuple(sorted(str(key) for key in context.observation.images))
+    example_source = str(source_rgb_keys[0]) if source_rgb_keys else "rgb_key"
     example_payload: dict[str, Any] = {
         "channels": {name: 0 for name in context.action_schema},
+        "magnifier": {
+            "source_rgb_key": example_source,
+            "bbox_xyxy": [0.25, 0.25, 0.75, 0.75],
+        },
         "Reflection": (
-            "joystick_0 appears to control ...; joystick_1 appears to control ..."
+            "Any observation, hypothesis, progress note, or plan that may help "
+            "with future decisions."
         ),
     }
     example = json.dumps(
@@ -405,8 +516,22 @@ def _static_instruction(
         sort_keys=True,
     )
     format_requirement = (
-        "The only permitted top-level keys are channels and the optional "
-        "case-sensitive string key Reflection. "
+        "The only permitted top-level keys are channels, the optional "
+        "case-sensitive string key Reflection, and the optional magnifier key. "
+    )
+    magnifier_instruction = (
+        "Magnifier tool: To set or update the persistent magnifier, include "
+        "magnifier={\"source_rgb_key\":\"<one available source RGB key>\","
+        "\"bbox_xyxy\":[x_min,y_min,x_max,y_max]}. bbox_xyxy uses normalized "
+        "image coordinates with the top-left origin and must satisfy "
+        "0 <= x_min < x_max <= 1 and 0 <= y_min < y_max <= 1. The crop is "
+        "taken from the original RGB observation and resized with its aspect "
+        "ratio preserved until either its width or height matches the original "
+        "image. The same source key and relative bbox remain active on later "
+        "observations. Omit magnifier to keep it unchanged, or return "
+        "magnifier=null to clear it. A rejected command is reported in the next "
+        "observation and leaves the previous valid magnifier active. The "
+        "joystick action in the same response is still executed.\n"
     )
     step_budget = context.metadata.get("step_budget")
     budget_instruction = ""
@@ -424,6 +549,7 @@ def _static_instruction(
         f"Control: {control.text}\n"
         f"{budget_instruction}"
         f"Action schema: {schema}.\n"
+        f"{magnifier_instruction}"
         f"{format_requirement}"
         f"Return valid JSON using this required output shape: {example}"
     )
@@ -451,6 +577,15 @@ def _history_action(
             "channels": {name: 0 for name in action_schema},
             "status": status,
         }
+    update = transition.magnifier_update
+    if update.requested:
+        if update.clear:
+            payload["magnifier"] = None
+        elif update.error is None:
+            payload["magnifier"] = {
+                "source_rgb_key": update.source_rgb_key,
+                "bbox_xyxy": list(update.bbox_xyxy or ()),
+            }
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 
@@ -493,7 +628,9 @@ def _sanitized_request_body(
     request: ModelRequest,
     images: tuple[EncodedImage, ...],
 ) -> dict[str, Any]:
-    url_hashes = {image.data_url: image.sha256 for image in images}
+    url_images: dict[str, list[EncodedImage]] = {}
+    for image in images:
+        url_images.setdefault(image.data_url, []).append(image)
     body = request.body()
     sanitized_messages: list[dict[str, Any]] = []
     for message in request.messages:
@@ -508,11 +645,14 @@ def _sanitized_request_body(
                 continue
             image_url = item.get("image_url")
             url = image_url.get("url") if isinstance(image_url, dict) else None
-            digest = url_hashes.get(url, "unknown")
+            candidates = url_images.get(url, [])
+            image = candidates.pop(0) if candidates else None
+            digest = image.sha256 if image is not None else "unknown"
             sanitized_content.append(
                 {
                     "type": "image_url",
                     "image_url": {"url": f"data:image/png;sha256={digest}"},
+                    "artifact": image.artifact_path if image is not None else None,
                 }
             )
         sanitized_messages.append({**message, "content": sanitized_content})

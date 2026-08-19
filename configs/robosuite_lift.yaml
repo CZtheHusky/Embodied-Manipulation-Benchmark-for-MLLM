@@ -15,19 +15,19 @@ task:
     reject_initial_success: true
     robots: ["Panda"]
     camera_names: ["agentview", "robot0_eye_in_hand"]
-    camera_width: 320
-    camera_height: 240
+    camera_widths: [512, 256]
+    camera_heights: [512, 256]
 
 camera:
   manager: fixed
   visible_metadata: true
   cameras:
     - name: agentview
-      width: 320
-      height: 240
+      width: 512
+      height: 512
     - name: robot0_eye_in_hand
-      width: 320
-      height: 240
+      width: 256
+      height: 256
 
 control_interface:
   mode: eef_delta_pose

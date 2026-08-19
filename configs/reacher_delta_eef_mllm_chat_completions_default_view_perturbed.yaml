@@ -1,0 +1,116 @@
+benchmark:
+  name: reacher_delta_eef_mllm_chat_completions_default_view_perturbed_action_v1
+  num_episodes: 10
+  seed: 7
+
+simulator:
+  type: gymnasium
+  env_id: MLLMTeleop/ReacherDeltaEEF-v0
+  render_mode: rgb_array
+  frame_skip: 1
+  params:
+    max_episode_steps: 500
+  env_kwargs:
+    eef_step_scale: 0.01
+    goal_distance_threshold: 0.02
+    goal_hold_steps: 3
+    random_goal: true
+
+task:
+  type: gymnasium_reacher
+  max_steps: 80
+  success_threshold: 0.02
+  goal_hold_steps: 3
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  params:
+    experiment_condition: default_view
+  cameras:
+    - name: front
+      type: mujoco_rgb
+      width: 512
+      height: 512
+
+control_interface:
+  mode: eef_delta_pose
+  active_dimensions: [dx, dy]
+  gripper: none
+  channel_kind: continuous
+  channel_min: -30
+  channel_max: 30
+  mapping_strategy: permuted_sign_flipped
+  visible_metadata: true
+  mapping_visible_to_agent: false
+  frame_transform: random_rotation_2d
+  frame_visible_to_agent: false
+  control_frame_description: >-
+    the Gymnasium Reacher world x-y plane. A mapped magnitude-1 translation
+    command moves the end-effector target by 0.01 meters per decision. The
+    front camera uses the environment's default pose and remains fixed across
+    episodes and steps, so its image directions have a consistent world-axis
+    projection
+
+controller:
+  type: reacher_delta_eef
+  frame: world_xy
+  scales:
+    dx: 1.0
+    dy: 1.0
+  params:
+    dimensions: [dx, dy]
+
+agent:
+  type: mllm
+  invalid_action_recovery: noop
+  model:
+    provider: openai_compatible
+    api: chat_completions
+    name_env: MLLM_TELEOP_MODEL
+    base_url_env: OPENAI_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    require_api_key: true
+    timeout_seconds: 60
+    max_retries: 2
+    retry_backoff_seconds: 1
+    retry_backoff_max_seconds: 30
+    retry_until_success: true
+    reasoning_effort: low
+    temperature: 0
+    max_output_tokens: 192
+    response_format: json_object
+    stream: false
+  observation:
+    cameras: [front]
+    image_max_side: 512
+  history:
+    action_window: all
+    image_window: 3
+    max_images_per_request: 128
+    max_request_bytes: 67108864
+
+logging:
+  output_dir: outputs/reacher_delta_eef_mllm
+  save_images: false
+  save_video: true
+  video:
+    fps: 2
+    step_hold_seconds: 1
+    terminal_hold_seconds: 2
+    include_evaluator_debug: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  window_width: 640
+  window_height: 480
+  fps: 20
+  max_steps: 500
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true
+  mujoco_gl: egl

@@ -15,6 +15,18 @@ class SimplerEnvObservationProvider(ObservationProvider):
     def __init__(self, camera_manager: CameraManager) -> None:
         self.camera_manager = camera_manager
 
+    def configure_sim(self, sim: SimAdapter) -> None:
+        if not isinstance(sim, SimplerEnvSimAdapter):
+            raise TypeError(f"SimplerEnvObservationProvider requires SimplerEnvSimAdapter, got {type(sim).__name__}")
+        camera_config = {}
+        for camera in self.camera_manager.get_active_cameras():
+            upstream_name = camera.name.rsplit("/", 1)[-1]
+            camera_config[upstream_name] = {
+                "width": int(camera.width),
+                "height": int(camera.height),
+            }
+        sim.set_camera_configuration(camera_config)
+
     def get_observation(self, sim: SimAdapter) -> Observation:
         if not isinstance(sim, SimplerEnvSimAdapter):
             raise TypeError(f"SimplerEnvObservationProvider requires SimplerEnvSimAdapter, got {type(sim).__name__}")

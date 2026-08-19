@@ -1,4 +1,5 @@
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.agents.model_client import ModelResponse, ModelUsage
 from mllm_teleop_benchmark.config.loader import load_config
-from mllm_teleop_benchmark.config.schema import FrameTransformConfig
+from mllm_teleop_benchmark.config.schema import CameraSpec, FrameTransformConfig
 from mllm_teleop_benchmark.control.metaworld import MetaworldBoxActionController
 from mllm_teleop_benchmark.core.registry import (
     build_action_space,
@@ -106,8 +107,8 @@ def test_metaworld_reach_config_builds_without_metaworld_install():
     assert config.simulator.type == "metaworld"
     assert config.simulator.params["env_name"] == "reach-v3"
     assert config.simulator.params["camera_name"] == "topview"
-    assert config.simulator.params["width"] == 320
-    assert config.simulator.params["height"] == 240
+    assert config.simulator.params["width"] == 512
+    assert config.simulator.params["height"] == 512
     assert config.task.type == "metaworld_generic"
     assert tuple(action_space.channels) == ("joystick_0", "joystick_1", "joystick_2")
     assert isinstance(sim, MetaworldSimAdapter)
@@ -184,6 +185,56 @@ def test_metaworld_adapter_clips_native_action_against_box_space():
     assert metadata["clipped"] is True
 
 
+def test_metaworld_render_uses_and_reuses_the_requested_native_resolution(monkeypatch):
+    created_renderers = []
+
+    class FakeRenderer:
+        def __init__(self, _model, *, height, width):
+            self.height = height
+            self.width = width
+            self.closed = False
+            created_renderers.append(self)
+
+        def update_scene(self, _data, *, camera):
+            self.camera = camera
+
+        def render(self):
+            return np.full((self.height, self.width, 3), 127, dtype=np.uint8)
+
+        def close(self):
+            self.closed = True
+
+    fake_mujoco = type(
+        "FakeMujoco",
+        (),
+        {
+            "mjtObj": type("FakeMjtObj", (), {"mjOBJ_CAMERA": 7}),
+            "mj_name2id": staticmethod(lambda _model, _kind, _name: 1),
+            "Renderer": FakeRenderer,
+        },
+    )
+    monkeypatch.setitem(sys.modules, "mujoco", fake_mujoco)
+
+    unwrapped = type("FakeUnwrapped", (), {"model": object(), "data": object()})()
+    env = type(
+        "FakeEnv",
+        (),
+        {"unwrapped": unwrapped, "close": lambda self: None},
+    )()
+    adapter = MetaworldSimAdapter(load_config("configs/metaworld_reach.yaml").simulator)
+    adapter.env = env
+
+    topview = CameraSpec("topview", "metaworld_rgb", 512, 512)
+    wrist = CameraSpec("behindGripper", "metaworld_rgb", 480, 480)
+    assert adapter.render(topview).shape == (512, 512, 3)
+    assert adapter.render(topview).shape == (512, 512, 3)
+    assert adapter.render(wrist).shape == (480, 480, 3)
+    assert len(created_renderers) == 2
+
+    adapter.close()
+    assert all(renderer.closed for renderer in created_renderers)
+
+
 def test_metaworld_runtime_reset_step_render_close_when_installed():
     pytest.importorskip("gymnasium")
     pytest.importorskip("metaworld")
@@ -206,8 +257,9 @@ def test_metaworld_runtime_reset_step_render_close_when_installed():
             for camera in config.camera.cameras
         }
         assert tuple(frames) == ("topview", "behindGripper")
+        assert frames["topview"].shape == (512, 512, 3)
+        assert frames["behindGripper"].shape == (480, 480, 3)
         for pixels in frames.values():
-            assert pixels.shape == (240, 320, 3)
             assert pixels.dtype == np.uint8
             assert float(pixels.mean()) > 1.0
             assert float(pixels.std()) > 1.0
@@ -427,7 +479,10 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert all(json.loads(message["content"])["Reflection"] for message in assistant_messages)
 
     request_text = _request_text(latest_request)
-    assert "Camera order: topview, behindGripper" in request_text
+    assert (
+        "Camera order and available source RGB keys: topview, behindGripper"
+        in request_text
+    )
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "+x points right in topview" in request_text
@@ -486,7 +541,8 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))
-        assert pixels.shape == (240, 320, 3)
+        expected_shape = (480, 480, 3) if path.name == "behindGripper.png" else (512, 512, 3)
+        assert pixels.shape == expected_shape
         assert float(pixels.mean()) > 1.0
         assert float(pixels.std()) > 1.0
     with Image.open(episode_dir / "model_calls/images/step_0000/topview.png") as image:
@@ -503,7 +559,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

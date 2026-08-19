@@ -28,6 +28,7 @@ class MetaworldSimAdapter(SimAdapter):
         self.last_info: dict[str, Any] = {}
         self.last_reward: float | None = None
         self.last_render: Any = None
+        self._renderers: dict[tuple[int, int], Any] = {}
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
         self._ensure_env(seed, task_config)
@@ -75,8 +76,17 @@ class MetaworldSimAdapter(SimAdapter):
         )
         if camera_id < 0:
             raise ValueError(f"Unknown Meta-World camera: {camera.name}")
-        unwrapped.mujoco_renderer.camera_id = camera_id
-        frame = self.env.render()
+        renderer_key = (camera.width, camera.height)
+        renderer = self._renderers.get(renderer_key)
+        if renderer is None:
+            renderer = mujoco.Renderer(
+                unwrapped.model,
+                height=camera.height,
+                width=camera.width,
+            )
+            self._renderers[renderer_key] = renderer
+        renderer.update_scene(unwrapped.data, camera=camera.name)
+        frame = renderer.render()
         self.last_render = self._first_array(frame)
         expected_shape = (camera.height, camera.width, 3)
         if self.last_render.shape != expected_shape:
@@ -103,6 +113,11 @@ class MetaworldSimAdapter(SimAdapter):
         return state
 
     def close(self) -> None:
+        for renderer in self._renderers.values():
+            close = getattr(renderer, "close", None)
+            if callable(close):
+                close()
+        self._renderers.clear()
         if self.env is not None:
             self.env.close()
             self.env = None

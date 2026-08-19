@@ -527,7 +527,7 @@ def test_colosseum_runtime_reset_step_render_smoke_when_installed():
 
             frame = sim.render(config.camera.cameras[0])
             frame_array = np.asarray(frame)
-            assert frame_array.shape == (240, 320, 3)
+            assert frame_array.shape == (512, 512, 3)
             assert frame_array.dtype == np.uint8
             assert float(frame_array.mean()) > 2.0
             assert float(frame_array.std()) > 2.0
@@ -672,7 +672,7 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     ] == [0, 1, 2, 3]
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v7" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v10" in request_text
     assert "Task: Close the visible box lid." in request_text
     assert "active controllable dimensions are: dx, dy, dz" in request_text
     assert "Colosseum/RLBench world Cartesian x, y, and z axes" in request_text
@@ -719,7 +719,7 @@ def test_colosseum_fake_client_closes_public_rgb_loop(
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))
-        assert pixels.shape == (240, 320, 3)
+        assert pixels.shape == (512, 512, 3)
         assert float(pixels.mean()) > 2.0
         assert float(pixels.std()) > 2.0
 

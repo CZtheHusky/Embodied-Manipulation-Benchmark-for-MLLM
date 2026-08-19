@@ -35,6 +35,12 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.last_truncated = False
         self.last_render: Any = None
         self._task_max_steps: int | None = None
+        self._camera_config: dict[str, dict[str, int]] = {}
+
+    def set_camera_configuration(self, camera_config: dict[str, dict[str, int]]) -> None:
+        if self.env is not None:
+            raise RuntimeError("SimplerEnv camera configuration must be set before reset")
+        self._camera_config = deepcopy(camera_config)
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
         self._task_max_steps = task_config.max_steps
@@ -154,7 +160,7 @@ class SimplerEnvSimAdapter(SimAdapter):
             configured_horizon = self._task_max_steps
         if configured_horizon is not None:
             kwargs.setdefault("max_episode_steps", int(configured_horizon))
-        self.env = simpler_env.make(self.env_id, **kwargs)
+        self.env = self._make_env(simpler_env, kwargs)
         expected_horizon = configured_horizon
         actual_horizon = getattr(self.env, "_max_episode_steps", None)
         if (
@@ -167,6 +173,36 @@ class SimplerEnvSimAdapter(SimAdapter):
                 "SimplerEnv horizon is smaller than the required simulator "
                 f"execution budget: {actual_horizon} < {expected_horizon}"
             )
+
+    def _make_env(self, simpler_env: Any, kwargs: dict[str, Any]) -> Any:
+        if not self._camera_config:
+            return simpler_env.make(self.env_id, **kwargs)
+        if self.env_id != "google_robot_pick_coke_can":
+            raise RuntimeError(
+                "Simulator-native camera resizing is not implemented for "
+                f"SimplerEnv task {self.env_id!r}"
+            )
+
+        from mani_skill2_real2sim.envs.custom_scenes.grasp_single_in_scene import (
+            GraspSingleInSceneEnv,
+        )
+
+        probe = object.__new__(GraspSingleInSceneEnv)
+        prepackaged = deepcopy(probe._setup_prepackaged_env_init_config())
+        caller_kwargs = deepcopy(kwargs)
+        caller_camera_cfgs = caller_kwargs.pop("camera_cfgs", {})
+        prepackaged.update(caller_kwargs)
+        camera_cfgs = deepcopy(prepackaged.get("camera_cfgs", {}))
+        camera_cfgs.update(deepcopy(caller_camera_cfgs))
+        if len(self._camera_config) != 1:
+            raise RuntimeError(
+                "The pinned SimplerEnv task accepts one shared native sensor "
+                "camera_cfgs mapping"
+            )
+        camera_cfgs.update(deepcopy(next(iter(self._camera_config.values()))))
+        prepackaged["camera_cfgs"] = camera_cfgs
+        prepackaged["prepackaged_config"] = False
+        return simpler_env.make(self.env_id, **prepackaged)
 
     def _reset_native(self, seed: int) -> tuple[Any, dict[str, Any]]:
         reset_kwargs = dict(self.config.params.get("reset_kwargs", {}))

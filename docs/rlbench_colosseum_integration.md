@@ -44,7 +44,7 @@ The RLBench smoke result was:
 The independent Colosseum environment was runtime verified on 2026-07-30 with
 display-backed CoppeliaSim. The forced smoke launched official
 `EnvironmentExt`, reset `close_box` with `manip_obj_color`, checked a non-black
-`320x240` front RGB frame, executed one end-effector action, and shut down
+`512x512` front RGB frame, executed one end-effector action, and shut down
 cleanly. `MLLM_TELEOP_REQUIRE_COLOSSEUM=1` was set, so runtime failures could
 not be converted to skips.
 
@@ -296,7 +296,7 @@ action.
 The local Fake Client validation runs four real CoppeliaSim steps for each
 condition and verifies:
 
-- the `front` camera is non-black `320x240` RGB
+- the `front` camera is non-black `512x512` RGB
 - native actions are finite absolute poses inside configured workspace bounds
 - a no-simulator canary verifies direct `0.01 m` scaling, accumulation from the
   latest observed absolute gripper pose, and workspace clamping

@@ -31,6 +31,8 @@ from mllm_teleop_benchmark.core.registry import build_action_space, control_inte
 from mllm_teleop_benchmark.core.types import (
     AgentTrace,
     GymBoxAction,
+    MagnifierUpdate,
+    MagnifierView,
     Observation,
     StepTransition,
     ValidationResult,
@@ -161,15 +163,55 @@ def test_projection_excludes_all_privileged_simulator_fields():
     assert "joystick_0" in request_text
 
 
+@pytest.mark.parametrize(
+    ("agent_step", "expects_reminder"),
+    [(0, False), (9, False), (10, True), (11, False), (20, True)],
+)
+def test_task_instruction_is_repeated_every_ten_agent_steps(
+    agent_step,
+    expects_reminder,
+):
+    client = RecordingClient()
+    policy = MLLMPolicy(_agent_config(), client, "fake-model")
+
+    policy.act(_context(agent_step))
+
+    current_observation = client.requests[0].messages[-1]["content"]
+    current_text = " ".join(
+        item["text"]
+        for item in current_observation
+        if item.get("type") == "text"
+    )
+    reminder = f"Task reminder at agent step {agent_step}:"
+    assert (reminder in current_text) is expects_reminder
+    if expects_reminder:
+        assert "Move the visible fingertip to the visible target." in current_text
+
+
+def test_task_reminder_is_preserved_when_the_agent_step_becomes_history():
+    client = RecordingClient()
+    policy = MLLMPolicy(_agent_config(image_window="all"), client, "fake-model")
+
+    policy.act(_context(11, (_transition(10),)))
+
+    historical_observation = client.requests[0].messages[2]["content"]
+    historical_text = " ".join(
+        item["text"]
+        for item in historical_observation
+        if item.get("type") == "text"
+    )
+    assert "Task reminder at agent step 10:" in historical_text
+
+
 def test_json_object_requirement_is_present_in_user_input():
     client = RecordingClient()
     policy = MLLMPolicy(_agent_config(), client, "fake-model")
 
     policy.act(_context(0))
 
-    assert policy.prompt_version == "mllm_joystick_chat_completions_v7"
+    assert policy.prompt_version == "mllm_joystick_chat_completions_v10"
     request = client.requests[0]
-    assert "mllm_joystick_chat_completions_v7" in request.messages[1]["content"]
+    assert "mllm_joystick_chat_completions_v10" in request.messages[1]["content"]
     user_text = " ".join(
         message["content"]
         for message in request.messages
@@ -177,7 +219,14 @@ def test_json_object_requirement_is_present_in_user_input():
     )
     assert "json" in user_text.lower()
     assert "top-level string key Reflection" in request.messages[0]["content"]
+    assert "any information you believe will help with future decisions" in (
+        request.messages[0]["content"]
+    )
+    assert "what each joystick channel controls" not in request.messages[0]["content"]
     assert "optional case-sensitive string key Reflection" in user_text
+    assert "Magnifier tool" in user_text
+    assert "source_rgb_key" in user_text
+    assert "bbox_xyxy" in user_text
 
 
 def test_response_artifact_sanitization_removes_hidden_reasoning():
@@ -250,7 +299,7 @@ def test_chat_completions_contract_and_history_preserve_reflection():
     assert request.messages[0]["role"] == "system"
     assert "top-level string key Reflection" in request.messages[0]["content"]
     static_instruction = request.messages[1]["content"]
-    assert "mllm_joystick_chat_completions_v7" in static_instruction
+    assert "mllm_joystick_chat_completions_v10" in static_instruction
     assert "\nTask: pick coke can\nControl:" in static_instruction
     assert "optional case-sensitive string key Reflection" in static_instruction
     assistant_payload = json.loads(
@@ -264,7 +313,7 @@ def test_chat_completions_contract_and_history_preserve_reflection():
         "Reflection": "joystick_0 appears to move right",
         "channels": {"joystick_0": 1.0, "joystick_1": 0.0},
     }
-    assert decision.trace.prompt_version == "mllm_joystick_chat_completions_v7"
+    assert decision.trace.prompt_version == "mllm_joystick_chat_completions_v10"
 
 
 def test_chat_completions_includes_only_three_prior_images():
@@ -369,6 +418,95 @@ def test_omitted_history_preserves_each_camera_label_and_replaces_only_images():
     assert omitted_structure == included_structure
     assert len(included_images) == 2
     assert omitted_images == ()
+
+
+def test_current_observation_includes_magnifier_image_feedback_and_manifest():
+    client = RecordingClient()
+    policy = MLLMPolicy(_agent_config(), client, "fake-model")
+    observation = replace(
+        _observation(1),
+        magnifier=MagnifierView(
+            source_rgb_key="front",
+            bbox_xyxy=(0.2, 0.3, 0.7, 0.9),
+            image=np.full((12, 8, 3), 77, dtype=np.uint8),
+        ),
+        tool_feedback=("Magnifier activated.",),
+    )
+
+    decision = policy.act(replace(_context(1), observation=observation))
+
+    request = client.requests[0]
+    assert _image_count(request) == 2
+    request_text = _request_text(request)
+    assert "available source RGB keys: front" in request_text
+    assert "Magnifier feedback: Magnifier activated." in request_text
+    assert "normalized bbox_xyxy=[0.2,0.3,0.7,0.9]" in request_text
+    manifest = json.loads(
+        next(
+            artifact.content
+            for artifact in decision.artifacts
+            if artifact.relative_path.endswith("request.json")
+        )
+    )
+    current = [image for image in manifest["images"] if image["step_id"] == 1]
+    assert [image["kind"] for image in current] == ["rgb", "magnifier"]
+    assert current[1]["source_rgb_key"] == "front"
+    assert current[1]["bbox_xyxy"] == [0.2, 0.3, 0.7, 0.9]
+    assert any(
+        artifact.relative_path.endswith("magnifier/front.png")
+        for artifact in decision.artifacts
+    )
+
+
+def test_history_replays_normalized_magnifier_command():
+    client = RecordingClient()
+    policy = MLLMPolicy(_agent_config(image_window=0), client, "fake-model")
+    transition = replace(
+        _transition(0),
+        magnifier_update=MagnifierUpdate(
+            requested=True,
+            source_rgb_key="front",
+            bbox_xyxy=(0.1, 0.2, 0.8, 0.9),
+        ),
+    )
+
+    policy.act(_context(1, (transition,)))
+
+    assistant = next(
+        json.loads(message["content"])
+        for message in client.requests[0].messages
+        if message["role"] == "assistant"
+    )
+    assert assistant["magnifier"] == {
+        "source_rgb_key": "front",
+        "bbox_xyxy": [0.1, 0.2, 0.8, 0.9],
+    }
+
+
+def test_magnifier_artifact_namespace_cannot_collide_with_camera_key():
+    policy = MLLMPolicy(_agent_config(), RecordingClient(), "fake-model")
+    pixels = np.zeros((8, 8, 3), dtype=np.uint8)
+    observation = Observation(
+        step_id=0,
+        images={"magnifier_front": pixels},
+        state={},
+        magnifier=MagnifierView(
+            source_rgb_key="magnifier_front",
+            bbox_xyxy=(0.0, 0.0, 1.0, 1.0),
+            image=pixels,
+        ),
+    )
+
+    _message, images = policy._observation_message(
+        observation,
+        ("magnifier_front",),
+        include_images=True,
+    )
+
+    assert [image.artifact_path for image in images] == [
+        "model_calls/images/step_0000/magnifier_front.png",
+        "model_calls/images/step_0000/magnifier/magnifier_front.png",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -514,6 +652,34 @@ def test_image_count_limit_is_checked_before_png_encoding(monkeypatch):
     decision = policy.act(_context(1, (_transition(0),)))
 
     assert decision.trace.status == "fatal"
+    assert "max_images_per_request=1" in decision.trace.error
+    assert client.requests == []
+
+
+def test_magnifier_counts_toward_image_limit_before_png_encoding(monkeypatch):
+    client = RecordingClient()
+    policy = MLLMPolicy(
+        _agent_config(image_window=0, max_images=1),
+        client,
+        "fake-model",
+    )
+    observation = replace(
+        _observation(0),
+        magnifier=MagnifierView(
+            source_rgb_key="front",
+            bbox_xyxy=(0.0, 0.0, 0.5, 0.5),
+            image=np.zeros((8, 8, 3), dtype=np.uint8),
+        ),
+    )
+
+    def fail_if_encoded(*_args, **_kwargs):
+        raise AssertionError("magnifier image limit must be checked before encoding")
+
+    monkeypatch.setattr(image_utils.iio, "imwrite", fail_if_encoded)
+    decision = policy.act(replace(_context(0), observation=observation))
+
+    assert decision.trace.status == "fatal"
+    assert "contains 2 images" in decision.trace.error
     assert "max_images_per_request=1" in decision.trace.error
     assert client.requests == []
 

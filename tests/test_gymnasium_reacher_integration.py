@@ -44,6 +44,7 @@ def test_reacher_render_recovers_after_another_egl_context_closes():
     try:
         first.reset(config.task, seed=9)
         initial = np.asarray(first.render(config.camera.cameras[0]))
+        assert initial.shape == (512, 512, 3)
         assert np.any(initial)
 
         second.reset(config.task, seed=10)

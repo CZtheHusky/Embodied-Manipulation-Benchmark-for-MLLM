@@ -22,6 +22,7 @@ from mllm_teleop_benchmark.core.types import (
     AgentTrace,
     EpisodeResult,
     GymBoxAction,
+    MagnifierView,
     Observation,
     StepTransition,
     ValidationResult,
@@ -152,6 +153,31 @@ def _write_request_artifacts(
                 "height": encoded.height,
                 "sha256": encoded.sha256,
                 "artifact": relative,
+                "kind": "rgb",
+            }
+        )
+    if transition.observation.magnifier is not None:
+        view = transition.observation.magnifier
+        encoded = encode_rgb_png(view.image, 32)
+        relative = (
+            f"model_calls/images/step_{transition.step_id:04d}/magnifier/"
+            f"{view.source_rgb_key}.png"
+        )
+        target = episode_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(encoded.content)
+        hashes["magnifier"] = encoded.sha256
+        images.append(
+            {
+                "step_id": transition.step_id,
+                "camera": f"magnifier:{view.source_rgb_key}",
+                "width": encoded.width,
+                "height": encoded.height,
+                "sha256": encoded.sha256,
+                "artifact": relative,
+                "kind": "magnifier",
+                "source_rgb_key": view.source_rgb_key,
+                "bbox_xyxy": list(view.bbox_xyxy),
             }
         )
     request_path = episode_dir / f"model_calls/step_{transition.step_id:04d}/request.json"
@@ -236,6 +262,48 @@ def test_renderer_pairs_current_images_in_camera_order_and_writes_manifest(
     assert set(captured) == {"model_view.mp4", "evaluator_debug.mp4"}
     assert all(frame.size == CANVAS_SIZE for frame, _duration in captured["model_view.mp4"])
     assert [duration for _frame, duration in captured["model_view.mp4"]] == [1.0, 2.0]
+
+
+def test_renderer_includes_model_visible_magnifier_and_terminal_lens(
+    monkeypatch,
+    tmp_path,
+):
+    view = MagnifierView(
+        source_rgb_key="front",
+        bbox_xyxy=(0.25, 0.25, 0.75, 0.75),
+        image=np.full((18, 18, 3), 200, dtype=np.uint8),
+    )
+    transition = _transition(0)
+    transition = replace(
+        transition,
+        observation=replace(transition.observation, magnifier=view),
+        next_observation=replace(transition.next_observation, magnifier=view),
+    )
+    _write_request_artifacts(tmp_path, transition)
+    renderer = ReviewVideoRenderer(_config(tmp_path), tmp_path)
+    captured = {}
+    monkeypatch.setattr(ReviewVideoRenderer, "_ffmpeg_version", lambda _self: "ffmpeg test")
+    monkeypatch.setattr(ReviewVideoRenderer, "_encode_video", _fake_encoder(captured))
+
+    result = renderer.render(
+        (transition,),
+        transition.next_observation,
+        _metadata(),
+        _episode_result(tmp_path),
+    )
+
+    manifest = json.loads((tmp_path / "review/manifest.json").read_text())
+    assert result.status == "completed"
+    assert [item["kind"] for item in manifest["steps"][0]["images"]] == [
+        "rgb",
+        "magnifier",
+    ]
+    assert manifest["steps"][0]["images"][1]["source_rgb_key"] == "front"
+    assert [item["kind"] for item in manifest["terminal"]["images"]] == [
+        "rgb",
+        "magnifier",
+    ]
+    assert (tmp_path / "review/terminal/magnifier/front.png").is_file()
 
 
 @pytest.mark.parametrize("failure", ("missing", "hash"))

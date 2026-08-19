@@ -88,6 +88,8 @@ class ReacherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
         goal_hold_steps: int = 5,
         random_goal: bool = True,
         frame_skip: int = 1,
+        width: int = 512,
+        height: int = 512,
         **kwargs: Any,
     ) -> None:
         self.eef_step_scale = float(eef_step_scale)
@@ -102,7 +104,15 @@ class ReacherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
 
         xml_path = Path(__file__).with_name("assets") / "reacher_pos.xml"
         observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
-        MujocoEnv.__init__(self, str(xml_path), frame_skip=frame_skip, observation_space=observation_space, render_mode=render_mode)
+        MujocoEnv.__init__(
+            self,
+            str(xml_path),
+            frame_skip=frame_skip,
+            observation_space=observation_space,
+            render_mode=render_mode,
+            width=width,
+            height=height,
+        )
         utils.EzPickle.__init__(
             self,
             render_mode=render_mode,
@@ -114,6 +124,8 @@ class ReacherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
             goal_hold_steps=goal_hold_steps,
             random_goal=random_goal,
             frame_skip=frame_skip,
+            width=width,
+            height=height,
             **kwargs,
         )
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)

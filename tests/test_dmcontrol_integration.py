@@ -666,7 +666,8 @@ def test_dmcontrol_mllm_fake_client_preserves_history_rgb_and_privacy(
     for image_path in image_paths:
         with Image.open(image_path) as image:
             pixels = np.asarray(image.convert("RGB"))
-        assert pixels.shape == (240, 320, 3)
+        expected_shape = (240, 320, 3) if image_path.name == "hand.png" else (384, 512, 3)
+        assert pixels.shape == expected_shape
         assert float(pixels.mean()) > 1.0
         assert float(pixels.std()) > 1.0
 

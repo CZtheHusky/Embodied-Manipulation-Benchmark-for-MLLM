@@ -9,6 +9,8 @@ const state = {
   stepId: null,
   step: null,
   conversation: null,
+  renderedConversationKey: null,
+  selectionRevision: 0,
   mode: "snapshot",
   inspectorTab: "request",
 };
@@ -77,9 +79,18 @@ async function initialize() {
       option.textContent = `${group.name} (${group.runs.length})`;
       elements.groupSelect.append(option);
     }
+    const route = readLocationState();
+    const routeGroup = groupContainingRun(route.run);
+    state.mode = route.mode === "conversation" ? "conversation" : "snapshot";
+    updateModeButtons();
     await selectGroup(
-      state.catalog.default_group_id,
-      state.catalog.default_run_id,
+      routeGroup?.id || state.catalog.default_group_id,
+      routeGroup ? route.run : state.catalog.default_run_id,
+      {
+        episodeId: routeGroup ? route.episode : null,
+        stepId: routeGroup ? route.stepId : null,
+        historyMode: "replace",
+      },
     );
   } catch (error) {
     showFatal(error);
@@ -94,7 +105,16 @@ function currentRun() {
   return currentGroup()?.runs.find((run) => run.id === state.run);
 }
 
-async function selectGroup(groupId, preferredRunId = null) {
+function groupContainingRun(runId) {
+  if (!runId) {
+    return null;
+  }
+  return state.catalog.groups.find((group) =>
+    group.runs.some((run) => run.id === runId)
+  ) || null;
+}
+
+async function selectGroup(groupId, preferredRunId = null, options = {}) {
   state.group = groupId;
   elements.groupSelect.value = groupId;
   elements.runSelect.replaceChildren();
@@ -121,15 +141,17 @@ async function selectGroup(groupId, preferredRunId = null) {
   const runId = group.runs.some((run) => run.id === preferredRunId)
     ? preferredRunId
     : group.runs[0].id;
-  await selectRun(runId);
+  await selectRun(runId, options);
 }
 
-async function selectRun(runId) {
+async function selectRun(runId, options = {}) {
   state.run = runId;
   state.index = null;
   state.episode = null;
+  state.stepId = null;
   state.step = null;
   state.conversation = null;
+  state.renderedConversationKey = null;
   elements.runSelect.value = runId;
   elements.episodeSelect.replaceChildren();
   setLoading("Loading run");
@@ -146,14 +168,23 @@ async function selectRun(runId) {
   if (state.index.episodes.length === 0) {
     throw new Error("This run has no reviewable episodes.");
   }
-  await selectEpisode(state.index.episodes[0].id);
+  const episodeId = state.index.episodes.some(
+    (episode) => episode.id === options.episodeId,
+  )
+    ? options.episodeId
+    : state.index.episodes[0].id;
+  await selectEpisode(episodeId, options);
 }
 
-async function selectEpisode(episodeId) {
+async function selectEpisode(episodeId, options = {}) {
   state.episode = episodeId;
+  state.stepId = null;
+  state.step = null;
   state.conversation = null;
+  state.renderedConversationKey = null;
   elements.episodeSelect.value = episodeId;
   elements.stepFilter.value = "";
+  elements.stepList.scrollTop = 0;
   const episode = currentEpisode();
   elements.episodeStatus.textContent =
     `${episode.steps} agent steps | ${episode.termination_reason} | ` +
@@ -161,16 +192,21 @@ async function selectEpisode(episodeId) {
   elements.promptVersion.textContent = episode.prompt_version || "unknown";
   elements.dialogVersion.textContent = episode.prompt_version || "Unknown prompt version";
   renderStepList();
-  const firstStep = episode.step_ids[0];
-  if (firstStep === undefined) {
+  const selectedStep = episode.step_ids.includes(options.stepId)
+    ? options.stepId
+    : episode.step_ids[0];
+  if (selectedStep === undefined) {
     showFatal(new Error("This episode has no model request artifacts."));
     return;
   }
-  await selectStep(firstStep);
+  await selectStep(selectedStep, {
+    historyMode: options.historyMode === undefined ? "push" : options.historyMode,
+  });
 }
 
 function renderStepList() {
   const filter = elements.stepFilter.value.trim();
+  const scrollTop = elements.stepList.scrollTop;
   elements.stepList.replaceChildren();
   for (const entry of stepEntries()) {
     if (filter && !String(entry.id).includes(filter)) {
@@ -192,26 +228,79 @@ function renderStepList() {
     button.addEventListener("click", () => selectStep(entry.id));
     elements.stepList.append(button);
   }
+  elements.stepList.scrollTop = scrollTop;
+  updateStepListSelection(false);
 }
 
-async function selectStep(stepId) {
+async function selectStep(stepId, options = {}) {
+  const revision = ++state.selectionRevision;
+  const selectedRun = state.run;
+  const selectedEpisode = state.episode;
   state.stepId = stepId;
-  renderStepList();
+  updateStepListSelection();
   updateStepNavigation();
-  if (state.mode === "conversation") {
-    await renderConversation();
-    return;
+  if (state.mode === "snapshot") {
+    setLoading(`Loading step ${stepId}`);
   }
-  setLoading(`Loading step ${stepId}`);
   try {
-    state.step = await requestJson(
+    const step = await requestJson(
       `${runApiPrefix()}/episodes/${encodeURIComponent(state.episode)}/steps/${stepId}`,
     );
-    renderSnapshot();
-    renderInspector();
+    if (!selectionIsCurrent(revision, selectedRun, selectedEpisode, stepId)) {
+      return;
+    }
+    state.step = step;
+    if (state.mode === "conversation") {
+      await renderConversation(revision);
+    } else {
+      renderSnapshot();
+      renderInspector();
+    }
+    if (!selectionIsCurrent(revision, selectedRun, selectedEpisode, stepId)) {
+      return;
+    }
+    writeLocationState(
+      options.historyMode === undefined ? "push" : options.historyMode,
+    );
     closeCompactPanels();
   } catch (error) {
-    showFatal(error);
+    if (selectionIsCurrent(revision, selectedRun, selectedEpisode, stepId)) {
+      showFatal(error);
+    }
+  }
+}
+
+function selectionIsCurrent(revision, runId, episodeId, stepId) {
+  return revision === state.selectionRevision
+    && runId === state.run
+    && episodeId === state.episode
+    && stepId === state.stepId;
+}
+
+function updateStepListSelection(ensureVisible = true) {
+  let selected = null;
+  for (const button of elements.stepList.querySelectorAll(".step-button")) {
+    const active = Number(button.dataset.stepId) === state.stepId;
+    button.classList.toggle("active", active);
+    if (active) {
+      selected = button;
+    }
+  }
+  if (ensureVisible && selected) {
+    requestAnimationFrame(() => keepStepButtonVisible(selected));
+  }
+}
+
+function keepStepButtonVisible(button) {
+  if (!button.isConnected) {
+    return;
+  }
+  const listBounds = elements.stepList.getBoundingClientRect();
+  const buttonBounds = button.getBoundingClientRect();
+  if (buttonBounds.top < listBounds.top) {
+    elements.stepList.scrollTop += buttonBounds.top - listBounds.top;
+  } else if (buttonBounds.bottom > listBounds.bottom) {
+    elements.stepList.scrollTop += buttonBounds.bottom - listBounds.bottom;
   }
 }
 
@@ -226,7 +315,7 @@ function updateStepNavigation() {
 function renderSnapshot() {
   const step = state.step;
   elements.chat.replaceChildren();
-  const imageLookup = new Map(step.images.map((image) => [image.sha256, image]));
+  const imageLookup = buildImageLookup(step.images);
   const messages = step.display_messages;
   messages.forEach((message, index) => {
     const isCurrent = index === messages.length - 1;
@@ -304,21 +393,25 @@ function appendContent(container, content, imageLookup) {
     if (item.type === "image_url") {
       const url = item.image_url?.url || "";
       const digest = url.includes("sha256=") ? url.split("sha256=")[1] : null;
-      const image = imageLookup.get(digest);
+      const image = imageLookup.get(`artifact:${item.artifact}`)
+        || imageLookup.get(`sha256:${digest}`);
       const figure = document.createElement("figure");
       figure.className = "image-block";
       if (image) {
         const imageNode = document.createElement("img");
         imageNode.src = image.url;
-        imageNode.alt = `${image.camera} observation at step ${image.step_id}`;
+        imageNode.alt = `${image.kind || "rgb"} ${image.camera} observation at step ${image.step_id}`;
         imageNode.loading = "lazy";
         if (image.width && image.height) {
           imageNode.width = image.width;
           imageNode.height = image.height;
         }
         const caption = document.createElement("figcaption");
+        const source = image.kind === "magnifier"
+          ? ` | source ${image.source_rgb_key} | bbox ${JSON.stringify(image.bbox_xyxy)}`
+          : "";
         caption.textContent =
-          `${image.camera} | step ${image.step_id} | sha256 ${image.sha256}`;
+          `${image.camera} | ${image.kind || "rgb"}${source} | step ${image.step_id} | sha256 ${image.sha256}`;
         figure.append(imageNode, caption);
       } else {
         const missing = document.createElement("span");
@@ -390,53 +483,100 @@ function renderRequestMeta(step) {
   }
 }
 
-async function renderConversation() {
-  setLoading("Loading episode conversation");
+async function renderConversation(revision = state.selectionRevision) {
+  const key = conversationKey();
+  if (state.renderedConversationKey !== key) {
+    setLoading("Loading episode conversation");
+  }
   try {
     if (!state.conversation) {
-      state.conversation = await requestJson(
+      const conversation = await requestJson(
         `${runApiPrefix()}/episodes/${encodeURIComponent(state.episode)}/conversation`,
       );
+      if (revision !== state.selectionRevision || key !== conversationKey()) {
+        return;
+      }
+      state.conversation = conversation;
     }
-    if (!state.step || state.step.step_id !== state.stepId) {
-      state.step = await requestJson(
-        `${runApiPrefix()}/episodes/${encodeURIComponent(state.episode)}/steps/${state.stepId}`,
-      );
+    if (revision !== state.selectionRevision || key !== conversationKey()) {
+      return;
     }
-    elements.chat.replaceChildren();
-    for (const message of state.conversation.static_messages) {
-      elements.chat.append(renderMessage(message, new Map()));
+    if (state.renderedConversationKey !== key) {
+      renderConversationDocument();
     }
-    for (const turn of state.conversation.turns) {
-      const imageLookup = new Map(turn.images.map((image) => [image.sha256, image]));
-      elements.chat.append(
-        renderMessage(turn.observation, imageLookup, {
-          current: turn.step_id === state.stepId,
-          label: `Step ${turn.step_id}`,
-          stepId: turn.step_id,
-        }),
-      );
-      elements.chat.append(renderConversationResponse(turn));
-    }
+    updateConversationSelection();
     renderRequestMeta(state.step);
     renderInspector();
-    requestAnimationFrame(() => {
-      const selected = elements.chat.querySelector(
-        `.conversation-turn[data-step-id="${state.stepId}"]`,
-      );
-      if (selected) {
-        const chatBounds = elements.chat.getBoundingClientRect();
-        const selectedBounds = selected.getBoundingClientRect();
-        elements.chat.scrollTo({
-          top: elements.chat.scrollTop + selectedBounds.top - chatBounds.top,
-          behavior: "smooth",
-        });
-      }
-    });
+    scrollToConversationStep(revision);
     closeCompactPanels();
   } catch (error) {
-    showFatal(error);
+    if (revision === state.selectionRevision && key === conversationKey()) {
+      showFatal(error);
+    }
   }
+}
+
+function conversationKey() {
+  return `${state.run}\n${state.episode}`;
+}
+
+function renderConversationDocument() {
+  elements.chat.replaceChildren();
+  for (const message of state.conversation.static_messages) {
+    elements.chat.append(renderMessage(message, new Map()));
+  }
+  for (const turn of state.conversation.turns) {
+    const imageLookup = buildImageLookup(turn.images);
+    elements.chat.append(
+      renderMessage(turn.observation, imageLookup, {
+        current: false,
+        label: `Step ${turn.step_id}`,
+        stepId: turn.step_id,
+      }),
+    );
+    elements.chat.append(renderConversationResponse(turn));
+  }
+  state.renderedConversationKey = conversationKey();
+}
+
+function updateConversationSelection() {
+  for (const turn of elements.chat.querySelectorAll(".conversation-turn")) {
+    turn.classList.toggle(
+      "current",
+      Number(turn.dataset.stepId) === state.stepId,
+    );
+  }
+}
+
+function scrollToConversationStep(revision) {
+  requestAnimationFrame(() => {
+    if (revision !== state.selectionRevision || state.mode !== "conversation") {
+      return;
+    }
+    const selected = elements.chat.querySelector(
+      `.conversation-turn[data-step-id="${state.stepId}"]`,
+    );
+    if (!selected) {
+      return;
+    }
+    const chatBounds = elements.chat.getBoundingClientRect();
+    const selectedBounds = selected.getBoundingClientRect();
+    elements.chat.scrollTo({
+      top: elements.chat.scrollTop + selectedBounds.top - chatBounds.top,
+      behavior: "auto",
+    });
+  });
+}
+
+function buildImageLookup(images) {
+  const lookup = new Map();
+  for (const image of images) {
+    lookup.set(`artifact:${image.artifact}`, image);
+    if (!lookup.has(`sha256:${image.sha256}`)) {
+      lookup.set(`sha256:${image.sha256}`, image);
+    }
+  }
+  return lookup;
 }
 
 function renderConversationResponse(turn) {
@@ -500,15 +640,77 @@ function adjacentStep(offset) {
   }
 }
 
-function setMode(mode) {
+function setMode(mode, options = {}) {
   state.mode = mode;
-  elements.snapshotMode.classList.toggle("active", mode === "snapshot");
-  elements.conversationMode.classList.toggle("active", mode === "conversation");
-  if (mode === "snapshot") {
-    selectStep(state.stepId);
-  } else {
-    renderConversation();
+  updateModeButtons();
+  selectStep(state.stepId, {
+    historyMode: options.historyMode === undefined ? "push" : options.historyMode,
+  });
+}
+
+function updateModeButtons() {
+  elements.snapshotMode.classList.toggle("active", state.mode === "snapshot");
+  elements.conversationMode.classList.toggle("active", state.mode === "conversation");
+}
+
+function readLocationState() {
+  const params = new URLSearchParams(window.location.search);
+  const rawStep = params.get("step");
+  const parsedStep = rawStep === null ? null : Number(rawStep);
+  return {
+    run: params.get("run"),
+    episode: params.get("episode"),
+    stepId: Number.isInteger(parsedStep) ? parsedStep : null,
+    mode: params.get("mode"),
+  };
+}
+
+function writeLocationState(historyMode) {
+  if (!historyMode || !state.run || !state.episode || state.stepId === null) {
+    return;
   }
+  const url = new URL(window.location.href);
+  url.searchParams.set("run", state.run);
+  url.searchParams.set("episode", state.episode);
+  url.searchParams.set("step", String(state.stepId));
+  url.searchParams.set("mode", state.mode);
+  if (historyMode === "replace") {
+    window.history.replaceState(null, "", url);
+  } else {
+    window.history.pushState(null, "", url);
+  }
+}
+
+async function restoreLocationState() {
+  const route = readLocationState();
+  const group = groupContainingRun(route.run);
+  if (!group) {
+    return;
+  }
+  state.mode = route.mode === "conversation" ? "conversation" : "snapshot";
+  updateModeButtons();
+  if (route.run !== state.run) {
+    await selectGroup(group.id, route.run, {
+      episodeId: route.episode,
+      stepId: route.stepId,
+      historyMode: null,
+    });
+    return;
+  }
+  if (
+    route.episode !== state.episode
+    && state.index.episodes.some((episode) => episode.id === route.episode)
+  ) {
+    await selectEpisode(route.episode, {
+      stepId: route.stepId,
+      historyMode: null,
+    });
+    return;
+  }
+  const stepId = currentEpisode().step_ids.includes(route.stepId)
+    ? route.stepId
+    : currentEpisode().step_ids[0];
+  await selectStep(stepId, { historyMode: null });
 }
 
 function setInspectorTab(tab) {
@@ -542,7 +744,9 @@ function closeCompactPanels() {
   elements.inspector.classList.remove("open");
 }
 
-elements.episodeSelect.addEventListener("change", () => selectEpisode(elements.episodeSelect.value));
+elements.episodeSelect.addEventListener("change", () => {
+  selectEpisode(elements.episodeSelect.value).catch(showFatal);
+});
 elements.groupSelect.addEventListener("change", () => {
   selectGroup(elements.groupSelect.value).catch(showFatal);
 });
@@ -565,5 +769,6 @@ elements.versionButton.addEventListener("click", () => elements.versionDialog.sh
 elements.closeVersionDialog.addEventListener("click", () => elements.versionDialog.close());
 elements.sidebarToggle.addEventListener("click", () => elements.sidebar.classList.toggle("open"));
 elements.inspectorToggle.addEventListener("click", () => elements.inspector.classList.toggle("open"));
+window.addEventListener("popstate", () => restoreLocationState().catch(showFatal));
 
 initialize();

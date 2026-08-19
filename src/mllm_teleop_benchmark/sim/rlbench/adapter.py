@@ -241,7 +241,7 @@ class RLBenchSimAdapter(SimAdapter):
                 setattr(config, attr, True)
 
         camera_specs = self._camera_specs or (
-            CameraSpec(name="front", type="rlbench_rgb", width=320, height=240),
+            CameraSpec(name="front", type="rlbench_rgb", width=512, height=512),
         )
         for camera in camera_specs:
             camera_config = getattr(config, f"{camera.name}_camera", None)

@@ -129,6 +129,12 @@ def test_robosuite_lift_configs_preserve_upstream_task_camera_framing(config_pat
     # A position-only override keeps the old orientation and can point agentview
     # away from the robot workspace even though the resulting RGB is non-black.
     assert "camera_randomization" not in config.task.params
+    assert config.task.params["camera_names"] == [
+        "agentview",
+        "robot0_eye_in_hand",
+    ]
+    assert config.task.params["camera_widths"] == [512, 256]
+    assert config.task.params["camera_heights"] == [512, 256]
 
 
 @pytest.mark.parametrize(
@@ -341,7 +347,8 @@ def test_robosuite_adapter_init():
 
         assert "agentview" in obs.images
         assert "robot0_eye_in_hand" in obs.images
-        assert obs.images["agentview"].shape == (240, 320, 3)
+        assert obs.images["agentview"].shape == (512, 512, 3)
+        assert obs.images["robot0_eye_in_hand"].shape == (256, 256, 3)
         assert all(
             image.dtype == np.uint8 and int(image.max()) > int(image.min())
             for image in obs.images.values()
@@ -357,7 +364,7 @@ def test_robosuite_adapter_init():
         assert adapter.get_state()["step_id"] == 1
 
         rendered = adapter.render(config.camera.cameras[0])
-        assert rendered.shape == (240, 320, 3)
+        assert rendered.shape == (512, 512, 3)
         assert rendered.dtype == np.uint8
         assert int(rendered.max()) > int(rendered.min())
     finally:

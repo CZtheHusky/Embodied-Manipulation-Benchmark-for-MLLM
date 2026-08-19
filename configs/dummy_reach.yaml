@@ -23,8 +23,8 @@ camera:
   cameras:
     - name: front
       type: dummy_rgb
-      width: 256
-      height: 256
+      width: 512
+      height: 512
       pose: [1.0, 0.0, 0.8, 0.0, 0.6, 3.14]
 
 control_interface:

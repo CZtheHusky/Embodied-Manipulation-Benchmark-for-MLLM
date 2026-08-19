@@ -141,6 +141,15 @@ def test_libero_config_builds_without_libero_install():
     assert provider.__class__.__name__ == "LiberoObservationProvider"
 
 
+def test_libero_passes_mixed_external_and_hand_camera_sizes_to_native_env():
+    config = load_config("configs/libero_spatial_task0.yaml")
+    sim = build_sim(config)
+
+    sim.set_camera_configuration(config.camera.cameras)
+
+    assert sim._camera_dimensions() == ([512, 128], [512, 128])
+
+
 def test_libero_config_uses_worker_play_runtime():
     config = load_config("configs/libero_spatial_task0.yaml")
 
@@ -422,7 +431,12 @@ def test_libero_runtime_reset_init_state_step_render_smoke_when_installed():
         assert obs.step_id == 0
         assert sim.get_state()["benchmark_validity"]["init_state_id"] == 0
         assert result.observation.step_id == 1
-        assert np.asarray(frame).shape[-1] == 3
+        assert np.asarray(frame).shape == (512, 512, 3)
+        assert np.asarray(observation.images["robot0_eye_in_hand"]).shape == (
+            128,
+            128,
+            3,
+        )
     finally:
         sim.close()
 
@@ -525,7 +539,7 @@ def test_libero_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_chat_completions_v7" in group
+    assert "prompt-mllm_joystick_chat_completions_v10" in group
     assert "__output-" not in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -811,7 +825,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v7" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v10" in request_text
     assert f"Task: {TASK_TEXT}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -882,7 +896,8 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))
-        assert pixels.shape == (256, 256, 3)
+        expected_shape = (128, 128, 3) if path.name == "robot0_eye_in_hand.png" else (512, 512, 3)
+        assert pixels.shape == expected_shape
         assert float(pixels.mean()) > 1.0
         assert float(pixels.std()) > 1.0
 
@@ -896,7 +911,7 @@ def test_libero_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["configured_simulator_step_horizon"] == 120
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

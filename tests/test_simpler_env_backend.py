@@ -54,7 +54,7 @@ def test_simpler_env_config_uses_worker_play_runtime():
 
     assert config.ui.backend == "pygame"
     assert config.ui.runtime == "sim_adapter_worker"
-    assert config.ui.frame_camera == "default"
+    assert config.ui.frame_camera == "image/overhead_camera"
 
 
 def test_simpler_env_delta_eef_controller_maps_pose_and_gripper_to_7d_action():
@@ -222,14 +222,14 @@ def test_simpler_env_runtime_smoke_when_installed():
     sim = build_sim(config)
     camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
     observation_provider = build_observation_provider(config, camera_manager)
+    observation_provider.configure_sim(sim)
     try:
         try:
             sim.reset(config.task, seed=42)
             observation = observation_provider.get_observation(sim)
             assert observation.images
             first_image = np.asarray(next(iter(observation.images.values())))
-            assert first_image.ndim == 3
-            assert first_image.shape[-1] == 3
+            assert first_image.shape == (410, 512, 3)
 
             step = sim.step(SimplerEnvAction(values=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)))
             assert step.observation.step_id == 1

@@ -807,6 +807,20 @@ def test_calvin_static_camera_projection_matches_public_prompt():
     assert image_right[2] < -0.4 and image_up[2] > 0.7
 
 
+def test_calvin_provider_passes_external_and_gripper_native_camera_sizes():
+    config = load_config("configs/calvin_delta_eef.yaml")
+    sim = build_sim(config)
+    camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
+    provider = build_observation_provider(config, camera_manager)
+
+    provider.configure_sim(sim)
+
+    assert sim._camera_config["static"]["width"] == 512
+    assert sim._camera_config["static"]["height"] == 512
+    assert sim._camera_config["gripper"]["width"] == 84
+    assert sim._camera_config["gripper"]["height"] == 84
+
+
 def test_calvin_perturbation_only_changes_motion_channels():
     config = load_config(
         "configs/calvin_delta_eef_mllm_chat_completions_perturbed.yaml"
@@ -854,8 +868,8 @@ def test_calvin_sim_adapter_reset_step_smoke():
         assert obs.state["step_id"] == 0
         obs = observation_provider.get_observation(sim)
         assert {"static", "gripper"}.issubset(obs.images)
-        assert obs.images["static"].shape[-1] == 3
-        assert obs.images["gripper"].shape[-1] == 3
+        assert obs.images["static"].shape == (512, 512, 3)
+        assert obs.images["gripper"].shape == (84, 84, 3)
         assert all(
             image.dtype == np.uint8
             and float(image.mean()) > 1.0
@@ -863,8 +877,7 @@ def test_calvin_sim_adapter_reset_step_smoke():
             for image in obs.images.values()
         )
         rendered = np.asarray(sim.render(config.camera.cameras[0]))
-        assert rendered.ndim == 3
-        assert rendered.shape[-1] == 3
+        assert rendered.shape == (512, 512, 3)
         assert rendered.dtype == np.uint8
         assert float(rendered.mean()) > 1.0
         assert float(rendered.std()) > 1.0
@@ -1162,7 +1175,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v7" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v10" in request_text
     assert (
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
@@ -1248,7 +1261,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

@@ -161,6 +161,11 @@ def test_pusher_matrix_configs_are_explicit_and_distinct(
     assert config.agent.history.image_window == (
         "all" if api == "responses" else 3
     )
+    assert config.agent.history.max_images_per_request >= (
+        config.task.max_steps * (len(config.agent.observation.cameras) + 1)
+        if api == "responses"
+        else 128
+    )
     assert config.logging.save_video is True
     assert config.camera.manager == camera_manager
     assert config.camera.params["experiment_condition"] == camera_condition

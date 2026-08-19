@@ -35,8 +35,8 @@ camera:
   cameras:
     - name: front
       type: mujoco_rgb
-      width: 320
-      height: 240
+      width: 512
+      height: 512
 
 control_interface:
   mode: eef_delta_pose
@@ -95,7 +95,7 @@ agent:
   history:
     action_window: all
     image_window: all
-    max_images_per_request: 128
+    max_images_per_request: 256
     max_request_bytes: 67108864
 
 logging:

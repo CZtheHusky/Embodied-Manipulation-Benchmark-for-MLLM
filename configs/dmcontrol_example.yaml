@@ -26,8 +26,8 @@ camera:
   cameras:
     - name: fixed
       type: mujoco_rgb
-      width: 320
-      height: 240
+      width: 512
+      height: 384
     - name: hand
       type: mujoco_rgb
       width: 320

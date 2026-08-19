@@ -77,19 +77,45 @@ class RoboCasaSimAdapter(SimAdapter):
         )
 
     def render(self, camera: CameraSpec) -> Any:
-        if camera.name in self._last_obs_images:
-            return self._last_obs_images[camera.name]
-        video_key = f"video.{camera.name}"
-        if video_key in self._last_obs_images:
-            return self._last_obs_images[video_key]
-        image_key = f"{camera.name}_image"
-        if image_key in self._last_obs_images:
-            return self._last_obs_images[image_key]
+        cached = self._cached_camera_image(camera.name)
+        if cached is not None and _matches_camera_spec(cached, camera):
+            return cached
+
+        direct = self._render_native_camera(camera)
+        if direct is not None:
+            return direct
+        if cached is not None:
+            raise RuntimeError(
+                f"RoboCasa camera {camera.name!r} returned {np.asarray(cached).shape[:2]} "
+                f"but {camera.height}x{camera.width} was requested, and the native "
+                "MuJoCo renderer is unavailable"
+            )
 
         rendered = self._env.render()
         if rendered is None:
             raise RuntimeError(f"RoboCasa render returned no image for camera {camera.name!r}")
         return rendered
+
+    def _cached_camera_image(self, camera_name: str) -> Any | None:
+        for key in (camera_name, f"video.{camera_name}", f"{camera_name}_image"):
+            if key in self._last_obs_images:
+                return self._last_obs_images[key]
+        return None
+
+    def _render_native_camera(self, camera: CameraSpec) -> np.ndarray | None:
+        wrapper = getattr(self._env, "unwrapped", self._env)
+        native_env = getattr(wrapper, "env", None)
+        sim = getattr(native_env, "sim", None)
+        render = getattr(sim, "render", None)
+        if not callable(render):
+            return None
+        frame = render(
+            camera_name=camera.name,
+            width=camera.width,
+            height=camera.height,
+            depth=False,
+        )
+        return np.ascontiguousarray(np.flipud(np.asarray(frame)))
 
     def get_state(self) -> dict[str, Any]:
         return {
@@ -216,3 +242,8 @@ def _normalized_image_name(key: str) -> str:
     if key.endswith("_image"):
         return key[: -len("_image")]
     return key
+
+
+def _matches_camera_spec(value: Any, camera: CameraSpec) -> bool:
+    array = np.asarray(value)
+    return array.ndim >= 2 and array.shape[:2] == (camera.height, camera.width)

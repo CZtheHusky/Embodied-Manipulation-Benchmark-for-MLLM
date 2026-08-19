@@ -68,16 +68,20 @@ def _require_robocasa() -> None:
         pytest.skip("robocasa failed to import in this optional environment")
 
 
-def _public_rgb_digests(observation: Observation) -> dict[str, str]:
+def _public_rgb_digests(adapter: RoboCasaSimAdapter, config) -> dict[str, str]:
     digests = {}
-    for camera in PUBLIC_CAMERAS:
-        assert camera in observation.images
-        image = np.asarray(observation.images[camera])
-        assert image.shape == (256, 256, 3)
+    for camera in config.camera.cameras:
+        image = np.asarray(adapter.render(camera))
+        expected_shape = (
+            (256, 256, 3)
+            if camera.name == "robot0_eye_in_hand"
+            else (512, 512, 3)
+        )
+        assert image.shape == expected_shape
         assert image.dtype == np.uint8
         assert np.any(image != 0)
         assert float(image.std()) > 1.0
-        digests[camera] = hashlib.sha256(
+        digests[camera.name] = hashlib.sha256(
             np.ascontiguousarray(image).tobytes()
         ).hexdigest()
     return digests
@@ -407,9 +411,7 @@ def test_robocasa365_experiment_seeds_have_stable_nonblack_public_rgb():
                 "annotation.human.task_description"
             ]
             assert isinstance(instruction, str) and instruction
-            baseline_digests = _public_rgb_digests(
-                baseline_observation
-            )
+            baseline_digests = _public_rgb_digests(baseline_adapter, baseline)
         finally:
             baseline_adapter.close()
 
@@ -427,7 +429,7 @@ def test_robocasa365_experiment_seeds_have_stable_nonblack_public_rgb():
                 == instruction
             )
             assert (
-                _public_rgb_digests(perturbed_observation)
+                _public_rgb_digests(perturbed_adapter, perturbed)
                 == baseline_digests
             )
         finally:
@@ -446,7 +448,7 @@ def test_robocasa365_nonzero_controller_action_moves_end_effector():
             ],
             dtype=float,
         )
-        initial_images = _public_rgb_digests(observation)
+        initial_images = _public_rgb_digests(adapter, config)
         mapping = build_mapping(config, config.benchmark.seed)
         controller = build_controller(
             config,
@@ -476,7 +478,7 @@ def test_robocasa365_nonzero_controller_action_moves_end_effector():
             dtype=float,
         )
         assert np.linalg.norm(final_position - initial_position) > 1e-4
-        final_images = _public_rgb_digests(result.observation)
+        final_images = _public_rgb_digests(adapter, config)
         assert any(
             final_images[camera] != initial_images[camera]
             for camera in PUBLIC_CAMERAS

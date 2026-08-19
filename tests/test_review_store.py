@@ -238,8 +238,10 @@ def test_catalog_discovers_nested_runs_and_keeps_run_artifacts_isolated(tmp_path
         / "20260727-legacy"
     )
     partial_run = tmp_path / "interrupted" / "user-paused" / "20260728-partial"
+    trashed_run = tmp_path / "_trash" / "invalid" / "20260728-invalid"
     _episode(current_run)
     _episode(archived_run)
+    _episode(trashed_run)
     partial_episode = _episode(partial_run)
     (partial_episode / "summary.json").unlink()
     _write_json(

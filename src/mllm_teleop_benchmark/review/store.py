@@ -130,6 +130,16 @@ class EpisodeReviewStore:
                 "raw": transition.get("raw_action") if isinstance(transition, dict) else None,
                 "parsed": transition.get("parsed_action") if isinstance(transition, dict) else None,
                 "reflection": transition.get("reflection") if isinstance(transition, dict) else None,
+                "magnifier_update": (
+                    transition.get("magnifier_update")
+                    if isinstance(transition, dict)
+                    else None
+                ),
+                "magnifier_result": (
+                    transition.get("magnifier_result")
+                    if isinstance(transition, dict)
+                    else None
+                ),
                 "validation": transition.get("validation") if isinstance(transition, dict) else None,
             },
         }
@@ -249,6 +259,9 @@ class EpisodeReviewStore:
                     "width": record.get("width"),
                     "height": record.get("height"),
                     "sha256": record.get("sha256"),
+                    "kind": record.get("kind", "rgb"),
+                    "source_rgb_key": record.get("source_rgb_key"),
+                    "bbox_xyxy": record.get("bbox_xyxy"),
                     "artifact": artifact,
                     "url": (
                         f"{self.artifact_prefix}/{quote(episode_id, safe='')}/"
@@ -430,6 +443,7 @@ class ReviewCatalogStore:
                 model_calls.parent.parent.resolve()
                 for model_calls in root.rglob("model_calls")
                 if model_calls.is_dir()
+                and "_trash" not in model_calls.relative_to(root).parts
                 and model_calls.parent.name.startswith("episode_")
                 and self._has_model_requests(model_calls.parent)
                 and model_calls.parent.resolve().is_relative_to(root)
@@ -620,6 +634,7 @@ def _normalize_responses_message(message: dict[str, Any]) -> dict[str, Any]:
                 {
                     "type": "image_url",
                     "image_url": {"url": item.get("image_url", "")},
+                    "artifact": item.get("artifact"),
                 }
             )
         else:

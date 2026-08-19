@@ -19,7 +19,7 @@ from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_nam
 from mllm_teleop_benchmark.utils.serialization import to_jsonable
 
 
-RENDERER_VERSION = "mllm_review_v1"
+RENDERER_VERSION = "mllm_review_v2"
 CANVAS_SIZE = (1280, 720)
 IMAGE_REGION_WIDTH = 850
 _ORACLE_DISTANCE_KEYS = ("distance_to_target", "goal_distance", "distance")
@@ -192,20 +192,24 @@ class ReviewVideoRenderer:
         images = request_manifest.get("images")
         if not isinstance(images, list):
             raise ReviewVideoError(f"Model request manifest has no image list: {request_path}")
-        sources = []
+        current_images = [
+            image
+            for image in images
+            if isinstance(image, dict)
+            and image.get("step_id") == transition.step_id
+        ]
         for camera in camera_order:
             matches = [
                 image
-                for image in images
-                if isinstance(image, dict)
-                and image.get("step_id") == transition.step_id
-                and image.get("camera") == camera
+                for image in current_images
+                if image.get("camera") == camera
+                and image.get("kind", "rgb") == "rgb"
             ]
             if len(matches) != 1:
                 raise ReviewVideoError(
                     f"Step {transition.step_id} camera {camera!r} has {len(matches)} current image records"
                 )
-            sources.append(self._validated_source(matches[0]))
+        sources = [self._validated_source(image) for image in current_images]
 
         return {
             "step_id": transition.step_id,
@@ -239,6 +243,9 @@ class ReviewVideoRenderer:
             "sha256": expected_hash,
             "width": int(image.get("width", 0)),
             "height": int(image.get("height", 0)),
+            "kind": str(image.get("kind", "rgb")),
+            "source_rgb_key": image.get("source_rgb_key"),
+            "bbox_xyxy": image.get("bbox_xyxy"),
         }
 
     def _save_terminal_images(
@@ -271,6 +278,39 @@ class ReviewVideoRenderer:
                     "sha256": encoded.sha256,
                     "width": encoded.width,
                     "height": encoded.height,
+                    "kind": "rgb",
+                    "source_rgb_key": None,
+                    "bbox_xyxy": None,
+                }
+            )
+        if observation.magnifier is not None:
+            try:
+                encoded = encode_rgb_png(
+                    observation.magnifier.image,
+                    self.config.agent.observation.image_max_side,
+                )
+            except Exception as exc:
+                raise ReviewVideoError(
+                    "Failed to encode terminal magnifier view: "
+                    f"{type(exc).__name__}"
+                ) from exc
+            source_rgb_key = observation.magnifier.source_rgb_key
+            relative = (
+                "review/terminal/magnifier/"
+                f"{safe_artifact_name(source_rgb_key)}.png"
+            )
+            self._artifact_path(relative).parent.mkdir(parents=True, exist_ok=True)
+            self._artifact_path(relative).write_bytes(encoded.content)
+            sources.append(
+                {
+                    "camera": f"magnifier:{source_rgb_key}",
+                    "artifact": relative,
+                    "sha256": encoded.sha256,
+                    "width": encoded.width,
+                    "height": encoded.height,
+                    "kind": "magnifier",
+                    "source_rgb_key": source_rgb_key,
+                    "bbox_xyxy": list(observation.magnifier.bbox_xyxy),
                 }
             )
         return {"step_id": observation.step_id, "images": sources}
@@ -499,6 +539,8 @@ def model_review_record(
         "raw_action": to_jsonable(transition.raw_action),
         "parsed_action": to_jsonable(transition.parsed_action),
         "reflection": transition.reflection,
+        "magnifier_update": to_jsonable(transition.magnifier_update),
+        "magnifier_result": to_jsonable(transition.magnifier_result),
         "action_status": _action_status(transition),
         "valid": transition.validation.is_valid,
         "validation_errors": [
@@ -596,9 +638,12 @@ def _draw_mosaic(
         x = x0 + (cell_width - frame.width) // 2
         y = y0 + label_height + (cell_height - label_height - frame.height) // 2
         canvas.paste(frame, (x, y))
+        label = str(source["camera"])
+        if source.get("kind") == "magnifier":
+            label = f"magnifier: {source.get('source_rgb_key')} {source.get('bbox_xyxy')}"
         draw.text(
             (x0 + 10, y0 + 5),
-            str(source["camera"]),
+            label,
             fill=(238, 241, 245),
             font=font,
         )

@@ -26,8 +26,8 @@ camera:
   cameras:
     - name: image/overhead_camera
       type: simpler_env_rgb
-      width: 640
-      height: 512
+      width: 512
+      height: 410
 
 control_interface:
   mode: eef_delta_pose

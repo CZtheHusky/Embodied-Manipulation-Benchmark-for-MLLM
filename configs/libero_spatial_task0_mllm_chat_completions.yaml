@@ -15,8 +15,8 @@ simulator:
     horizon: 600
     control_freq: 20
     camera_names: [agentview, robot0_eye_in_hand]
-    camera_height: 256
-    camera_width: 256
+    camera_height: 128
+    camera_width: 128
 
 task:
   type: libero_generic
@@ -45,8 +45,8 @@ camera:
   cameras:
     - name: agentview
       type: libero_rgb
-      width: 256
-      height: 256
+      width: 512
+      height: 512
       params:
         basis_frame: mujoco_world
         image_right_in_world: [0.0, 1.0, 0.0]
@@ -54,8 +54,8 @@ camera:
         basis_approximate: true
     - name: robot0_eye_in_hand
       type: libero_rgb
-      width: 256
-      height: 256
+      width: 128
+      height: 128
 
 control_interface:
   mode: eef_delta_pose

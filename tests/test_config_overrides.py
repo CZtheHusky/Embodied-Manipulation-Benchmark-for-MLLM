@@ -56,12 +56,12 @@ def test_responses_config_uses_full_provider_context():
     assert config.agent.type == "mllm"
     assert config.agent.model is not None
     assert config.agent.model.api == "responses"
-    assert config.agent.model.reasoning_effort == "medium"
+    assert config.agent.model.reasoning_effort == "low"
     assert config.agent.model.retry_until_success
     assert config.agent.model.retry_backoff_max_seconds == 30
     assert config.agent.history.action_window == "all"
     assert config.agent.history.image_window == "all"
-    assert config.agent.history.max_images_per_request == 128
+    assert config.agent.history.max_images_per_request == 256
     assert config.agent.history.max_request_bytes == 67_108_864
 
 
@@ -81,6 +81,7 @@ def test_responses_backend_accepts_reflection_contract_with_full_history():
         (
             "agent.model.api=responses",
             "agent.history.image_window=all",
+            "agent.history.max_images_per_request=256",
         ),
     )
 
@@ -171,6 +172,14 @@ def test_responses_api_rejects_history_windows_that_it_cannot_honor():
         )
 
 
+def test_responses_api_rejects_image_limit_below_full_episode_with_magnifier():
+    with pytest.raises(ValueError, match="must be at least 160"):
+        load_config(
+            "configs/reacher_delta_eef_mllm_responses.yaml",
+            ("agent.history.max_images_per_request=159",),
+        )
+
+
 def test_mllm_config_rejects_unknown_model_api():
     with pytest.raises(ValueError, match="agent.model.api"):
         load_config(
@@ -207,7 +216,9 @@ def test_mllm_config_rejects_retry_backoff_cap_below_initial_delay():
 
 
 def test_review_video_is_disabled_by_default():
-    config = load_config("configs/reacher_delta_eef_mllm_responses.yaml")
+    config = load_config(
+        "configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions.yaml"
+    )
 
     assert not config.logging.save_video
     assert config.logging.video.fps == 2
@@ -220,7 +231,10 @@ def test_evaluator_debug_video_requires_video_logging():
     with pytest.raises(ValueError, match="requires logging.save_video=true"):
         load_config(
             "configs/reacher_delta_eef_mllm_responses.yaml",
-            ("logging.video.include_evaluator_debug=true",),
+            (
+                "logging.save_video=false",
+                "logging.video.include_evaluator_debug=true",
+            ),
         )
 
 

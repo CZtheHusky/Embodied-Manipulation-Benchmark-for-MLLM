@@ -11,6 +11,7 @@ from mllm_teleop_benchmark.action.joystick import JoystickAction
 from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.agents.model_client import ModelResponse, ModelUsage
 from mllm_teleop_benchmark.config.loader import load_config
+from mllm_teleop_benchmark.config.schema import CameraSpec
 from mllm_teleop_benchmark.control.robocasa_controller import RoboCasaOSCController
 from mllm_teleop_benchmark.core.registry import (
     build_action_space,
@@ -153,6 +154,47 @@ def test_robocasa_config_builds_without_backend():
         config.task.params["instruction_observation_key"]
         == "annotation.human.task_description"
     )
+
+
+def test_robocasa_render_keeps_hand_image_and_rerenders_external_camera():
+    calls = []
+
+    class FakeSim:
+        def render(self, **kwargs):
+            calls.append(kwargs)
+            return np.full(
+                (kwargs["height"], kwargs["width"], 3),
+                63,
+                dtype=np.uint8,
+            )
+
+    native_env = type("FakeNativeEnv", (), {"sim": FakeSim()})()
+    wrapper = type("FakeWrapper", (), {"env": native_env})()
+    gym_env = type("FakeGymEnv", (), {"unwrapped": wrapper})()
+    adapter = RoboCasaSimAdapter(load_config(CONFIG_PATH).simulator)
+    adapter._env = gym_env
+    adapter._last_obs_images = {
+        "robot0_agentview_left": np.zeros((256, 256, 3), dtype=np.uint8),
+        "robot0_eye_in_hand": np.ones((256, 256, 3), dtype=np.uint8),
+    }
+
+    external = adapter.render(
+        CameraSpec("robot0_agentview_left", "robocasa_rgb", 512, 512)
+    )
+    hand = adapter.render(
+        CameraSpec("robot0_eye_in_hand", "robocasa_rgb", 256, 256)
+    )
+
+    assert external.shape == (512, 512, 3)
+    assert hand.shape == (256, 256, 3)
+    assert calls == [
+        {
+            "camera_name": "robot0_agentview_left",
+            "width": 512,
+            "height": 512,
+            "depth": False,
+        }
+    ]
 
 
 def test_robocasa_task_projects_only_upstream_public_instruction():
@@ -343,7 +385,7 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_chat_completions_v7" in group
+    assert "prompt-mllm_joystick_chat_completions_v10" in group
     assert "__output-" not in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -560,7 +602,7 @@ def test_robocasa_runtime_smoke_reset_step_render_close():
 
         frame = adapter.render(config.camera.cameras[0])
         assert isinstance(frame, np.ndarray)
-        assert frame.shape[-1] == 3
+        assert frame.shape == (512, 512, 3)
 
         state = adapter.get_state()
         assert isinstance(state["is_success"], bool)
@@ -727,7 +769,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v7" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v10" in request_text
     assert f"Task: {public_instructions[0]}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -829,7 +871,8 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))
-        assert pixels.shape == (256, 256, 3)
+        expected_shape = (256, 256, 3) if path.name == "robot0_eye_in_hand.png" else (512, 512, 3)
+        assert pixels.shape == expected_shape
         assert float(pixels.mean()) > 1.0
         assert float(pixels.std()) > 1.0
 
@@ -839,7 +882,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

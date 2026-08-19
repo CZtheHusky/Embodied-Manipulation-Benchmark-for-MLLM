@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 Vec3 = tuple[float, float, float]
+NormalizedBBox = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,32 @@ class Observation:
     images: dict[str, Any]
     state: dict[str, Any]
     metadata: dict[str, Any] = field(default_factory=dict)
+    magnifier: MagnifierView | None = None
+    tool_feedback: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MagnifierView:
+    source_rgb_key: str
+    bbox_xyxy: NormalizedBBox
+    image: Any
+
+
+@dataclass(frozen=True)
+class MagnifierUpdate:
+    requested: bool = False
+    clear: bool = False
+    source_rgb_key: str | None = None
+    bbox_xyxy: NormalizedBBox | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class MagnifierResult:
+    status: str
+    message: str
+    active_source_rgb_key: str | None = None
+    active_bbox_xyxy: NormalizedBBox | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +202,8 @@ class StepTransition:
     info: dict[str, Any] = field(default_factory=dict)
     agent_trace: AgentTrace | None = None
     reflection: str | None = None
+    magnifier_update: MagnifierUpdate = field(default_factory=MagnifierUpdate)
+    magnifier_result: MagnifierResult | None = None
     simulator_substeps: int = 1
 
 

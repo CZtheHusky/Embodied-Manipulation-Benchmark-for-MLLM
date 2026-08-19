@@ -312,7 +312,6 @@ input:focus {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
 }
 
 .message {

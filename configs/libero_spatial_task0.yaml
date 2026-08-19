@@ -45,8 +45,8 @@ camera:
   cameras:
     - name: agentview
       type: libero_rgb
-      width: 128
-      height: 128
+      width: 512
+      height: 512
     - name: robot0_eye_in_hand
       type: libero_rgb
       width: 128

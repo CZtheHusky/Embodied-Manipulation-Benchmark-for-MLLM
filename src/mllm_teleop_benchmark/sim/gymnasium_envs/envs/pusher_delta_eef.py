@@ -98,6 +98,8 @@ class PusherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
         reward_dist_weight: float = 1.0,
         reward_control_weight: float = 0.02,
         frame_skip: int = 5,
+        width: int = 512,
+        height: int = 512,
         **kwargs: Any,
     ) -> None:
         self.eef_step_scale = float(eef_step_scale)
@@ -116,7 +118,15 @@ class PusherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
 
         xml_path = Path(__file__).with_name("assets") / "pusher_pos.xml"
         observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(23,), dtype=np.float64)
-        MujocoEnv.__init__(self, str(xml_path), frame_skip=frame_skip, observation_space=observation_space, render_mode=render_mode)
+        MujocoEnv.__init__(
+            self,
+            str(xml_path),
+            frame_skip=frame_skip,
+            observation_space=observation_space,
+            render_mode=render_mode,
+            width=width,
+            height=height,
+        )
         utils.EzPickle.__init__(
             self,
             render_mode=render_mode,
@@ -134,6 +144,8 @@ class PusherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
             reward_dist_weight=reward_dist_weight,
             reward_control_weight=reward_control_weight,
             frame_skip=frame_skip,
+            width=width,
+            height=height,
             **kwargs,
         )
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)

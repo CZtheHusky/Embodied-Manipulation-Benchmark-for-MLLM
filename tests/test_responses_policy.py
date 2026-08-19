@@ -1,6 +1,8 @@
+from dataclasses import replace
 import json
 
 import numpy as np
+import pytest
 
 from mllm_teleop_benchmark.agents.base import AgentContext
 from mllm_teleop_benchmark.agents.model_client import (
@@ -27,6 +29,7 @@ from mllm_teleop_benchmark.core.types import (
     AgentDecision,
     AgentTrace,
     GymBoxAction,
+    MagnifierView,
     Observation,
     StepTransition,
     ValidationResult,
@@ -108,7 +111,7 @@ def _agent_config(max_images=128, max_request_bytes=67_108_864):
 def _observation(step_id):
     return Observation(
         step_id=step_id,
-        images={"front": np.full((12, 16, 3), step_id * 20, dtype=np.uint8)},
+        images={"front": np.full((12, 16, 3), (step_id * 20) % 256, dtype=np.uint8)},
         state={
             "target_position": f"PRIVATE_TARGET_{step_id}",
             "distance": f"PRIVATE_DISTANCE_{step_id}",
@@ -169,7 +172,7 @@ def test_responses_projection_excludes_privileged_state_and_uses_current_frame()
 
     decision = policy.act(_context(0))
 
-    assert PROMPT_VERSION == "mllm_joystick_responses_v7"
+    assert PROMPT_VERSION == "mllm_joystick_responses_v10"
     assert policy.prompt_version == PROMPT_VERSION
     body = client.requests[0].encoded_body().decode("utf-8")
     assert "PRIVATE_TARGET" not in body
@@ -184,6 +187,26 @@ def test_responses_projection_excludes_privileged_state_and_uses_current_frame()
     assert decision.trace.response_id == "resp-1"
     assert decision.trace.previous_response_id is None
     assert decision.trace.prompt_version == PROMPT_VERSION
+
+
+@pytest.mark.parametrize(
+    ("agent_step", "expects_reminder"),
+    [(0, False), (9, False), (10, True), (11, False), (20, True)],
+)
+def test_responses_repeats_task_instruction_every_ten_agent_steps(
+    agent_step,
+    expects_reminder,
+):
+    client = RecordingResponsesClient()
+    policy = ResponsesMLLMPolicy(_agent_config(), client, "fake-model")
+
+    policy.act(_context(agent_step))
+
+    current_text = json.dumps(client.requests[0].input)
+    reminder = f"Task reminder at agent step {agent_step}:"
+    assert (reminder in current_text) is expects_reminder
+    if expects_reminder:
+        assert "Move the visible fingertip to the visible target." in current_text
 
 
 def test_successful_turns_chain_by_id_without_resending_old_images():
@@ -203,6 +226,39 @@ def test_successful_turns_chain_by_id_without_resending_old_images():
     assert second.trace.previous_response_id == "resp-1"
     assert second.trace.response_id == "resp-2"
     assert PROMPT_VERSION in request.instructions
+
+
+def test_responses_sends_persistent_magnifier_as_additional_current_image():
+    client = RecordingResponsesClient()
+    policy = ResponsesMLLMPolicy(_agent_config(), client, "fake-model")
+    observation = Observation(
+        step_id=0,
+        images={"front": np.zeros((12, 16, 3), dtype=np.uint8)},
+        state={},
+        magnifier=MagnifierView(
+            source_rgb_key="front",
+            bbox_xyxy=(0.25, 0.25, 0.75, 0.75),
+            image=np.ones((12, 12, 3), dtype=np.uint8),
+        ),
+    )
+
+    decision = policy.act(replace(_context(0), observation=observation))
+
+    assert _image_count(client.requests[0]) == 2
+    assert "Magnifier view from original source RGB key" in (
+        client.requests[0].encoded_body().decode("utf-8")
+    )
+    request_artifact = json.loads(
+        next(
+            artifact.content
+            for artifact in decision.artifacts
+            if artifact.relative_path.endswith("request.json")
+        )
+    )
+    assert [image["kind"] for image in request_artifact["images"]] == [
+        "rgb",
+        "magnifier",
+    ]
 
 
 def test_missing_previous_response_rebuilds_full_public_history_without_stepping():
@@ -303,6 +359,25 @@ def test_retained_full_context_image_limit_fails_before_encoding():
 
     assert decision.trace.status == "fatal"
     assert "retains 3 images" in decision.trace.error
+    assert client.requests == []
+
+
+def test_responses_retained_limit_counts_current_magnifier():
+    client = RecordingResponsesClient()
+    policy = ResponsesMLLMPolicy(_agent_config(max_images=1), client, "fake-model")
+    observation = replace(
+        _observation(0),
+        magnifier=MagnifierView(
+            source_rgb_key="front",
+            bbox_xyxy=(0.0, 0.0, 0.5, 0.5),
+            image=np.zeros((8, 8, 3), dtype=np.uint8),
+        ),
+    )
+
+    decision = policy.act(replace(_context(0), observation=observation))
+
+    assert decision.trace.status == "fatal"
+    assert "retains 2 images" in decision.trace.error
     assert client.requests == []
 
 

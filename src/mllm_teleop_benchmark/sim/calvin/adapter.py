@@ -59,23 +59,33 @@ class CalvinSimAdapter(SimAdapter):
             cam_name = cam_config.get("name")
             pos = cam_config.get("position")
             look_at = cam_config.get("look_at", [0.0, 0.0, 0.0])
-
-            if pos is None:
-                continue
-
-            view_matrix = pybullet.computeViewMatrix(
-                cameraEyePosition=pos,
-                cameraTargetPosition=look_at,
-                cameraUpVector=[0, 0, 1],
-            )
-
             for cam in cameras:
-                if cam_name == "static" and (not hasattr(cam, "name") or cam.name == "static"):
+                if getattr(cam, "name", None) != cam_name:
+                    continue
+                width = int(cam_config.get("width", cam.width))
+                height = int(cam_config.get("height", cam.height))
+                cam.width = width
+                cam.height = height
+                if hasattr(cam, "aspect"):
+                    cam.aspect = width / height
+                if pos is not None:
+                    view_matrix = pybullet.computeViewMatrix(
+                        cameraEyePosition=pos,
+                        cameraTargetPosition=look_at,
+                        cameraUpVector=[0, 0, 1],
+                    )
                     if hasattr(cam, "view_matrix"):
                         cam.view_matrix = view_matrix
                     elif hasattr(cam, "viewMatrix"):
                         cam.viewMatrix = view_matrix
-                    break
+                if hasattr(cam, "projectionMatrix"):
+                    cam.projectionMatrix = pybullet.computeProjectionMatrixFOV(
+                        fov=cam.fov,
+                        aspect=width / height,
+                        nearVal=cam.nearval,
+                        farVal=cam.farval,
+                    )
+                break
 
     def step(self, action: SimulatorAction) -> StepResult:
         if not isinstance(action, CalvinAction):

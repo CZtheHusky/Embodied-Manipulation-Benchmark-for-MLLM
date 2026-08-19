@@ -1,6 +1,8 @@
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -139,6 +141,81 @@ class FakeInitiallySuccessfulSimplerEnv:
 
     def close(self):
         self.closed = True
+
+
+def test_simpler_env_provider_passes_the_audited_sensor_resolution():
+    config = load_config(BASELINE_CONFIG)
+    sim = build_sim(config)
+    camera_manager = build_camera_manager(config.camera, config.benchmark.seed)
+    provider = build_observation_provider(config, camera_manager)
+
+    provider.configure_sim(sim)
+
+    assert sim._camera_config == {
+        "overhead_camera": {"width": 512, "height": 410}
+    }
+
+
+def test_simpler_env_native_make_merges_resolution_into_prepackaged_config(monkeypatch):
+    module_names = (
+        "mani_skill2_real2sim",
+        "mani_skill2_real2sim.envs",
+        "mani_skill2_real2sim.envs.custom_scenes",
+    )
+    for name in module_names:
+        module = ModuleType(name)
+        module.__path__ = []
+        monkeypatch.setitem(sys.modules, name, module)
+
+    leaf = ModuleType(
+        "mani_skill2_real2sim.envs.custom_scenes.grasp_single_in_scene"
+    )
+
+    class FakeGraspSingleInSceneEnv:
+        def _setup_prepackaged_env_init_config(self):
+            return {
+                "asset_root": "/pinned/assets",
+                "camera_cfgs": {
+                    "width": 640,
+                    "height": 512,
+                    "fov": 42,
+                },
+            }
+
+    leaf.GraspSingleInSceneEnv = FakeGraspSingleInSceneEnv
+    monkeypatch.setitem(sys.modules, leaf.__name__, leaf)
+
+    calls = []
+
+    class FakeSimplerEnv:
+        @staticmethod
+        def make(env_id, **kwargs):
+            calls.append((env_id, kwargs))
+            return object()
+
+    adapter = SimplerEnvSimAdapter(load_config(BASELINE_CONFIG).simulator)
+    adapter.set_camera_configuration(
+        {"overhead_camera": {"width": 512, "height": 410}}
+    )
+
+    adapter._make_env(
+        FakeSimplerEnv,
+        {
+            "max_episode_steps": 80,
+            "camera_cfgs": {"add_segmentation": True},
+        },
+    )
+
+    env_id, kwargs = calls[0]
+    assert env_id == "google_robot_pick_coke_can"
+    assert kwargs["asset_root"] == "/pinned/assets"
+    assert kwargs["prepackaged_config"] is False
+    assert kwargs["camera_cfgs"] == {
+        "width": 512,
+        "height": 410,
+        "fov": 42,
+        "add_segmentation": True,
+    }
 
 
 def _require_simpler_env() -> None:
@@ -579,6 +656,7 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
         build_mapping(config, config.benchmark.seed),
         config.benchmark.seed,
     )
+    provider.configure_sim(sim)
 
     try:
         sim.reset(config.task, seed=config.benchmark.seed)
@@ -593,8 +671,7 @@ def test_simpler_env_runtime_rgb_and_native_action_contract():
         assert set(PUBLIC_CAMERAS).issubset(observation.images)
         for camera in PUBLIC_CAMERAS:
             image = np.asarray(observation.images[camera])
-            assert image.ndim == 3
-            assert image.shape[-1] == 3
+            assert image.shape == (410, 512, 3)
             assert image.dtype == np.uint8
             assert float(image.mean()) > 1.0
             assert float(image.std()) > 1.0
@@ -870,7 +947,7 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
     assert manifest["simulator"]["type"] == "simpler_env"
     assert manifest["history"]["action_window"] == "all"
     assert manifest["history"]["image_window"] == 3

@@ -36,13 +36,14 @@ def test_pusher_delta_eef_env_reset_and_step():
     gym = pytest.importorskip("gymnasium")
 
     register_gymnasium_envs()
-    env = gym.make(REGISTERED_PUSHER_DELTA_EEF_ID)
+    env = gym.make(REGISTERED_PUSHER_DELTA_EEF_ID, render_mode="rgb_array")
     try:
         obs, info = env.reset(seed=3)
         assert env.unwrapped.eef_step_scale == pytest.approx(0.01)
         assert obs.shape == (23,)
         assert "object_goal_distance" in info
         assert "fingertip_object_distance" in info
+        assert np.asarray(env.render()).shape == (512, 512, 3)
         next_obs, reward, terminated, truncated, step_info = env.step(np.zeros(3, dtype=np.float32))
         assert next_obs.shape == (23,)
         assert isinstance(float(reward), float)

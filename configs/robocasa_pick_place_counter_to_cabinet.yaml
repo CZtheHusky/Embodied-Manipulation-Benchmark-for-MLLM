@@ -25,11 +25,11 @@ camera:
   visible_metadata: true
   cameras:
     - name: robot0_agentview_left
-      width: 256
-      height: 256
+      width: 512
+      height: 512
     - name: robot0_agentview_right
-      width: 256
-      height: 256
+      width: 512
+      height: 512
     - name: robot0_eye_in_hand
       width: 256
       height: 256

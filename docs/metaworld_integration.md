@@ -48,7 +48,8 @@ exposed because `reach-v3` does not require gripper control. The public frame
 description identifies the Meta-World end-effector controller axes without
 exposing episode state or a sampled transform.
 
-The public observation uses `topview` and `behindGripper` at `320x240`.
+The public observation uses `topview` at `512x512`. The wrist-mounted
+`behindGripper` camera retains Meta-World's `480x480` render default.
 `topview` provides a stable workspace view, while `behindGripper` exposes
 vertical alignment that is ambiguous from above. The adapter selects each
 named MuJoCo camera for its corresponding `CameraSpec` and fails if the

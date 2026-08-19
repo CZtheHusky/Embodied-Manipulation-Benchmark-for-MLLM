@@ -25,6 +25,8 @@ python3 scripts/manage_uv_env.py run core -- python scripts/run_benchmark.py --c
 Existing conda env files under `envs/environment-*.yml` are retained as fallback during the migration.
 
 More details are in `docs/environment_management.md`.
+The audited simulator defaults and native public-camera sizing rules are in
+`docs/camera_resolution_policy.md`.
 
 ## Run the Dummy Benchmark
 

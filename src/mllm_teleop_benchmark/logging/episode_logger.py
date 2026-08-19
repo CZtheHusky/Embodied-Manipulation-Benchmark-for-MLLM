@@ -205,6 +205,7 @@ class EpisodeLogger:
             "observation": {
                 "cameras": list(self.config.agent.observation.cameras),
                 "image_max_side": self.config.agent.observation.image_max_side,
+                "visual_tools": ["magnifier"] if self.config.agent.type == "mllm" else [],
             },
             "camera": {
                 "manager": self.config.camera.manager,

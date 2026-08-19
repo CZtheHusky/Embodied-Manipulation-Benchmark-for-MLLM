@@ -32,8 +32,8 @@ camera:
   cameras:
     - name: static
       type: calvin_rgb
-      width: 200
-      height: 200
+      width: 512
+      height: 512
     - name: gripper
       type: calvin_rgb
       width: 84

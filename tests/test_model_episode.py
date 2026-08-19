@@ -64,6 +64,16 @@ class FakeClient:
         )
 
 
+class SequencedFakeClient(FakeClient):
+    def __init__(self, responses):
+        super().__init__()
+        self.responses = list(responses)
+
+    def complete(self, request):
+        self.response_text = self.responses.pop(0)
+        return super().complete(request)
+
+
 def _config(tmp_path, image_window):
     config = load_config("configs/dummy_reach.yaml")
     control_interface = replace(
@@ -184,7 +194,7 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert (
         group_dir.name
         == f"model-fake-model__reasoning-default__api-chat_completions"
-        f"__prompt-mllm_joystick_chat_completions_v7"
+        f"__prompt-mllm_joystick_chat_completions_v10"
         f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
     )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
@@ -236,7 +246,7 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
 
     assert make_experiment_group(config) == (
         "model-fake-model__reasoning-default__api-chat_completions"
-        "__prompt-mllm_joystick_chat_completions_v7"
+        "__prompt-mllm_joystick_chat_completions_v10"
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
@@ -282,10 +292,10 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         "joystick_0 may control horizontal motion"
     )
     run_dir = episode_dir.parent
-    assert "__prompt-mllm_joystick_chat_completions_v7__" in run_dir.parent.name
+    assert "__prompt-mllm_joystick_chat_completions_v10__" in run_dir.parent.name
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v7"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
 
 
 def test_responses_experiment_group_records_prompt_version(tmp_path):
@@ -301,7 +311,7 @@ def test_responses_experiment_group_records_prompt_version(tmp_path):
     group = make_experiment_group(config)
 
     assert group is not None
-    assert "__api-responses__prompt-mllm_joystick_responses_v7__history-full__" in group
+    assert "__api-responses__prompt-mllm_joystick_responses_v10__history-full__" in group
 
 
 def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_path):
@@ -348,6 +358,93 @@ def test_invalid_model_json_executes_noop_without_extra_api_request(monkeypatch,
     assert episode.metrics["model_api_error_count"] == 0
     assert [action.gripper for action in sim_actions] == [0.5, 0.5, 0.5]
     assert all(action.delta_position == (0.0, 0.0, 0.0) for action in sim_actions)
+
+
+def test_magnifier_update_persists_and_adds_current_raw_rgb_crop(
+    monkeypatch,
+    tmp_path,
+):
+    magnifier_action = (
+        _valid_action_text()[:-1]
+        + ',"magnifier":{"source_rgb_key":"front",'
+        '"bbox_xyxy":[0.25,0.25,0.75,0.75]}}'
+    )
+    client = SequencedFakeClient(
+        [magnifier_action, _valid_action_text(), _valid_action_text()]
+    )
+    sim_actions = _capture_dummy_actions(monkeypatch)
+
+    episode = _run_with_fake(
+        monkeypatch,
+        _config(tmp_path, "all"),
+        client,
+    )
+
+    assert episode.steps == 3
+    assert len(sim_actions) == 3
+    assert [_image_count(request) for request in client.requests] == [1, 3, 5]
+    second_request = client.requests[1].encoded_body().decode("utf-8")
+    assert "Magnifier feedback: Magnifier activated" in second_request
+    assert "Magnifier view from original source RGB key 'front'" in second_request
+
+    episode_dir = Path(episode.log_dir)
+    trajectory = [
+        json.loads(line)
+        for line in (episode_dir / "trajectory.jsonl").read_text().splitlines()
+    ]
+    assert trajectory[0]["magnifier_update"]["bbox_xyxy"] == [
+        0.25,
+        0.25,
+        0.75,
+        0.75,
+    ]
+    assert trajectory[0]["magnifier_result"]["status"] == "activated"
+    assert trajectory[0]["next_observation"]["magnifier"]["source_rgb_key"] == "front"
+    assert trajectory[1]["next_observation"]["magnifier"]["source_rgb_key"] == "front"
+    second_manifest = json.loads(
+        (episode_dir / "model_calls/step_0001/request.json").read_text()
+    )
+    current_images = [
+        image for image in second_manifest["images"] if image["step_id"] == 1
+    ]
+    assert [image["kind"] for image in current_images] == ["rgb", "magnifier"]
+
+
+def test_bad_magnifier_key_reports_error_without_suppressing_robot_action(
+    monkeypatch,
+    tmp_path,
+):
+    channels = {f"joystick_{index}": 0 for index in range(7)}
+    channels["joystick_0"] = 1
+    bad_command = json.dumps(
+        {
+            "channels": channels,
+            "magnifier": {
+                "source_rgb_key": "not_a_camera",
+                "bbox_xyxy": [0.1, 0.1, 0.9, 0.9],
+            },
+        }
+    )
+    config = _config(tmp_path, "all")
+    config = replace(config, task=replace(config.task, max_steps=2))
+    client = SequencedFakeClient([bad_command, _valid_action_text()])
+    sim_actions = _capture_dummy_actions(monkeypatch)
+
+    episode = _run_with_fake(monkeypatch, config, client)
+
+    assert episode.steps == 2
+    assert len(sim_actions) == 2
+    assert sim_actions[0].delta_position[0] == pytest.approx(0.01)
+    assert "unknown source_rgb_key 'not_a_camera'" in (
+        client.requests[1].encoded_body().decode("utf-8")
+    )
+    trajectory = [
+        json.loads(line)
+        for line in (Path(episode.log_dir) / "trajectory.jsonl").read_text().splitlines()
+    ]
+    assert trajectory[0]["validation"]["is_valid"] is True
+    assert trajectory[0]["magnifier_result"]["status"] == "rejected"
+    assert trajectory[0]["next_observation"]["magnifier"] is None
 
 
 def test_model_motion_is_clipped_then_scaled_by_the_default_unit(
@@ -439,9 +536,9 @@ def test_large_commands_use_agent_step_ids_and_one_command_each(
         for request in client.requests
     ]
     assert current_steps == [
-        "Observation step 0. Camera order: front.",
-        "Observation step 1. Camera order: front.",
-        "Observation step 2. Camera order: front.",
+        "Observation step 0. Camera order and available source RGB keys: front.",
+        "Observation step 1. Camera order and available source RGB keys: front.",
+        "Observation step 2. Camera order and available source RGB keys: front.",
     ]
 
     trajectory = [

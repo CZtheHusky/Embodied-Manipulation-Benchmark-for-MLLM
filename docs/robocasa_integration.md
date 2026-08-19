@@ -34,7 +34,7 @@ The PickPlaceCounterToCabinet task has two switchable Chat Completions configs:
 
 Both use `chat_completions` with optional Reflection, reasoning effort `low`, three historical image
 steps, all action history, and prompt contract
-`mllm_joystick_chat_completions_v7`. After reset, both conditions project the upstream
+`mllm_joystick_chat_completions_v10`. After reset, both conditions project the upstream
 public `annotation.human.task_description` string into the prompt. This names the
 episode's target object and avoids the ambiguous static fallback when distractor
 objects are present. A missing or empty upstream instruction is a runtime error.

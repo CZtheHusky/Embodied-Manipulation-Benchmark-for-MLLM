@@ -10,8 +10,8 @@ simulator:
   params:
     env_name: reach-v3
     camera_name: topview
-    width: 320
-    height: 240
+    width: 512
+    height: 512
     mujoco_gl: egl
     max_episode_steps: 100
   env_kwargs: {}
@@ -30,12 +30,12 @@ camera:
   cameras:
     - name: topview
       type: metaworld_rgb
-      width: 320
-      height: 240
+      width: 512
+      height: 512
     - name: behindGripper
       type: metaworld_rgb
-      width: 320
-      height: 240
+      width: 480
+      height: 480
 
 control_interface:
   mode: eef_delta_pose

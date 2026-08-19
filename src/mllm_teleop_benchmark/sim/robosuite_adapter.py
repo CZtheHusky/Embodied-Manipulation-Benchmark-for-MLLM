@@ -34,8 +34,18 @@ class RobosuiteSimAdapter(SimAdapter):
         env_name = task_config.params.get("env_name", "Lift")
         robots = task_config.params.get("robots", ["Panda"])
         camera_names = task_config.params.get("camera_names", ["agentview", "robot0_eye_in_hand"])
-        camera_width = task_config.params.get("camera_width", 320)
-        camera_height = task_config.params.get("camera_height", 240)
+        camera_widths = task_config.params.get("camera_widths")
+        camera_heights = task_config.params.get("camera_heights")
+        if camera_widths is None:
+            camera_widths = task_config.params.get(
+                "camera_width",
+                [_default_camera_side(name) for name in camera_names],
+            )
+        if camera_heights is None:
+            camera_heights = task_config.params.get(
+                "camera_height",
+                [_default_camera_side(name) for name in camera_names],
+            )
 
         self._env = suite.make(
             env_name=env_name,
@@ -44,8 +54,8 @@ class RobosuiteSimAdapter(SimAdapter):
             has_offscreen_renderer=True,
             use_camera_obs=True,
             camera_names=camera_names,
-            camera_widths=camera_width,
-            camera_heights=camera_height,
+            camera_widths=camera_widths,
+            camera_heights=camera_heights,
             controller_configs=suite.load_controller_config(default_controller="OSC_POSE"),
             horizon=int(
                 self.config.params.get(
@@ -161,6 +171,13 @@ class RobosuiteSimAdapter(SimAdapter):
                 "or the optional robosuite dependency."
             ) from exc
         return suite, CameraModder
+
+
+def _default_camera_side(name: str) -> int:
+    lowered = str(name).lower()
+    if any(marker in lowered for marker in ("eye_in_hand", "gripper", "hand", "wrist")):
+        return 256
+    return 512
 
 
 def sample_camera_randomization(config: object, seed: int) -> dict[str, dict[str, Any]]:

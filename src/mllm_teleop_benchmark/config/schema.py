@@ -101,8 +101,8 @@ class CameraSpec:
         return cls(
             name=str(_require(data, "name")),
             type=str(data.get("type", "dummy_rgb")),
-            width=int(data.get("width", 256)),
-            height=int(data.get("height", 256)),
+            width=int(data.get("width", 512)),
+            height=int(data.get("height", 512)),
             pose=tuple(float(v) for v in data.get("pose", ())),
             params=dict(data.get("params", {})),
         )
@@ -810,11 +810,24 @@ class BenchmarkConfig:
         logging = LoggingConfig.from_dict(_require(data, "logging"))
         if logging.save_video and agent.type != "mllm":
             raise ValueError("logging.save_video currently supports only agent.type=mllm")
+        benchmark = BenchmarkSection.from_dict(_require(data, "benchmark"))
+        task = TaskConfig.from_dict(_require(data, "task"))
+        camera = CameraConfig.from_dict(_require(data, "camera"))
+        if agent.model is not None and agent.model.api == "responses":
+            max_retained_images = task.max_steps * (len(agent.observation.cameras) + 1)
+            if agent.history.max_images_per_request < max_retained_images:
+                raise ValueError(
+                    "agent.history.max_images_per_request must be at least "
+                    f"{max_retained_images} for responses full history across "
+                    f"task.max_steps={task.max_steps}, "
+                    f"{len(agent.observation.cameras)} configured camera(s), and "
+                    "a persistent magnifier"
+                )
         return cls(
-            benchmark=BenchmarkSection.from_dict(_require(data, "benchmark")),
+            benchmark=benchmark,
             simulator=SimulatorConfig.from_dict(_require(data, "simulator")),
-            task=TaskConfig.from_dict(_require(data, "task")),
-            camera=CameraConfig.from_dict(_require(data, "camera")),
+            task=task,
+            camera=camera,
             action_space=action_space,
             mapping=mapping,
             controller=ControllerConfig.from_dict(_require(data, "controller")),

@@ -104,6 +104,68 @@ def test_model_output_preserves_optional_reflection_string():
     assert parsed.reflection == "joystick_0 may move left"
 
 
+def test_model_output_parses_normalized_xyxy_magnifier_update():
+    parsed = ActionParser().parse_model_output(
+        {
+            "channels": {f"joystick_{idx}": 0 for idx in range(7)},
+            "magnifier": {
+                "source_rgb_key": "wrist_rgb",
+                "bbox_xyxy": [0.1, 0.2, 0.8, 0.9],
+            },
+        }
+    )
+
+    assert parsed.magnifier_update.requested is True
+    assert parsed.magnifier_update.source_rgb_key == "wrist_rgb"
+    assert parsed.magnifier_update.bbox_xyxy == (0.1, 0.2, 0.8, 0.9)
+    assert parsed.magnifier_update.error is None
+
+
+def test_bad_magnifier_bbox_is_tool_error_without_discarding_joystick_action():
+    parsed = ActionParser().parse_model_output(
+        {
+            "channels": {f"joystick_{idx}": 1 for idx in range(7)},
+            "magnifier": {
+                "source_rgb_key": "front",
+                "bbox_xyxy": [0.8, 0.2, 0.1, 0.9],
+            },
+        }
+    )
+
+    assert parsed.action.channels["joystick_0"] == 1
+    assert parsed.magnifier_update.requested is True
+    assert "0 <= min < max <= 1" in parsed.magnifier_update.error
+
+
+def test_null_magnifier_requests_clear():
+    parsed = ActionParser().parse_model_output(
+        {
+            "channels": {f"joystick_{idx}": 0 for idx in range(7)},
+            "magnifier": None,
+        }
+    )
+
+    assert parsed.magnifier_update.requested is True
+    assert parsed.magnifier_update.clear is True
+
+
+def test_boolean_magnifier_coordinates_are_rejected_as_non_numeric_contract():
+    parsed = ActionParser().parse_model_output(
+        {
+            "channels": {f"joystick_{idx}": 0 for idx in range(7)},
+            "magnifier": {
+                "source_rgb_key": "front",
+                "bbox_xyxy": [False, 0.1, 0.9, 1.0],
+            },
+        }
+    )
+
+    assert parsed.magnifier_update.requested is True
+    assert parsed.magnifier_update.error == (
+        "magnifier.bbox_xyxy values must be numeric"
+    )
+
+
 def test_reflection_model_output_rejects_non_string_reflection():
     with pytest.raises(ActionParseError, match="must be a string"):
         ActionParser().parse_model_output(

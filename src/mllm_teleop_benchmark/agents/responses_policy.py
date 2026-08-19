@@ -27,7 +27,7 @@ from mllm_teleop_benchmark.config.schema import AgentConfig
 from mllm_teleop_benchmark.core.types import AgentArtifact, AgentDecision, AgentTrace, Observation, StepTransition
 
 
-PROMPT_VERSION = "mllm_joystick_responses_v7"
+PROMPT_VERSION = "mllm_joystick_responses_v10"
 
 
 @dataclass(frozen=True)
@@ -205,12 +205,19 @@ class ResponsesMLLMPolicy(MLLMPolicy):
             "reasoning_effort": self.config.model.reasoning_effort,
             "prompt_version": PROMPT_VERSION,
             "context_retention": "previous_response_id",
+            "visual_tools": ["magnifier"],
         }
 
     def _build_responses_request(self, context: AgentContext) -> ResponsesBuild:
         assert self.config.model is not None
         cameras = self._camera_names(context.observation)
-        retained_image_count = (len(context.history) + 1) * len(cameras)
+        retained_image_count = self._observation_image_count(
+            context.observation,
+            cameras,
+        ) + sum(
+            self._observation_image_count(transition.observation, cameras)
+            for transition in context.history
+        )
         if retained_image_count > self.config.history.max_images_per_request:
             raise ModelInputError(
                 "Responses conversation retains "
@@ -226,6 +233,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                 observation, turn_images = self._responses_observation(
                     transition.observation,
                     cameras,
+                    task_instruction=context.task_instruction,
                 )
                 input_items.append(observation)
                 images.extend(turn_images)
@@ -237,6 +245,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
             context.observation,
             cameras,
             request_action=True,
+            task_instruction=context.task_instruction,
         )
         current_input_index = len(input_items)
         input_items.append(current)
@@ -274,11 +283,13 @@ class ResponsesMLLMPolicy(MLLMPolicy):
         cameras: tuple[str, ...],
         *,
         request_action: bool = False,
+        task_instruction: str | None = None,
     ) -> tuple[dict[str, Any], tuple[EncodedImage, ...]]:
         message, images = self._observation_message(
             observation,
             cameras,
             include_images=True,
+            task_instruction=task_instruction,
         )
         content = []
         for item in message["content"]:
@@ -338,6 +349,9 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                 "height": image.height,
                 "sha256": image.sha256,
                 "artifact": image.artifact_path,
+                "kind": image.kind,
+                "source_rgb_key": image.source_rgb_key,
+                "bbox_xyxy": list(image.bbox_xyxy) if image.bbox_xyxy is not None else None,
             }
             for image in build.images
         ]
@@ -437,7 +451,9 @@ def _sanitized_responses_request(
     request: ResponsesRequest,
     images: tuple[EncodedImage, ...],
 ) -> dict[str, Any]:
-    url_hashes = {image.data_url: image.sha256 for image in images}
+    url_images: dict[str, list[EncodedImage]] = {}
+    for image in images:
+        url_images.setdefault(image.data_url, []).append(image)
     body = request.body()
     sanitized_input: list[dict[str, Any]] = []
     for message in request.input:
@@ -451,11 +467,14 @@ def _sanitized_responses_request(
                 sanitized_content.append(dict(item) if isinstance(item, dict) else item)
                 continue
             url = item.get("image_url")
-            digest = url_hashes.get(url, "unknown")
+            candidates = url_images.get(url, [])
+            image = candidates.pop(0) if candidates else None
+            digest = image.sha256 if image is not None else "unknown"
             sanitized_content.append(
                 {
                     "type": "input_image",
                     "image_url": f"data:image/png;sha256={digest}",
+                    "artifact": image.artifact_path if image is not None else None,
                 }
             )
         sanitized_input.append({**message, "content": sanitized_content})

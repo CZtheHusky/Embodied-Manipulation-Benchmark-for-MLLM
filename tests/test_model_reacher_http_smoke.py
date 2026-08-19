@@ -214,6 +214,7 @@ def test_reacher_runs_five_steps_through_openai_compatible_http(monkeypatch, tmp
         )
         config = replace(
             config,
+            benchmark=replace(config.benchmark, num_episodes=1),
             task=replace(config.task, max_steps=5, success_threshold=-1.0),
             agent=agent,
             logging=replace(config.logging, output_dir=tmp_path),
@@ -273,6 +274,7 @@ def test_reacher_responses_api_retains_full_context_by_response_id(
         )
         config = replace(
             config,
+            benchmark=replace(config.benchmark, num_episodes=1),
             task=replace(config.task, max_steps=3, success_threshold=-1.0),
             agent=agent,
             logging=replace(config.logging, output_dir=tmp_path),
@@ -352,6 +354,7 @@ def test_reacher_retries_responses_error_before_stepping_simulator(
         )
         config = replace(
             config,
+            benchmark=replace(config.benchmark, num_episodes=1),
             task=replace(config.task, max_steps=1, success_threshold=-1.0),
             agent=agent,
             logging=replace(config.logging, output_dir=tmp_path),
@@ -414,6 +417,7 @@ def test_reacher_recovers_missing_previous_response_before_stepping_simulator(
         )
         config = replace(
             config,
+            benchmark=replace(config.benchmark, num_episodes=1),
             task=replace(config.task, max_steps=2, success_threshold=-1.0),
             agent=agent,
             logging=replace(config.logging, output_dir=tmp_path),

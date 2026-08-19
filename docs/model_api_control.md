@@ -24,8 +24,8 @@ randomization values, or other simulator metadata. Those values remain
 available to evaluators and debug logs, but not to the model client.
 
 Chat Completions uses prompt version
-`mllm_joystick_chat_completions_v7`. Responses uses
-`mllm_joystick_responses_v7`. Static system text, task text, control
+`mllm_joystick_chat_completions_v10`. Responses uses
+`mllm_joystick_responses_v10`. Static system text, task text, control
 instructions, and schema are placed before episode turns. Request IDs,
 timestamps, and other per-call values are not inserted into prompt text.
 
@@ -76,15 +76,51 @@ string key named `Reflection`:
 ~~~json
 {
   "channels": {"joystick_0": 0, "joystick_1": 1},
-  "Reflection": "joystick_0 appears to control horizontal motion; joystick_1 appears to control vertical motion"
+  "Reflection": "The target remains left of the end effector; a larger negative horizontal command may make the next visual change easier to observe."
 }
 ~~~
 
-The prompt asks the model to summarize its current hypothesis about each
-joystick channel using only public observations and its own action history.
+The prompt allows the model to record any information it believes may help
+future decisions, using only public observations and its own action history.
 `Reflection` is preserved in the trajectory and subsequent assistant history;
-it does not affect action validation or simulator control. Other top-level keys
-remain invalid.
+it does not affect action validation or simulator control. The other optional
+top-level key is `magnifier`; unknown top-level keys remain invalid.
+
+### Persistent magnifier
+
+Both API backends expose a persistent magnifier tool in the same JSON object as
+the joystick action:
+
+~~~json
+{
+  "channels": {"joystick_0": 0, "joystick_1": 1},
+  "magnifier": {
+    "source_rgb_key": "front",
+    "bbox_xyxy": [0.25, 0.25, 0.75, 0.75]
+  }
+}
+~~~
+
+`source_rgb_key` must name one of the public source RGB keys listed in the
+observation. `bbox_xyxy` is the CV-style normalized box
+`[x_min, y_min, x_max, y_max]`, with a top-left origin and strict positive area
+inside `[0, 1]`. The implementation crops the simulator observation's original
+RGB array before model-input resizing, then enlarges that crop without changing
+its aspect ratio until either its width or height equals the original image.
+The resulting image is sent as an additional observation alongside the source
+camera.
+
+Once accepted, the source key and normalized box remain active for subsequent
+agent interactions. Every post-action observation recomputes the crop from that
+step's new original RGB array. Omitting `magnifier` keeps the current lens;
+`"magnifier": null` clears it. A new valid object replaces it.
+
+Malformed boxes, unknown keys, and non-RGB sources reject only the tool update.
+The joystick action in the same response is still parsed, validated, and
+executed normally. The next public observation reports the rejection and the
+currently available source RGB keys; a previous valid lens remains active.
+Setting, updating, rejecting, or clearing the lens does not add an environment
+step or an agent command.
 
 Both backends require `response_format=json_object`. Select the backend with
 its checked-in config:
@@ -129,14 +165,22 @@ no-step behavior.
 - 'image_window=all' sends every episode frame plus the current frame.
 - 'action_window=all' retains every normalized action in chronological order.
 
+At public observation steps `10, 20, 30, ...`, both backends append
+`Task reminder at agent step N: <task instruction>` to that observation. The
+counter is the agent-command step ID; simulator internal substeps do not affect
+the cadence. Step `0` does not repeat the instruction. Reconstructed history
+preserves the reminder on the same numbered observation.
+
 Omitted historical images use '[image omitted by history policy]'; action text
 is retained independently. The 'all' mode is strict: exceeding
 'max_images_per_request' or 'max_request_bytes' fails instead of truncating.
 
-Frames are deterministically normalized to uint8 RGB, resized without changing
-aspect ratio, and PNG encoded once. Historical requests reuse identical PNG
-bytes and SHA-256. In 'all' mode, each request appends turns without rewriting
-the preceding canonical message stream.
+Frames and magnifier crops are deterministically normalized to uint8 RGB,
+resized without changing aspect ratio, and PNG encoded once. Historical
+requests reuse identical PNG bytes and SHA-256. The image safety limit counts
+the magnifier as one additional image whenever it is active. In 'all' mode,
+each request appends turns without rewriting the preceding canonical message
+stream.
 
 ### Responses full-context mode
 
@@ -180,6 +224,7 @@ Each episode stores:
 ~~~text
 model_calls/
   images/step_NNNN/<camera>.png
+  images/step_NNNN/magnifier/<source_rgb_key>.png
   step_NNNN/request.json
   step_NNNN/response.json
   step_NNNN/error.json
@@ -304,8 +349,8 @@ agent trace. The server does not expose arbitrary files: image routes are
 restricted to PNG artifacts named in request manifests, and evaluator
 state/info are not returned by its API.
 
-`mllm_joystick_chat_completions_v7` and
-`mllm_joystick_responses_v7` are prompt contract versions, not model versions.
+`mllm_joystick_chat_completions_v10` and
+`mllm_joystick_responses_v10` are prompt contract versions, not model versions.
 They identify the system instruction, public-input projection, history layout,
 image policy, and joystick response schema. A behavior-changing prompt update
 must use a new version so results remain attributable and comparable.

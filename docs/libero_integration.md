@@ -136,7 +136,8 @@ and is never included in the model request.
 
 The local Fake Client validation runs four real simulator steps for each condition. It checks:
 
-- both public camera streams are non-black `256x256` RGB
+- `agentview` is non-black `512x512` RGB and the auxiliary
+  `robot0_eye_in_hand` stream retains the upstream `128x128` default
 - each translated native action has shape `(7,)`, finite values, and satisfies the upstream robosuite `action_spec`
 - positive normalized `dx`, `dy`, and `dz` commands move the measured end-effector position along the corresponding MuJoCo world axis
 - `LiberoSimAdapter._check_success()`, `OffScreenRenderEnv.check_success()`, and the underlying BDDL environment `_check_success()` agree
