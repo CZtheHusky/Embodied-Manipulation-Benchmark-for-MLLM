@@ -12,20 +12,14 @@ def load_config(path: str | Path, overrides: tuple[str, ...] = ()) -> BenchmarkC
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"Config must be a YAML mapping: {config_path}")
     for override in overrides:
         _apply_override(data, override)
     return BenchmarkConfig.from_dict(data, source_path=str(config_path.resolve()))
 
 
 def _apply_override(data: dict[str, Any], override: str) -> None:
-    if "=" not in override:
-        raise ValueError(f"Override must use key.path=value syntax: {override}")
     key_path, raw_value = override.split("=", 1)
     keys = [part for part in key_path.split(".") if part]
-    if not keys:
-        raise ValueError(f"Override key path is empty: {override}")
     value = yaml.safe_load(raw_value)
     cursor: dict[str, Any] = data
     for key in keys[:-1]:
@@ -33,7 +27,5 @@ def _apply_override(data: dict[str, Any], override: str) -> None:
         if existing is None:
             existing = {}
             cursor[key] = existing
-        if not isinstance(existing, dict):
-            raise ValueError(f"Cannot override through non-mapping config key: {key}")
         cursor = existing
     cursor[keys[-1]] = value

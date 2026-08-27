@@ -113,6 +113,7 @@ def main() -> None:
         results,
         finished=True,
     )
+    # A zero process status would otherwise advertise a failed matrix as completed.
     if any(result["return_code"] != 0 for result in results):
         raise SystemExit(f"One or more condition runs failed; see {summary_path}")
     print(f"All condition runs completed: {summary_path}", flush=True)

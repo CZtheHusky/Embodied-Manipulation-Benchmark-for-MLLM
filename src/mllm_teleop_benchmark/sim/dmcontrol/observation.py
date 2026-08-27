@@ -6,7 +6,6 @@ from mllm_teleop_benchmark.core.types import Observation
 from mllm_teleop_benchmark.observation.camera import CameraManager, RandomizedMujocoCameraManager
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
-from mllm_teleop_benchmark.sim.dmcontrol.adapter import DMControlSimAdapter
 
 
 class DMControlObservationProvider(ObservationProvider):
@@ -14,9 +13,6 @@ class DMControlObservationProvider(ObservationProvider):
         self.camera_manager = camera_manager
 
     def get_observation(self, sim: SimAdapter) -> Observation:
-        if not isinstance(sim, DMControlSimAdapter):
-            raise TypeError(f"DMControlObservationProvider requires DMControlSimAdapter, got {type(sim).__name__}")
-
         if isinstance(self.camera_manager, RandomizedMujocoCameraManager):
             config = self.camera_manager.mujoco_camera_config()
             if config:
@@ -28,7 +24,7 @@ class DMControlObservationProvider(ObservationProvider):
             images[camera.name] = sim.render(camera)
 
         return Observation(
-            step_id=int(state.get("step_id", 0)),
+            step_id=state.get("step_id", 0),
             images=images,
             state=state,
             metadata={
@@ -76,25 +72,15 @@ class DMControlObservationProvider(ObservationProvider):
                     applied = True
             if pos is not None:
                 pos_values = tuple(float(v) for v in pos)
-                if len(pos_values) != 3:
-                    raise ValueError(f"DMControl camera {camera_id_value!r} position must contain 3 values")
                 physics.model.cam_pos[camera_id] = pos_values
                 applied = True
             if quat is not None:
                 quat_values = tuple(float(v) for v in quat)
-                if len(quat_values) != 4:
-                    raise ValueError(f"DMControl camera {camera_id_value!r} quaternion must contain 4 values")
                 physics.model.cam_quat[camera_id] = quat_values
                 applied = True
             if fovy is not None:
                 physics.model.cam_fovy[camera_id] = float(fovy)
                 applied = True
-
-        if not applied and {"distance", "azimuth", "elevation", "lookat"} & set(config):
-            raise NotImplementedError(
-                "DMControl does not currently support RandomizedMujocoCameraManager "
-                "free-camera orbit parameters; use explicit named camera pose/fovy config."
-            )
 
     def _camera_id(self, physics: Any, camera_id: object) -> int:
         if isinstance(camera_id, int):
@@ -102,9 +88,6 @@ class DMControlObservationProvider(ObservationProvider):
         return int(physics.model.name2id(str(camera_id), "camera"))
 
     def configure_sim(self, sim: SimAdapter) -> None:
-        if not isinstance(sim, DMControlSimAdapter):
-            return
-
         for camera in self.camera_manager.get_active_cameras():
             if camera.pose or "fovy" in camera.params:
                 self._apply_mujoco_camera_config(

@@ -135,7 +135,6 @@ def env_name(name: str) -> str:
 
 def create_backend(name: str) -> None:
     cfg = backend_config(name)
-    require_conda()
     env_file = str(ROOT / str(cfg["env_file"]))
     if conda_env_exists(env_name(name)):
         run([str(CONDA_EXE), "env", "update", "-n", env_name(name), "-f", env_file, "--prune"])
@@ -145,7 +144,7 @@ def create_backend(name: str) -> None:
         checkout_backend_sources(name)
         install_libero_runtime_dependencies(name)
     install_backend_sources(name)
-    root_install_args = [str(arg) for arg in cfg.get("root_install_args", ["-e"])]  # type: ignore[union-attr]
+    root_install_args = [str(arg) for arg in cfg.get("root_install_args", ["-e"])]
     run_conda(name, ["python", "-m", "pip", "install", *root_install_args, str(ROOT)])
     if name == "libero":
         install_libero_source_path(name)
@@ -158,12 +157,12 @@ def conda_env_exists(name: str) -> bool:
 
 
 def checkout_backend_sources(name: str) -> None:
-    for source in backend_config(name).get("sources", []):  # type: ignore[union-attr]
+    for source in backend_config(name).get("sources", []):
         ensure_git_checkout(source_path(source), str(source["repo"]), str(source["commit"]))
 
 
 def install_backend_sources(name: str) -> None:
-    for source in backend_config(name).get("sources", []):  # type: ignore[union-attr]
+    for source in backend_config(name).get("sources", []):
         install_source(name, source)
 
 
@@ -200,7 +199,7 @@ def setup_robosuite_macros(name: str) -> None:
 def install_source(name: str, source: dict[str, object]) -> None:
     source_dir = source_path(source)
     ensure_git_checkout(source_dir, str(source["repo"]), str(source["commit"]))
-    install_args = [str(arg) for arg in source.get("install_args", ["-e"])]  # type: ignore[union-attr]
+    install_args = [str(arg) for arg in source.get("install_args", ["-e"])]
     run_conda(name, ["python", "-m", "pip", "install", *install_args, str(source_dir)])
 
 
@@ -222,10 +221,7 @@ def source_path(source: dict[str, object]) -> Path:
 
 
 def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
-    validate_exact_commit(commit, source_dir.name)
     if source_dir.exists():
-        if not (source_dir / ".git").exists():
-            raise SystemExit(f"source directory exists but is not a Git checkout: {source_dir}")
         try:
             actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
         except subprocess.CalledProcessError:
@@ -246,12 +242,14 @@ def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
 
 def verify_git_checkout(source_dir: Path, commit: str) -> None:
     actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
+    # Installing any other revision silently invalidates the pinned simulator environment.
     if actual != commit:
         raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
     status = run_output(
         ["git", "status", "--porcelain", "--untracked-files=no"],
         cwd=source_dir,
     )
+    # Tracked edits make the installed source differ from both the lock and recorded commit.
     if status:
         raise SystemExit(
             f"source checkout {source_dir} has tracked modifications; "
@@ -260,14 +258,8 @@ def verify_git_checkout(source_dir: Path, commit: str) -> None:
 
 
 def verify_backend_sources(name: str) -> None:
-    for source in backend_config(name).get("sources", []):  # type: ignore[union-attr]
-        validate_exact_commit(str(source["commit"]), str(source["name"]))
+    for source in backend_config(name).get("sources", []):
         verify_git_checkout(source_path(source), str(source["commit"]))
-
-
-def validate_exact_commit(commit: str, source_name: str) -> None:
-    if len(commit) != 40 or any(char not in "0123456789abcdefABCDEF" for char in commit):
-        raise SystemExit(f"{source_name} source commit must be a 40-character Git commit SHA: {commit}")
 
 
 def install_coppeliasim() -> None:
@@ -302,7 +294,7 @@ def write_libero_config(name: str) -> None:
 def smoke_backend(name: str) -> None:
     env = backend_env(name)
     env[str(backend_config(name)["require_flag"])] = "1"
-    for command in backend_config(name)["smoke"]:  # type: ignore[index]
+    for command in backend_config(name)["smoke"]:
         run_backend(name, list(command), env=env)
 
 
@@ -344,7 +336,6 @@ def backend_env(name: str) -> dict[str, str]:
 
 
 def report_runtime(name: str | None = None) -> None:
-    require_conda()
     names = [name] if name else list(BACKENDS)
     for backend in names:
         env = backend_env(backend)
@@ -361,13 +352,6 @@ def report_runtime(name: str | None = None) -> None:
             print(f"mujoco_gl={env.get('MUJOCO_GL', '')}")
             print(f"pyopengl_platform={env.get('PYOPENGL_PLATFORM', '')}")
     run(["bash", "-lc", "nvidia-smi || true"])
-
-
-def require_conda() -> None:
-    if not CONDA_EXE.exists():
-        raise SystemExit(f"Miniconda executable does not exist: {CONDA_EXE}")
-
-
 def run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command), flush=True)
     subprocess.run(command, cwd=str(cwd or ROOT), env=env, check=True)

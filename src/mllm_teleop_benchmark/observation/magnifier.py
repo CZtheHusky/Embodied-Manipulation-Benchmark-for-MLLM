@@ -65,7 +65,7 @@ class Magnifier:
         return self._result(
             status,
             f"Magnifier {status} for source_rgb_key {source_rgb_key!r} at "
-            f"bbox_xyxy={_bbox_text(bbox_xyxy)}.",
+            f"bbox_xyxy=[{','.join(f'{value:g}' for value in bbox_xyxy)}].",
         )
 
     def observe(
@@ -124,6 +124,7 @@ def crop_and_resize(value: object, bbox_xyxy: NormalizedBBox):
     array = rgb_array(value)
     height, width = array.shape[:2]
     x_min, y_min, x_max, y_max = bbox_xyxy
+    # Invalid model coordinates otherwise crop a different or empty source-image region.
     if not _valid_bbox(bbox_xyxy):
         raise ValueError("bbox_xyxy must satisfy 0 <= min < max <= 1")
 
@@ -152,7 +153,3 @@ def _valid_bbox(bbox_xyxy: NormalizedBBox) -> bool:
         and 0.0 <= x_min < x_max <= 1.0
         and 0.0 <= y_min < y_max <= 1.0
     )
-
-
-def _bbox_text(bbox_xyxy: NormalizedBBox) -> str:
-    return "[" + ",".join(f"{value:g}" for value in bbox_xyxy) + "]"

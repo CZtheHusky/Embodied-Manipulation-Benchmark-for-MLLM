@@ -22,8 +22,6 @@ class CameraManager(ABC):
 
 class FixedCameraManager(CameraManager):
     def __init__(self, config: CameraConfig) -> None:
-        if config.manager != "fixed":
-            raise ValueError(f"Unsupported camera manager: {config.manager}")
         self.config = config
 
     def reset(self, seed: int) -> None:
@@ -49,8 +47,6 @@ class RandomizedMujocoCameraManager(CameraManager):
     """Episode-level MuJoCo free-camera sampler."""
 
     def __init__(self, config: CameraConfig) -> None:
-        if config.manager != "mujoco_randomized":
-            raise ValueError(f"Unsupported camera manager: {config.manager}")
         self.config = config
         self._rng = random.Random()
         self._active = config.cameras
@@ -61,9 +57,9 @@ class RandomizedMujocoCameraManager(CameraManager):
         self._active = self.config.cameras
         ranges = self.config.params
         self._sampled_config = {
-            "distance": self._uniform_range(ranges.get("distance_range", [0.7, 2.0])),
-            "azimuth": self._uniform_range(ranges.get("azimuth_range", [0.0, 90.0])),
-            "elevation": self._uniform_range(ranges.get("elevation_range", [-90.0, -20.0])),
+            "distance": self._rng.uniform(*map(float, ranges.get("distance_range", [0.7, 2.0]))),
+            "azimuth": self._rng.uniform(*map(float, ranges.get("azimuth_range", [0.0, 90.0]))),
+            "elevation": self._rng.uniform(*map(float, ranges.get("elevation_range", [-90.0, -20.0]))),
             "lookat": tuple(float(v) for v in ranges.get("lookat", [0.0, 0.0, 0.0])),
         }
 
@@ -82,12 +78,6 @@ class RandomizedMujocoCameraManager(CameraManager):
     def mujoco_camera_config(self) -> dict[str, object] | None:
         return dict(self._sampled_config) if self._sampled_config is not None else None
 
-    def _uniform_range(self, value: object) -> float:
-        if not isinstance(value, list | tuple) or len(value) != 2:
-            raise ValueError(f"Camera range must be [low, high], got {value!r}")
-        return self._rng.uniform(float(value[0]), float(value[1]))
-
-
 class RandomizedManiSkillCameraManager(CameraManager):
     """Episode-level ManiSkill camera sampler.
 
@@ -96,8 +86,6 @@ class RandomizedManiSkillCameraManager(CameraManager):
     """
 
     def __init__(self, config: CameraConfig) -> None:
-        if config.manager != "maniskill_randomized":
-            raise ValueError(f"Unsupported camera manager: {config.manager}")
         self.config = config
         self._rng = random.Random()
         self._active = config.cameras
@@ -110,7 +98,7 @@ class RandomizedManiSkillCameraManager(CameraManager):
             ranges = params.pop("position_ranges", None)
             pose = camera.pose
             if ranges is not None:
-                position = tuple(self._uniform_range(value) for value in ranges)
+                position = tuple(self._rng.uniform(*map(float, value)) for value in ranges)
                 quat = self._camera_quat(camera)
                 pose = (*position, *quat)
             active.append(
@@ -144,22 +132,12 @@ class RandomizedManiSkillCameraManager(CameraManager):
         if len(camera.pose) == 7:
             return tuple(float(v) for v in camera.pose[3:7])
         quat = camera.params.get("q", camera.params.get("quat", (1.0, 0.0, 0.0, 0.0)))
-        if not isinstance(quat, list | tuple) or len(quat) != 4:
-            raise ValueError(f"ManiSkill camera {camera.name} quaternion must contain 4 values")
         return tuple(float(v) for v in quat)
-
-    def _uniform_range(self, value: object) -> float:
-        if not isinstance(value, list | tuple) or len(value) != 2:
-            raise ValueError(f"Camera position range must be [low, high], got {value!r}")
-        return self._rng.uniform(float(value[0]), float(value[1]))
-
 
 class RandomizedCalvinCameraManager(CameraManager):
     """Episode-level CALVIN camera sampler."""
 
     def __init__(self, config: CameraConfig) -> None:
-        if config.manager != "calvin_randomized":
-            raise ValueError(f"Unsupported camera manager: {config.manager}")
         self.config = config
         self._rng = random.Random()
         self._active = config.cameras
@@ -172,9 +150,9 @@ class RandomizedCalvinCameraManager(CameraManager):
             ranges = params.pop("position_ranges", None)
             look_at_ranges = params.pop("look_at_ranges", None)
             if ranges is not None:
-                params["position"] = tuple(self._uniform_range(value) for value in ranges)
+                params["position"] = tuple(self._rng.uniform(*map(float, value)) for value in ranges)
             if look_at_ranges is not None:
-                params["look_at"] = tuple(self._uniform_range(value) for value in look_at_ranges)
+                params["look_at"] = tuple(self._rng.uniform(*map(float, value)) for value in look_at_ranges)
             active.append(
                 CameraSpec(
                     name=camera.name,
@@ -208,8 +186,3 @@ class RandomizedCalvinCameraManager(CameraManager):
                 for camera in self._active
             ],
         }
-
-    def _uniform_range(self, value: object) -> float:
-        if not isinstance(value, list | tuple) or len(value) != 2:
-            raise ValueError(f"Camera range must be [low, high], got {value!r}")
-        return self._rng.uniform(float(value[0]), float(value[1]))

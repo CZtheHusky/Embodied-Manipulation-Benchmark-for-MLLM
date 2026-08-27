@@ -230,11 +230,11 @@ def backend_config(name: str) -> dict[str, object]:
 
 
 def backend_support_level(name: str) -> str:
-    return str(backend_config(name).get("support_level", "uv"))
+    return backend_config(name).get("support_level", "uv")
 
 
 def backend_sources(name: str) -> list[dict[str, object]]:
-    return list(backend_config(name).get("sources", []))  # type: ignore[arg-type]
+    return list(backend_config(name).get("sources", []))
 
 
 def list_backends() -> list[str]:
@@ -287,7 +287,7 @@ def lock_backend(name: str, platform: str) -> None:
         "--output-file",
         str(lock_path(name)),
     ]
-    for exclude in cfg.get("excludes", []):  # type: ignore[union-attr]
+    for exclude in cfg.get("excludes", []):
         command.extend(["--excludes", str(UV_DIR / str(exclude))])
     torch_backend = cfg.get("torch_backend")
     if torch_backend:
@@ -317,26 +317,13 @@ def install_backend_sources(name: str) -> None:
 
 
 def install_source(default_backend: str, source: dict[str, object]) -> None:
-    validate_source_config(source)
     source_dir = source_path(source)
     ensure_git_checkout(source_dir, str(source["repo"]), str(source["commit"]))
     if source.get("submodules"):
         run(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
-    target_backend = str(source.get("target_backend", default_backend))
-    install_args = [str(arg) for arg in source.get("install_args", ["--no-deps", "-e"])]  # type: ignore[union-attr]
+    target_backend = source.get("target_backend", default_backend)
+    install_args = [str(arg) for arg in source.get("install_args", ["--no-deps", "-e"])]
     run(["uv", "pip", "install", "--python", str(venv_path(target_backend)), *install_args, str(source_dir)])
-
-
-def validate_source_config(source: dict[str, object]) -> None:
-    missing = [key for key in ("name", "repo", "commit", "install_args", "target_backend") if key not in source]
-    if missing:
-        raise SystemExit(f"source config is missing required keys: {', '.join(missing)}")
-    validate_exact_commit(str(source["commit"]), str(source["name"]))
-
-
-def validate_exact_commit(commit: str, source_name: str) -> None:
-    if len(commit) != 40 or any(char not in "0123456789abcdefABCDEF" for char in commit):
-        raise SystemExit(f"{source_name} source commit must be a 40-character Git commit SHA: {commit}")
 
 
 def source_path(source: dict[str, object]) -> Path:
@@ -344,10 +331,7 @@ def source_path(source: dict[str, object]) -> Path:
 
 
 def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
-    validate_exact_commit(commit, source_dir.name)
     if source_dir.exists():
-        if not (source_dir / ".git").exists():
-            raise SystemExit(f"source directory exists but is not a Git checkout: {source_dir}")
         run(["git", "remote", "set-url", "origin", repo], cwd=source_dir)
     else:
         source_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -361,12 +345,14 @@ def ensure_git_checkout(source_dir: Path, repo: str, commit: str) -> None:
 
 def verify_git_checkout(source_dir: Path, commit: str) -> None:
     actual = run_output(["git", "rev-parse", "HEAD"], cwd=source_dir)
+    # Installing any other revision silently invalidates the pinned simulator environment.
     if actual != commit:
         raise SystemExit(f"source checkout {source_dir} expected {commit}, got {actual}")
     status = run_output(
         ["git", "status", "--porcelain", "--untracked-files=no"],
         cwd=source_dir,
     )
+    # Tracked edits make the installed source differ from both the lock and recorded commit.
     if status:
         raise SystemExit(
             f"source checkout {source_dir} has tracked modifications; "
@@ -376,7 +362,6 @@ def verify_git_checkout(source_dir: Path, commit: str) -> None:
 
 def verify_backend_sources(name: str) -> None:
     for source in backend_sources(name):
-        validate_source_config(source)
         verify_git_checkout(source_path(source), str(source["commit"]))
 
 
@@ -404,6 +389,7 @@ def write_libero_config() -> None:
 def run_backend(name: str, command: list[str]) -> None:
     require_unblocked_backend(name, "run")
     python = python_bin(name)
+    # Arbitrary commands can otherwise fall through to a system executable outside the missing uv environment.
     if not python.exists():
         raise SystemExit(f"uv environment does not exist: {venv_path(name)}; run create first")
     verify_backend_sources(name)
@@ -417,7 +403,7 @@ def run_backend(name: str, command: list[str]) -> None:
 def smoke_backend(name: str) -> None:
     require_unblocked_backend(name, "smoke")
     cfg = backend_config(name)
-    for command in cfg["smoke"]:  # type: ignore[index]
+    for command in cfg["smoke"]:
         run_backend(name, list(command))
 
 
@@ -428,7 +414,7 @@ def backend_env(name: str) -> dict[str, str]:
     env["PYTHONPATH"] = str(ROOT / "src")
     if name == "libero":
         env.setdefault("LIBERO_CONFIG_PATH", str(VENV_DIR / "libero_config"))
-    env.update(cfg.get("env", {}))  # type: ignore[arg-type]
+    env.update(cfg.get("env", {}))
     if name == "robocasa":
         env.setdefault("HF_HUB_DISABLE_XET", "1")
         env.pop("ALL_PROXY", None)

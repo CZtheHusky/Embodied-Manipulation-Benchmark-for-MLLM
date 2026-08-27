@@ -6,14 +6,12 @@ from typing import Any
 import numpy as np
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import CalvinAction, Observation, SimulatorAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 
 class CalvinSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "calvin":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.env_id = None if config.env_id in {None, "", "None", "null"} else config.env_id
         self.env: Any | None = None
@@ -28,7 +26,7 @@ class CalvinSimAdapter(SimAdapter):
         self._camera_config = dict(camera_config) if camera_config is not None else None
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
-        self._ensure_env(task_config)
+        self._ensure_env()
         self.step_id = 0
         if self._camera_config:
             self._apply_camera_configuration()
@@ -88,20 +86,9 @@ class CalvinSimAdapter(SimAdapter):
                 break
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, CalvinAction):
-            raise TypeError(f"CalvinSimAdapter requires CalvinAction, got {type(action).__name__}")
-        self._ensure_env(None)
+        self._ensure_env()
 
         native_action = np.asarray(action.values, dtype=np.float32)
-        if native_action.shape != (7,):
-            raise ValueError(f"CALVIN action must contain 7 values, got shape {native_action.shape}")
-        if not np.all(np.isfinite(native_action)):
-            raise ValueError("CALVIN action values must be finite")
-        if np.any(np.abs(native_action[:6]) > 1.0):
-            raise ValueError("CALVIN motion action values must be within [-1, 1]")
-        if native_action[6] not in (-1.0, 1.0):
-            raise ValueError("CALVIN gripper action must be exactly -1 or 1")
-
         step_result = self.env.step(native_action)
         native_obs, reward, terminated, truncated, info = self._normalize_step_result(step_result)
         self.step_id += 1
@@ -117,7 +104,7 @@ class CalvinSimAdapter(SimAdapter):
         )
 
     def render(self, camera: CameraSpec) -> Any:
-        self._ensure_env(None)
+        self._ensure_env()
         # CALVIN usually renders multiple cameras. For manual play display, we take the default.
         if hasattr(self.env, "render"):
             try:
@@ -152,7 +139,7 @@ class CalvinSimAdapter(SimAdapter):
                 self.env.cid = -1
             self.env = None
 
-    def _ensure_env(self, task_config: TaskConfig | None) -> None:
+    def _ensure_env(self) -> None:
         if self.env is not None:
             return
         try:
@@ -173,6 +160,7 @@ class CalvinSimAdapter(SimAdapter):
             self.env = self._make_registered_env(kwargs)
             expected_horizon = self.config.params["max_episode_steps"]
             actual_horizon = getattr(self.env, "_max_episode_steps", None)
+            # A smaller native TimeLimit would truncate before the agent-command budget.
             if (
                 actual_horizon is not None
                 and int(actual_horizon) < int(expected_horizon)
@@ -195,8 +183,7 @@ class CalvinSimAdapter(SimAdapter):
             try:
                 return gym.make(self.env_id, **kwargs)
             except Exception:
-                if module_name == "gym":
-                    raise
+                continue
         raise ImportError("CALVIN registered env creation requires gym or gymnasium")
 
     def _make_hydra_env(self, kwargs: dict[str, Any]) -> Any:
@@ -279,9 +266,6 @@ class CalvinSimAdapter(SimAdapter):
         unwrapped = getattr(self.env, "unwrapped", self.env)
         seed_target = self.env if callable(getattr(self.env, "seed", None)) else unwrapped
         seed_method = getattr(seed_target, "seed", None)
-        if not callable(seed_method):
-            raise RuntimeError("CALVIN environment does not expose a seed() fallback")
-
         seed_method(seed)
         np_random = getattr(seed_target, "np_random", None)
         if np_random is None:

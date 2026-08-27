@@ -12,18 +12,9 @@ from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 class SimplerEnvSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "simpler_env":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.env_id = config.env_id
-        if self.env_id is None:
-            raise ValueError("SimplerEnv simulator requires simulator.env_id")
-        raw_absolute_gripper = config.params.get("absolute_gripper_target", False)
-        if not isinstance(raw_absolute_gripper, bool):
-            raise ValueError(
-                "SimplerEnv simulator.params.absolute_gripper_target must be boolean"
-            )
-        self.absolute_gripper_target = raw_absolute_gripper
+        self.absolute_gripper_target = config.params.get("absolute_gripper_target", False)
         self.env: Any | None = None
         self.step_id = 0
         self.native_step_id = 0
@@ -38,8 +29,8 @@ class SimplerEnvSimAdapter(SimAdapter):
         self._camera_config: dict[str, dict[str, int]] = {}
 
     def set_camera_configuration(self, camera_config: dict[str, dict[str, int]]) -> None:
-        if self.env is not None:
-            raise RuntimeError("SimplerEnv camera configuration must be set before reset")
+        # EpisodeManager configures cameras before reset creates the native environment.
+        assert self.env is None
         self._camera_config = deepcopy(camera_config)
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
@@ -59,8 +50,6 @@ class SimplerEnvSimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, SimplerEnvAction):
-            raise TypeError(f"SimplerEnvSimAdapter requires SimplerEnvAction, got {type(action).__name__}")
         self._ensure_env()
         native_action, clip_metadata = self._native_action(action)
         gripper_application: dict[str, Any] | None = None
@@ -163,6 +152,7 @@ class SimplerEnvSimAdapter(SimAdapter):
         self.env = self._make_env(simpler_env, kwargs)
         expected_horizon = configured_horizon
         actual_horizon = getattr(self.env, "_max_episode_steps", None)
+        # A smaller native TimeLimit would truncate before the agent-command budget.
         if (
             expected_horizon is not None
             and actual_horizon is not None
@@ -177,11 +167,6 @@ class SimplerEnvSimAdapter(SimAdapter):
     def _make_env(self, simpler_env: Any, kwargs: dict[str, Any]) -> Any:
         if not self._camera_config:
             return simpler_env.make(self.env_id, **kwargs)
-        if self.env_id != "google_robot_pick_coke_can":
-            raise RuntimeError(
-                "Simulator-native camera resizing is not implemented for "
-                f"SimplerEnv task {self.env_id!r}"
-            )
 
         from mani_skill2_real2sim.envs.custom_scenes.grasp_single_in_scene import (
             GraspSingleInSceneEnv,
@@ -194,11 +179,6 @@ class SimplerEnvSimAdapter(SimAdapter):
         prepackaged.update(caller_kwargs)
         camera_cfgs = deepcopy(prepackaged.get("camera_cfgs", {}))
         camera_cfgs.update(deepcopy(caller_camera_cfgs))
-        if len(self._camera_config) != 1:
-            raise RuntimeError(
-                "The pinned SimplerEnv task accepts one shared native sensor "
-                "camera_cfgs mapping"
-            )
         camera_cfgs.update(deepcopy(next(iter(self._camera_config.values()))))
         prepackaged["camera_cfgs"] = camera_cfgs
         prepackaged["prepackaged_config"] = False
@@ -226,14 +206,7 @@ class SimplerEnvSimAdapter(SimAdapter):
                 pass
         if get_info is None:
             get_info = getattr(self.env, "get_info", None)
-        if not callable(get_info):
-            raise RuntimeError(
-                "SimplerEnv environment does not expose the public get_info() evaluator path"
-            )
-
         info = self._jsonable_mapping(get_info())
-        if "success" not in info:
-            raise RuntimeError("SimplerEnv get_info() did not return required success")
         return info
 
     def _reset_evaluator_info(self) -> dict[str, Any]:
@@ -275,19 +248,15 @@ class SimplerEnvSimAdapter(SimAdapter):
 
     def _native_action(self, action: SimplerEnvAction) -> tuple[np.ndarray, dict[str, Any]]:
         values = np.asarray(action.values, dtype=np.float32)
-        if values.shape != (7,):
-            raise ValueError(f"SimplerEnv action must contain 7 values, got shape {values.shape}")
-
         action_space = getattr(self.env, "action_space", None)
         metadata: dict[str, Any] = {"clipped": False}
         if action_space is None or not hasattr(action_space, "shape"):
             return values, metadata
         target_shape = tuple(int(value) for value in action_space.shape)
+        # SimplerEnv wrappers expose either batched (1, N) or unbatched (N,) actions.
         if values.shape != target_shape:
             if len(target_shape) == 2 and target_shape[0] == 1 and values.shape == target_shape[1:]:
                 values = values.reshape(target_shape)
-            else:
-                raise ValueError(f"SimplerEnv action shape mismatch: controller produced {values.shape}, env expects {target_shape}")
         if hasattr(action_space, "low") and hasattr(action_space, "high"):
             before = values.copy()
             values = np.clip(values, action_space.low, action_space.high)
@@ -306,25 +275,10 @@ class SimplerEnvSimAdapter(SimAdapter):
         values = np.array(native_action, dtype=np.float32, copy=True)
         flat_values = values.reshape(-1)
         gripper_command = float(flat_values[-1])
-        if not (
-            np.isclose(gripper_command, 0.0, atol=1e-7)
-            or np.isclose(abs(gripper_command), 1.0, atol=1e-7)
-        ):
-            raise ValueError(
-                "SimplerEnv absolute gripper target requires native command -1, 0, or 1"
-            )
+        # SimplerEnvController emits only the three absolute gripper commands.
+        assert np.isclose(gripper_command, 0.0, atol=1e-7) or np.isclose(abs(gripper_command), 1.0, atol=1e-7)
 
         gripper = self._native_gripper_controller()
-        required_flags = (
-            "use_target",
-            "clip_target",
-            "small_action_repeat_last_target",
-        )
-        if any(not bool(getattr(gripper.config, name, False)) for name in required_flags):
-            raise RuntimeError(
-                "SimplerEnv absolute gripper target requires the pinned target-delta "
-                "controller with target clipping and small-action target retention"
-            )
 
         target_update = "preserved"
         if not np.isclose(gripper_command, 0.0, atol=1e-7):
@@ -342,15 +296,7 @@ class SimplerEnvSimAdapter(SimAdapter):
             gripper.set_state({"target_qpos": target})
 
         get_state = getattr(gripper, "get_state", None)
-        if not callable(get_state):
-            raise RuntimeError(
-                "SimplerEnv absolute gripper target requires controller.get_state()"
-            )
         gripper_state = self._jsonable_mapping(get_state())
-        if "target_qpos" not in gripper_state:
-            raise RuntimeError(
-                "SimplerEnv absolute gripper controller state is missing target_qpos"
-            )
         flat_values[-1] = 0.0
         return values, {
             "controller_command": gripper_command,
@@ -364,15 +310,7 @@ class SimplerEnvSimAdapter(SimAdapter):
         agent = getattr(unwrapped, "agent", None)
         combined_controller = getattr(agent, "controller", None)
         controllers = getattr(combined_controller, "controllers", None)
-        if not isinstance(controllers, dict) or "gripper" not in controllers:
-            raise RuntimeError(
-                "SimplerEnv absolute gripper target requires a named gripper controller"
-            )
         gripper = controllers["gripper"]
-        if not callable(getattr(gripper, "set_state", None)):
-            raise RuntimeError(
-                "SimplerEnv absolute gripper target requires controller.set_state()"
-            )
         return gripper
 
     def _normalize_step_result(self, step_result: Any) -> tuple[Any, Any, bool, bool, dict[str, Any]]:

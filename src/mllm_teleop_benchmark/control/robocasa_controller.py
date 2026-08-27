@@ -33,8 +33,6 @@ class RoboCasaOSCController(Controller):
         mapping: JoystickMapping,
         frame_transform: ControlFrameTransform,
     ) -> "RoboCasaOSCController":
-        if config.type != "robocasa_osc":
-            raise ValueError(f"Unsupported controller type: {config.type}")
         return cls(
             mapping=mapping,
             frame_transform=frame_transform,

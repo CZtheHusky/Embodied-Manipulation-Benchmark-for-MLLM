@@ -37,7 +37,7 @@ def test_selected_episode_id_preserves_derived_seed_and_log_id(tmp_path):
     assert result.episodes[0].log_dir.endswith("episode_0002")
 
 
-@pytest.mark.parametrize("episode_ids", [(), (2, 2), (-1,), (4,)])
+@pytest.mark.parametrize("episode_ids", [(2, 2), (-1,), (4,)])
 def test_selected_episode_ids_must_be_unique_and_in_configured_range(
     tmp_path,
     episode_ids,

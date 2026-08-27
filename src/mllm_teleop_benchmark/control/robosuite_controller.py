@@ -34,8 +34,6 @@ class RobosuiteOSCController(Controller):
         mapping: JoystickMapping,
         frame_transform: ControlFrameTransform,
     ) -> "RobosuiteOSCController":
-        if config.type != "robosuite_osc":
-            raise ValueError(f"Unsupported controller type: {config.type}")
         return cls(mapping=mapping, frame_transform=frame_transform, scales=config.scales)
 
     def translate(self, action: JoystickAction) -> RobosuiteAction:

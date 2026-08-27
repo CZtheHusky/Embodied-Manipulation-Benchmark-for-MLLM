@@ -33,17 +33,18 @@ class ActionParser:
         raw_action: Any,
     ) -> ParsedModelOutput:
         decoded = self._decode_mapping(raw_action)
-        if "channels" not in decoded:
-            raise ActionParseError("Model output must contain a top-level 'channels' key")
+        action = self._parse_channels(decoded.get("channels"))
         allowed_keys = {"channels", "Reflection", "magnifier"}
         extra_keys = sorted(str(key) for key in decoded if key not in allowed_keys)
+        # Required: untrusted model JSON with extra keys would otherwise be silently accepted as a valid action.
         if extra_keys:
             raise ActionParseError(f"Unknown top-level model output keys: {extra_keys}")
         reflection = decoded.get("Reflection")
+        # Required: Reflection comes from the non-controlled model API response.
         if reflection is not None and not isinstance(reflection, str):
             raise ActionParseError("Model output Reflection must be a string")
         return ParsedModelOutput(
-            action=self._parse_channels(decoded["channels"]),
+            action=action,
             reflection=reflection,
             magnifier_update=self._parse_magnifier(decoded),
         )
@@ -117,12 +118,14 @@ class ActionParser:
                 raw_action = json.loads(raw_action)
             except json.JSONDecodeError as exc:
                 raise ActionParseError(f"Invalid JSON action: {exc}") from exc
+        # Required: model API and human UI action inputs must decode to a mapping.
         if not isinstance(raw_action, dict):
             raise ActionParseError("Action must be a dict, JSON string, or JoystickAction")
         return raw_action
 
     @staticmethod
     def _parse_channels(payload: Any) -> JoystickAction:
+        # Required: channel payloads are supplied by the non-controlled model API.
         if not isinstance(payload, dict):
             raise ActionParseError("Action channels must be a mapping")
         try:

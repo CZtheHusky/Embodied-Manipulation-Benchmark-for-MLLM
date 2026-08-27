@@ -47,32 +47,16 @@ def project_world_point(
     image_height: int,
 ) -> dict[str, object]:
     """Project one world point using RLBench/PyRep camera matrices."""
-    point = np.asarray(world_point, dtype=np.float64)
-    intrinsic_matrix = np.asarray(intrinsics, dtype=np.float64)
-    extrinsic_matrix = np.asarray(camera_to_world, dtype=np.float64)
-    if point.shape != (3,):
-        raise PreflightFailure(
-            f"World point must have shape (3,), got {point.shape}"
-        )
-    if intrinsic_matrix.shape != (3, 3):
-        raise PreflightFailure(
-            "Camera intrinsics must have shape (3, 3), got "
-            f"{intrinsic_matrix.shape}"
-        )
-    if extrinsic_matrix.shape != (4, 4):
-        raise PreflightFailure(
-            "Camera extrinsics must have shape (4, 4), got "
-            f"{extrinsic_matrix.shape}"
-        )
+    point = np.asarray(world_point, dtype=np.float64).reshape(3)
+    intrinsic_matrix = np.asarray(intrinsics, dtype=np.float64).reshape(3, 3)
+    extrinsic_matrix = np.asarray(camera_to_world, dtype=np.float64).reshape(4, 4)
+    # PyRep supplies these native matrices; NaNs otherwise flow into a syntactically complete projection report.
     if (
         not np.all(np.isfinite(point))
         or not np.all(np.isfinite(intrinsic_matrix))
         or not np.all(np.isfinite(extrinsic_matrix))
     ):
         raise PreflightFailure("Projection inputs must contain only finite values")
-    if image_width <= 0 or image_height <= 0:
-        raise PreflightFailure("Projection image dimensions must be positive")
-
     try:
         world_to_camera = np.linalg.inv(extrinsic_matrix)
     except np.linalg.LinAlgError as exc:
@@ -168,41 +152,19 @@ def probe_camera_projection(
     min_pixel_displacement: float = DEFAULT_MIN_PIXEL_DISPLACEMENT,
 ) -> dict[str, object]:
     """Probe projected world-axis directions from a current native observation."""
-    if axis_offset_meters <= 0.0:
-        raise PreflightFailure("Axis offset must be positive")
-    if min_pixel_displacement < 0.0:
-        raise PreflightFailure("Minimum pixel displacement cannot be negative")
-
     misc = _native_value(native_observation, "misc")
-    if not isinstance(misc, Mapping):
-        raise PreflightFailure("Native observation is missing misc camera data")
     intrinsics_key = f"{camera_name}_camera_intrinsics"
     extrinsics_key = f"{camera_name}_camera_extrinsics"
-    if intrinsics_key not in misc or extrinsics_key not in misc:
-        raise PreflightFailure(
-            "Native observation misc is missing "
-            f"{intrinsics_key!r} or {extrinsics_key!r}"
-        )
 
     gripper_pose = np.asarray(
         _native_value(native_observation, "gripper_pose"),
         dtype=np.float64,
     )
-    if gripper_pose.ndim != 1 or gripper_pose.size < 3:
-        raise PreflightFailure(
-            "Native observation must expose gripper_pose with at least 3 values"
-        )
     eef_position = gripper_pose[:3]
-    if not np.all(np.isfinite(eef_position)):
-        raise PreflightFailure("Native gripper_pose contains non-finite values")
 
     if frame is None:
         frame = _native_value(native_observation, f"{camera_name}_rgb")
     frame_array = np.asarray(frame)
-    if frame_array.ndim != 3:
-        raise PreflightFailure(
-            f"Camera {camera_name!r} frame must be HWC, got {frame_array.shape}"
-        )
     image_height, image_width = frame_array.shape[:2]
     base = project_world_point(
         eef_position,
@@ -276,15 +238,9 @@ def run_reset_canary(
     min_pixel_displacement: float = DEFAULT_MIN_PIXEL_DISPLACEMENT,
 ) -> dict[str, object]:
     """Run reset, image, projection, and planning probes without an agent."""
-    if len(seeds) == 0:
-        raise PreflightFailure("Reset canary requires at least one seed")
     delta = tuple(float(value) for value in planning_delta)
-    if len(delta) != 3 or not all(np.isfinite(delta)):
-        raise PreflightFailure("Planning delta must contain three finite values")
     planning_acceptance_required = any(value != 0.0 for value in delta)
     camera_names = tuple(str(spec.name) for spec in camera_specs)
-    if not camera_names:
-        raise PreflightFailure("Reset canary requires at least one camera")
 
     seed_reports: list[dict[str, object]] = []
     failures: list[str] = []
@@ -311,10 +267,6 @@ def run_reset_canary(
             sim.reset(task_config, int(seed))
             seed_report["reset_succeeded"] = True
             state = sim.get_state()
-            if not isinstance(state, Mapping) or "success" not in state:
-                raise PreflightFailure(
-                    "Adapter state does not expose native reset success"
-                )
             initial_success = bool(state["success"])
             seed_report["initial_native_success"] = initial_success
             if initial_success:
@@ -382,6 +334,7 @@ def run_reset_canary(
                         rejected_value = getattr(
                             sim, "last_action_rejected", None
                         )
+                    # Missing evidence otherwise counts the action as accepted via bool(None).
                     if rejected_value is None:
                         raise PreflightFailure(
                             "Adapter did not report action_rejected"
@@ -537,7 +490,7 @@ def summarize_projection_probes(
             and sample.get("primary_image_direction") is not None
         }
         all_claimable = bool(samples) and all(
-            bool(sample.get("can_publicly_declare")) for sample in samples
+            sample.get("can_publicly_declare") for sample in samples
         )
         stable = all_claimable and len(directions) == 1
         if stable:
@@ -639,14 +592,6 @@ def run_close_box_scripted_success_canary(
     task_environment = getattr(sim, "task", None)
     native_task = getattr(task_environment, "_task", None)
     get_waypoints = getattr(native_task, "get_waypoints", None)
-    if not callable(get_waypoints):
-        _fail_closebox(
-            report,
-            "Cannot safely execute CloseBox scripted success: the pinned "
-            "runtime lacks official Task.get_waypoints(). No guessed pose "
-            "script was executed.",
-        )
-
     try:
         waypoints = get_waypoints()
     except Exception as exc:
@@ -654,12 +599,6 @@ def run_close_box_scripted_success_canary(
             report,
             "Cannot read official CloseBox waypoints: "
             f"{type(exc).__name__}: {exc}",
-        )
-    if not isinstance(waypoints, Sequence) or not waypoints:
-        _fail_closebox(
-            report,
-            "Cannot safely execute CloseBox scripted success: official task "
-            "exposes no waypoints. No guessed pose script was executed.",
         )
     report["waypoint_count"] = len(waypoints)
     waypoint_positions = [
@@ -676,7 +615,13 @@ def run_close_box_scripted_success_canary(
             _update_rejection_rate(report)
             return report
 
-        current_position = _current_eef_position(sim, report)
+        current_position = np.asarray(
+            _native_value(
+                getattr(sim, "last_native_obs", None),
+                "gripper_pose",
+            ),
+            dtype=np.float64,
+        )[:3]
         while waypoint_index < len(waypoint_positions):
             error = waypoint_positions[waypoint_index] - current_position
             if np.all(np.abs(error) <= tolerance):
@@ -713,11 +658,6 @@ def run_close_box_scripted_success_canary(
                 f"{type(exc).__name__}: {exc}",
             )
         report["actions_attempted"] = int(report["actions_attempted"]) + 1
-        if not isinstance(step_result.info, Mapping):
-            _fail_closebox(
-                report,
-                "Adapter step result does not expose mapping info",
-            )
         rejected = step_result.info.get("action_rejected")
         if rejected is None:
             rejected = getattr(sim, "last_action_rejected", None)
@@ -833,6 +773,7 @@ def _closebox_control_contract(
         failures.append("action budget must be positive")
     if configured_budget > 0 and action_budget > configured_budget:
         failures.append("action budget cannot exceed task.max_steps")
+    # Every item above describes a runnable but mislabeled CloseBox control condition.
     if failures:
         raise PreflightFailure(
             "CloseBox restricted control contract mismatch: "
@@ -847,11 +788,6 @@ def _waypoint_position(
     report: dict[str, object],
 ) -> np.ndarray:
     get_waypoint_object = getattr(waypoint, "get_waypoint_object", None)
-    if not callable(get_waypoint_object):
-        _fail_closebox(
-            report,
-            f"Official waypoint {index} lacks get_waypoint_object()",
-        )
     try:
         waypoint_object = get_waypoint_object()
     except Exception as exc:
@@ -861,11 +797,6 @@ def _waypoint_position(
             f"{type(exc).__name__}: {exc}",
         )
     get_position = getattr(waypoint_object, "get_position", None)
-    if not callable(get_position):
-        _fail_closebox(
-            report,
-            f"Official waypoint {index} object lacks get_position()",
-        )
     try:
         position = np.asarray(get_position(), dtype=np.float64)
     except Exception as exc:
@@ -881,20 +812,6 @@ def _waypoint_position(
         )
     return position
 
-
-def _current_eef_position(sim: Any, report: dict[str, object]) -> np.ndarray:
-    pose = np.asarray(
-        _native_value(getattr(sim, "last_native_obs", None), "gripper_pose"),
-        dtype=np.float64,
-    )
-    if pose.ndim != 1 or pose.size < 3 or not np.all(np.isfinite(pose[:3])):
-        _fail_closebox(
-            report,
-            "Native observation lacks a finite gripper_pose for waypoint navigation",
-        )
-    return pose[:3]
-
-
 def _closebox_success(sim: Any, report: dict[str, object]) -> bool:
     try:
         state = sim.get_state()
@@ -903,19 +820,9 @@ def _closebox_success(sim: Any, report: dict[str, object]) -> bool:
             report,
             f"CloseBox adapter success query failed: {type(exc).__name__}: {exc}",
         )
-    if not isinstance(state, Mapping) or "success" not in state:
-        _fail_closebox(
-            report,
-            "CloseBox adapter state does not expose native reset/step success",
-        )
     adapter_success = bool(state["success"])
     native_task = getattr(getattr(sim, "task", None), "_task", None)
     native_success = getattr(native_task, "success", None)
-    if not callable(native_success):
-        _fail_closebox(
-            report,
-            "Pinned CloseBox task does not expose official Task.success()",
-        )
     try:
         result = native_success()
     except Exception as exc:
@@ -923,11 +830,6 @@ def _closebox_success(sim: Any, report: dict[str, object]) -> bool:
             report,
             f"Official CloseBox success query failed: "
             f"{type(exc).__name__}: {exc}",
-        )
-    if not isinstance(result, tuple) or len(result) != 2:
-        _fail_closebox(
-            report,
-            "Official CloseBox Task.success() must return (success, terminate)",
         )
     if adapter_success != bool(result[0]):
         _fail_closebox(
@@ -972,8 +874,9 @@ def _update_rejection_rate(report: dict[str, object]) -> None:
 def _fail_closebox(report: dict[str, object], message: str) -> None:
     report["status"] = "fail"
     failures = report["failures"]
-    if isinstance(failures, list):
-        failures.append(message)
+    # CloseBox reports initialize failures as a mutable list before any probe.
+    assert isinstance(failures, list)
+    failures.append(message)
     _update_rejection_rate(report)
     raise PreflightFailure(message, report=report)
 
@@ -1076,10 +979,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     report: dict[str, object]
     try:
         config = load_config(args.config)
-        if config.simulator.type not in {"rlbench", "colosseum"}:
-            raise PreflightFailure(
-                "CoppeliaSim preflight supports only rlbench or colosseum configs"
-            )
         sim = build_sim(config)
         camera_manager = build_camera_manager(
             config.camera, config.benchmark.seed
@@ -1088,8 +987,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         observation_provider.configure_sim(sim)
 
         if args.command == "reset-canary":
-            if args.seed_count <= 0:
-                raise PreflightFailure("--seed-count must be positive")
             base_seed = (
                 config.benchmark.seed
                 if args.base_seed is None
@@ -1143,14 +1040,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             except Exception as exc:
                 report["status"] = "fail"
                 failures = report.setdefault("failures", [])
-                if isinstance(failures, list):
-                    failures.append(
-                        f"simulator close failed: {type(exc).__name__}: {exc}"
-                    )
+                failures.append(
+                    f"simulator close failed: {type(exc).__name__}: {exc}"
+                )
 
     _write_report(report, args.output)
     return 0 if report["status"] == "pass" else 1
 
 
+# Direct script invocation must preserve the preflight report exit status.
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -13,6 +13,7 @@ from mllm_teleop_benchmark.agents.model_policy import sanitize_provider_response
 
 def sanitize_artifacts(root: Path, *, write: bool) -> dict[str, Any]:
     root = root.resolve()
+    # rglob() on a missing path returns no files and would falsely report a successful scan.
     if not root.is_dir():
         raise ValueError(f"Artifact root is not a directory: {root}")
 

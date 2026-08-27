@@ -227,17 +227,6 @@ def _set_rlbench_action_evidence(
         encoding="utf-8",
     )
 
-
-def _compound_sim_action(action, count=2):
-    return {
-        "actions": [action for _ in range(count)],
-        "metadata": {
-            "execution": "linear_motion_substeps",
-            "substep_count": count,
-        },
-    }
-
-
 def _set_robocasa_action_evidence(
     run_dir: Path,
     *,
@@ -674,15 +663,21 @@ def test_rlbench_action_audit_accepts_replayable_compound_substeps(
     _set_simulator_type(run_dir, "rlbench")
     _set_rlbench_action_evidence(
         run_dir,
-        sim_action=_compound_sim_action(
-            {
-                "delta_position": [0.01, 0.0, 0.0],
-                "delta_rotation_rpy": [0.0, 0.0, 0.0],
-                "gripper": 1.0,
-                "metadata": {"controller": "rlbench_delta_eef"},
+        sim_action={
+            "actions": [
+                {
+                    "delta_position": [0.01, 0.0, 0.0],
+                    "delta_rotation_rpy": [0.0, 0.0, 0.0],
+                    "gripper": 1.0,
+                    "metadata": {"controller": "rlbench_delta_eef"},
+                }
+                for _ in range(30)
+            ],
+            "metadata": {
+                "execution": "linear_motion_substeps",
+                "substep_count": 30,
             },
-            count=30,
-        ),
+        },
     )
     _mock_ffprobe(monkeypatch)
 

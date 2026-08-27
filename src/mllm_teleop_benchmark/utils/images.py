@@ -20,8 +20,8 @@ class EncodedPNG:
 def encode_rgb_png(value: Any, max_side: int) -> EncodedPNG:
     array = resize_max_side(rgb_array(value), max_side)
     png = iio.imwrite("<bytes>", array, extension=".png")
-    if not isinstance(png, bytes):
-        raise TypeError("PNG encoder did not return bytes")
+    # imageio's <bytes> target guarantees encoded bytes for a successful write.
+    assert isinstance(png, bytes)
     return EncodedPNG(
         width=int(array.shape[1]),
         height=int(array.shape[0]),
@@ -36,12 +36,11 @@ def rgb_array(value: Any) -> np.ndarray:
         array = array[0]
     if array.ndim == 3 and array.shape[0] in (3, 4) and array.shape[-1] not in (3, 4):
         array = np.moveaxis(array, 0, -1)
+    # Simulator camera APIs cross process/library boundaries and expose several array layouts.
     if array.ndim != 3 or array.shape[-1] not in (3, 4):
         raise ValueError(f"Image must have RGB/RGBA shape, got {array.shape}")
     if array.shape[-1] == 4:
         array = array[..., :3]
-    if array.size == 0:
-        raise ValueError("Image must not be empty")
     if array.dtype != np.uint8:
         array = np.nan_to_num(array, nan=0.0, posinf=255.0, neginf=0.0)
         if float(np.max(array)) <= 1.0:

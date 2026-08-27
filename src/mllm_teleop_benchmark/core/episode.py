@@ -270,8 +270,6 @@ class EpisodeManager:
                 motion_channels,
             )
         validation = self.validator.validate(parsed_action)
-        if not validation.is_valid and self.config.agent.invalid_action_recovery != "noop":
-            raise ValueError(f"Unsupported invalid action recovery: {self.config.agent.invalid_action_recovery}")
         return parsed_action, validation, reflection, magnifier_update
 
     def _execute_action(

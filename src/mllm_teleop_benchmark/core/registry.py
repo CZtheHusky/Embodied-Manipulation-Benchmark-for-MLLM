@@ -150,24 +150,19 @@ def build_agent(config: BenchmarkConfig, seed: int) -> Agent:
         return ScriptedPolicy()
     if config.agent.type == "mllm":
         model_config = config.agent.model
-        if model_config is None:
-            raise ValueError("agent.type=mllm requires agent.model configuration")
-        if model_config.provider != "openai_compatible":
-            raise ValueError(f"Unsupported model provider: {model_config.provider}")
-        model_name = model_config.name or os.environ.get(model_config.name_env)
-        base_url = model_config.base_url or os.environ.get(model_config.base_url_env)
-        api_key = os.environ.get(model_config.api_key_env)
-        if not model_name:
-            raise ValueError(f"Model name is required via agent.model.name or {model_config.name_env}")
-        if not base_url:
-            raise ValueError(f"Model base URL is required via agent.model.base_url or {model_config.base_url_env}")
-        if model_config.require_api_key and not api_key:
-            raise ValueError(f"Model API key is required via {model_config.api_key_env}")
-        client_class = (
-            OpenAIResponsesClient
-            if model_config.api == "responses"
-            else OpenAICompatibleClient
+        # AgentConfig.from_dict always creates model config for the mllm variant.
+        assert model_config is not None
+        model_name = model_config.name or os.environ[model_config.name_env]
+        base_url = model_config.base_url or os.environ[model_config.base_url_env]
+        api_key = (
+            os.environ[model_config.api_key_env]
+            if model_config.require_api_key
+            else os.environ.get(model_config.api_key_env)
         )
+        client_class = {
+            ("openai_compatible", "chat_completions"): OpenAICompatibleClient,
+            ("openai_compatible", "responses"): OpenAIResponsesClient,
+        }[(model_config.provider, model_config.api)]
         client = client_class(
             base_url=base_url,
             api_key=api_key,
@@ -177,23 +172,22 @@ def build_agent(config: BenchmarkConfig, seed: int) -> Agent:
             retry_backoff_max_seconds=model_config.retry_backoff_max_seconds,
             retry_until_success=model_config.retry_until_success,
         )
-        if model_config.api == "responses":
-            return ResponsesMLLMPolicy(config.agent, client, model_name)
-        return MLLMPolicy(config.agent, client, model_name)
+        policy_class = {
+            "chat_completions": MLLMPolicy,
+            "responses": ResponsesMLLMPolicy,
+        }[model_config.api]
+        return policy_class(config.agent, client, model_name)
     raise ValueError(f"Unsupported agent type: {config.agent.type}")
 
 
 def build_camera_manager(config: CameraConfig, seed: int) -> CameraManager:
-    if config.manager == "fixed":
-        manager: CameraManager = FixedCameraManager(config)
-    elif config.manager == "mujoco_randomized":
-        manager = RandomizedMujocoCameraManager(config)
-    elif config.manager == "maniskill_randomized":
-        manager = RandomizedManiSkillCameraManager(config)
-    elif config.manager == "calvin_randomized":
-        manager = RandomizedCalvinCameraManager(config)
-    else:
-        raise ValueError(f"Unsupported camera manager: {config.manager}")
+    manager_class = {
+        "fixed": FixedCameraManager,
+        "mujoco_randomized": RandomizedMujocoCameraManager,
+        "maniskill_randomized": RandomizedManiSkillCameraManager,
+        "calvin_randomized": RandomizedCalvinCameraManager,
+    }[config.manager]
+    manager: CameraManager = manager_class(config)
     manager.reset(seed)
     return manager
 
@@ -236,9 +230,7 @@ def build_observation_provider(config: BenchmarkConfig, camera_manager: CameraMa
 
 def build_mapping(config: BenchmarkConfig, seed: int | None = None) -> JoystickMapping:
     mapping_config = config.control_interface.to_mapping_config(seed)
-    if mapping_config.type == "fixed":
-        return FixedJoystickMapping.from_config(mapping_config)
-    raise ValueError(f"Unsupported mapping type: {mapping_config.type}")
+    return FixedJoystickMapping.from_config(mapping_config)
 
 
 def build_action_space(config: BenchmarkConfig) -> ActionSpace:

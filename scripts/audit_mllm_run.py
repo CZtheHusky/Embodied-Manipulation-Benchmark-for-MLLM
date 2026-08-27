@@ -471,14 +471,22 @@ class RunAuditor:
             report["completion_status"] = "incomplete"
         camera_summary = self.image_camera_summary(episode_id)
         if report["completion_status"] == "complete":
+            parsed_actions = (
+                transition.get("parsed_action") for transition in trajectory
+            )
+            visual_change_expected = any(
+                isinstance(action, Mapping)
+                and any(
+                    _is_finite_number(value) and float(value) != 0.0
+                    for value in action.values()
+                )
+                for action in parsed_actions
+            )
             self.audit_frozen_cameras(
                 episode_id,
                 episode_dir,
                 camera_summary,
-                visual_change_expected=any(
-                    _has_nonzero_parsed_action(transition)
-                    for transition in trajectory
-                ),
+                visual_change_expected=visual_change_expected,
             )
         report["images"] = {
             "manifest_references": image_references,
@@ -1201,6 +1209,7 @@ class RunAuditor:
 
 def audit_run(run_dir: Path, *, ffprobe_binary: str = "ffprobe") -> dict[str, Any]:
     root = run_dir.resolve()
+    # Historical and interrupted run paths are user-selected; a missing root must not audit as an empty passing run.
     if not root.is_dir():
         raise ValueError(f"Run directory is not a directory: {root}")
     return RunAuditor(root, ffprobe_binary).run()
@@ -1211,11 +1220,10 @@ def _inspect_png(path: Path) -> dict[str, Any]:
         content = path.read_bytes()
         with Image.open(path) as image:
             image.load()
+            # Pillow also decodes JPEG; model-visible artifacts are contractually exact PNG bytes.
             if image.format != "PNG":
                 raise ValueError
             pixels = np.asarray(image.convert("RGB"), dtype=np.float64)
-        if not pixels.size:
-            raise ValueError
     except (OSError, ValueError):
         return {"valid": False, "sha256": None, "mean": None, "stddev": None, "black": None}
     mean = float(pixels.mean())
@@ -1393,15 +1401,6 @@ def _is_finite_number_vector(value: object, *, length: int) -> bool:
         and all(_is_finite_number(item) for item in value)
     )
 
-
-def _has_nonzero_parsed_action(transition: Mapping[str, object]) -> bool:
-    action = transition.get("parsed_action")
-    return isinstance(action, Mapping) and any(
-        _is_finite_number(value) and float(value) != 0.0
-        for value in action.values()
-    )
-
-
 def _is_finite_number(value: object) -> bool:
     return (
         isinstance(value, (int, float))
@@ -1462,5 +1461,6 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["status"] == "pass" else 1
 
 
+# Direct script invocation must preserve the audit pass/fail exit status.
 if __name__ == "__main__":
     raise SystemExit(main())

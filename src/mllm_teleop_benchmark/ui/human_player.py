@@ -12,14 +12,14 @@ from mllm_teleop_benchmark.action.validator import ActionValidator
 from mllm_teleop_benchmark.agents.control_instruction import ControlInstructionBuilder
 from mllm_teleop_benchmark.config.schema import BenchmarkConfig
 from mllm_teleop_benchmark.core.registry import build_action_space, build_controller, build_mapping, build_task, control_interface_metadata
-from mllm_teleop_benchmark.core.types import EpisodeResult, Observation, StepResult, StepTransition, ValidationResult
+from mllm_teleop_benchmark.core.types import EpisodeResult, StepResult, StepTransition, ValidationResult
 from mllm_teleop_benchmark.evaluation.metrics import MetricsRecorder
 from mllm_teleop_benchmark.logging.control_debug import ControlDebugRecorder
 from mllm_teleop_benchmark.logging.debug_session import DebugSession
 from mllm_teleop_benchmark.logging.episode_logger import EpisodeLogger
 from mllm_teleop_benchmark.logging.frame_debug import FrameDebugRecorder
 from mllm_teleop_benchmark.ui.keyboard import KeyboardJoystickMapper
-from mllm_teleop_benchmark.ui.runtime import PlayerRuntime, PlayerRuntimeResult
+from mllm_teleop_benchmark.ui.runtime import PlayerRuntime
 
 
 class PygameHumanPlayer:
@@ -90,8 +90,8 @@ class PygameHumanPlayer:
 
         try:
             initial = self.runtime.reset()
-            frame, observation = self._frame_observation(initial)
-            evaluator_state = self._evaluator_state(initial)
+            frame, observation = initial.frame, initial.observation
+            evaluator_state = initial.evaluator_state
             self._configure_canvas_from_frame(frame)
             screen = pygame.display.set_mode((self.width, self.height))
             pygame.display.set_caption(self.config.benchmark.name)
@@ -119,8 +119,8 @@ class PygameHumanPlayer:
                             running = False
                         elif event.key == pygame.K_r:
                             result = self.runtime.reset()
-                            frame, next_observation = self._frame_observation(result)
-                            next_evaluator_state = self._evaluator_state(result)
+                            frame, next_observation = result.frame, result.observation
+                            next_evaluator_state = result.evaluator_state
                             before_state = observation.state
                             observation = next_observation
                             evaluator_state = next_evaluator_state
@@ -153,8 +153,8 @@ class PygameHumanPlayer:
                             parsed_action, validation = self._parse_and_validate(parser, validator, action_space, raw_action)
                             sim_action = controller.translate(parsed_action)
                             result = self.runtime.step(sim_action)
-                            frame, next_observation = self._frame_observation(result)
-                            next_evaluator_state = self._evaluator_state(result)
+                            frame, next_observation = result.frame, result.observation
+                            next_evaluator_state = result.evaluator_state
                             steps += 1
                             frame_debug.record_frame(frame, step_id=next_observation.step_id, prefix="step")
                             control_record = control_debug.build_step_record(
@@ -217,30 +217,15 @@ class PygameHumanPlayer:
         logger.finish(result)
         return result
 
-    def _frame_observation(self, result: PlayerRuntimeResult) -> tuple[Any, Observation]:
-        if result.error:
-            raise RuntimeError(result.error)
-        if result.observation is None:
-            raise RuntimeError("Player runtime returned no observation")
-        return result.frame, result.observation
-
-    def _evaluator_state(self, result: PlayerRuntimeResult) -> dict[str, Any]:
-        if result.evaluator_state is None:
-            raise RuntimeError("Player runtime returned no evaluator state")
-        return result.evaluator_state
-
     def _parse_and_validate(self, parser: ActionParser, validator: ActionValidator, action_space: Any, raw_action: dict[str, float]) -> tuple[JoystickAction, ValidationResult]:
         try:
             parsed_action = parser.parse(raw_action)
         except ActionParseError as exc:
-            return self._noop_joystick_action(action_space), ValidationResult(False, (str(exc),))
+            return JoystickAction({name: 0.0 for name in action_space.channels}), ValidationResult(False, (str(exc),))
         validation = validator.validate(parsed_action)
         if validation.is_valid:
             return parsed_action, validation
-        return self._noop_joystick_action(action_space), validation
-
-    def _noop_joystick_action(self, action_space: Any) -> JoystickAction:
-        return JoystickAction({name: 0.0 for name in action_space.channels})
+        return JoystickAction({name: 0.0 for name in action_space.channels}), validation
 
     def _draw(self, screen: Any, font: Any, frame: Any, steps: int, action: dict[str, float] | None = None, panel_lines: tuple[str, ...] = (), success: bool = False) -> None:
         import pygame

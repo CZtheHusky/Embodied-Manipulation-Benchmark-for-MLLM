@@ -11,13 +11,14 @@ from mllm_teleop_benchmark.tasks.base import Task
 class SimplerEnvTask(Task):
     def __init__(self, config: TaskConfig) -> None:
         super().__init__(config)
-        self._instruction = str(config.params.get("instruction", "Complete the SimplerEnv manipulation task."))
+        self._instruction = config.params.get("instruction", "Complete the SimplerEnv manipulation task.")
 
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
         observation = sim.reset(self.config, seed)
         instruction = observation.state.get("language_instruction")
         if instruction is not None:
-            self._instruction = str(instruction)
+            self._instruction = instruction
+        # Reset-success seeds would count as model successes without an agent command.
         if (
             self.config.params.get("reject_initial_success", False)
             and self.is_success(observation, sim.get_state())
@@ -32,12 +33,10 @@ class SimplerEnvTask(Task):
         return self._instruction
 
     def is_success(self, observation: Observation, sim_state: dict[str, object]) -> bool:
-        success_key = str(self.config.params.get("success_key", "success"))
+        success_key = self.config.params.get("success_key", "success")
         value = self._get_nested(sim_state, success_key)
-        if value is None:
-            raise RuntimeError(
-                f"SimplerEnv simulator state is missing success key {success_key!r}"
-            )
+        # SimplerEnvSimAdapter records the evaluator success field at reset and every step.
+        assert value is not None
         if isinstance(value, bool):
             return value
         if isinstance(value, int | float):
@@ -45,7 +44,7 @@ class SimplerEnvTask(Task):
         return bool(value)
 
     def metrics(self, sim_state: dict[str, object]) -> dict[str, object]:
-        success_key = str(self.config.params.get("success_key", "success"))
+        success_key = self.config.params.get("success_key", "success")
         metrics: dict[str, object] = {
             "success": self.is_success(None, sim_state),
             "reward": sim_state.get("reward"),

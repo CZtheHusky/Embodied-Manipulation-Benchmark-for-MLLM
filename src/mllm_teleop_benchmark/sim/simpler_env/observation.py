@@ -8,7 +8,6 @@ from mllm_teleop_benchmark.core.types import Observation
 from mllm_teleop_benchmark.observation.camera import CameraManager
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
-from mllm_teleop_benchmark.sim.simpler_env.adapter import SimplerEnvSimAdapter
 
 
 class SimplerEnvObservationProvider(ObservationProvider):
@@ -16,8 +15,6 @@ class SimplerEnvObservationProvider(ObservationProvider):
         self.camera_manager = camera_manager
 
     def configure_sim(self, sim: SimAdapter) -> None:
-        if not isinstance(sim, SimplerEnvSimAdapter):
-            raise TypeError(f"SimplerEnvObservationProvider requires SimplerEnvSimAdapter, got {type(sim).__name__}")
         camera_config = {}
         for camera in self.camera_manager.get_active_cameras():
             upstream_name = camera.name.rsplit("/", 1)[-1]
@@ -28,8 +25,6 @@ class SimplerEnvObservationProvider(ObservationProvider):
         sim.set_camera_configuration(camera_config)
 
     def get_observation(self, sim: SimAdapter) -> Observation:
-        if not isinstance(sim, SimplerEnvSimAdapter):
-            raise TypeError(f"SimplerEnvObservationProvider requires SimplerEnvSimAdapter, got {type(sim).__name__}")
         state = sim.get_state()
         images = self._extract_images(sim.last_native_obs)
         if not images:
@@ -39,7 +34,7 @@ class SimplerEnvObservationProvider(ObservationProvider):
         if not images:
             images = {camera.name: sim.render(camera) for camera in self.camera_manager.get_active_cameras()}
         return Observation(
-            step_id=int(state.get("step_id", 0)),
+            step_id=state.get("step_id", 0),
             images=images,
             state=state,
             metadata={"camera": self.camera_manager.metadata(), "simulator": "simpler_env"},

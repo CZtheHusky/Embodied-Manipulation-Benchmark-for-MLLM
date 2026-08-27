@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import errno
 import fcntl
 import os
 from pathlib import Path
@@ -35,15 +34,16 @@ class CoppeliaSimRuntimeLock:
         fd = os.open(self.path, flags, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
+        except BlockingIOError:
             os.close(fd)
-            if exc.errno in (errno.EACCES, errno.EAGAIN):
-                raise CoppeliaSimRuntimeBusyError(
-                    f"Cannot launch {self.owner}: CoppeliaSim v4.1 is already "
-                    "in use by another RLBench or Colosseum process on this "
-                    f"host (advisory lock: {self.path}). Close the running "
-                    "adapter before retrying."
-                ) from None
+            raise CoppeliaSimRuntimeBusyError(
+                f"Cannot launch {self.owner}: CoppeliaSim v4.1 is already "
+                "in use by another RLBench or Colosseum process on this "
+                f"host (advisory lock: {self.path}). Close the running "
+                "adapter before retrying."
+            ) from None
+        except OSError:
+            os.close(fd)
             raise
         self._fd = fd
 

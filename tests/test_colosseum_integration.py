@@ -535,10 +535,10 @@ def test_colosseum_runtime_reset_step_render_smoke_when_installed():
             enabled_factors = [
                 (
                     str(factor.variation),
-                    str(factor.get("name", "any")),
+                    factor.get("name", "any"),
                 )
                 for factor in sim._official_config.env.scene.factors
-                if bool(factor.enabled)
+                if factor.enabled
             ]
             assert enabled_factors == [("object_color", "manip_obj_color")]
 
@@ -587,8 +587,8 @@ def test_colosseum_mllm_runtime_baseline_and_perturbed_same_seed_reset_pair_when
                             observation.state["gripper_pose"],
                         ),
                         "task_low_dim_state": np.asarray(
-                            observation.state["task_low_dim_state"],
-                        ),
+                            sim.last_native_obs.task_low_dim_state,
+                        ).copy(),
                         "front": np.asarray(sim.render(config.camera.cameras[0])).copy(),
                     }
                 )

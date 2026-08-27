@@ -26,8 +26,6 @@ class ManiSkillDeltaEEFController(Controller):
         self.gripper_open_value = float(gripper_open_value)
         self.gripper_closed_value = float(gripper_closed_value)
         self.rotation_input_sign = float(rotation_input_sign)
-        if self.rotation_input_sign not in {-1.0, 1.0}:
-            raise ValueError("rotation_input_sign must be -1 or 1")
 
     @classmethod
     def from_config(
@@ -37,8 +35,6 @@ class ManiSkillDeltaEEFController(Controller):
         frame_transform: ControlFrameTransform | None = None,
     ) -> "ManiSkillDeltaEEFController":
         dimensions = tuple(str(v) for v in config.params.get("dimensions", ("dx", "dy", "dz", "droll", "dpitch", "dyaw")))
-        if not dimensions:
-            raise ValueError("maniskill_delta_eef controller requires at least one dimension")
         return cls(
             mapping=mapping,
             dimensions=dimensions,
@@ -85,7 +81,11 @@ class ManiSkillDeltaEEFController(Controller):
 
         values = [values_by_dim.get(dim, 0.0) for dim in self.dimensions if dim != "gripper"]
         if "gripper" in self.dimensions:
-            values.append(self._map_gripper(command.get("gripper", 0.0)))
+            gripper = min(max(command.get("gripper", 0.0), 0.0), 1.0)
+            values.append(
+                self.gripper_open_value
+                + gripper * (self.gripper_closed_value - self.gripper_open_value)
+            )
 
         return ManiSkillAction(
             values=tuple(float(v) for v in values),
@@ -107,7 +107,3 @@ class ManiSkillDeltaEEFController(Controller):
             "gripper_closed_value": self.gripper_closed_value,
             "rotation_input_sign": self.rotation_input_sign,
         }
-
-    def _map_gripper(self, value: float) -> float:
-        clipped = min(max(float(value), 0.0), 1.0)
-        return self.gripper_open_value + clipped * (self.gripper_closed_value - self.gripper_open_value)

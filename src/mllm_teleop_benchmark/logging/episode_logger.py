@@ -70,13 +70,16 @@ class EpisodeLogger:
         root = self.episode_dir.resolve()
         for artifact in artifacts:
             relative = Path(artifact.relative_path)
+            # Agent-provided artifact names must never write outside the episode directory.
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError(f"Agent artifact path must stay within the episode directory: {artifact.relative_path!r}")
             target = (self.episode_dir / relative).resolve()
+            # Resolution catches agent artifact paths redirected through a symlink.
             if not target.is_relative_to(root):
                 raise ValueError(f"Agent artifact path escapes the episode directory: {artifact.relative_path!r}")
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
+                # Reused image paths are cache identities and cannot change bytes between requests.
                 if target.read_bytes() != artifact.content:
                     raise RuntimeError(f"Agent artifact content changed for existing path: {artifact.relative_path}")
                 continue
@@ -100,8 +103,6 @@ class EpisodeLogger:
         }
         if self.config.logging.save_video:
             try:
-                if terminal_observation is None:
-                    raise ValueError("Review video requires a terminal public observation")
                 video_artifact = ReviewVideoRenderer(
                     self.config,
                     self.episode_dir,
@@ -239,6 +240,7 @@ class EpisodeLogger:
         path = self.run_dir / "run_manifest.json"
         serialized = json.dumps(to_jsonable(manifest), indent=2, sort_keys=True) + "\n"
         if path.exists():
+            # Episodes sharing a run directory must not publish conflicting run metadata.
             if path.read_text(encoding="utf-8") != serialized:
                 raise RuntimeError("Run manifest changed between episodes")
             return
@@ -279,7 +281,11 @@ def make_experiment_group(config: BenchmarkConfig) -> str | None:
         parts.append(f"mapping-{config.control_interface.mapping_strategy}")
     if config.control_interface.frame_transform != "identity":
         parts.append(f"frame-{config.control_interface.frame_transform}")
-    return "__".join(_path_slug(part) for part in parts)
+    slugs = [
+        re.sub(r"[^A-Za-z0-9._-]+", "-", str(part)).strip("-") or "unknown"
+        for part in parts
+    ]
+    return "__".join(slugs)
 
 
 def _configured_prompt_version(config: BenchmarkConfig) -> str:
@@ -287,8 +293,3 @@ def _configured_prompt_version(config: BenchmarkConfig) -> str:
     if model is not None and model.api == "responses":
         return RESPONSES_PROMPT_VERSION
     return CHAT_PROMPT_VERSION
-
-
-def _path_slug(value: object) -> str:
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-")
-    return slug or "unknown"

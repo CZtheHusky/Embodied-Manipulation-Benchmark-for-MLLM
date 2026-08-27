@@ -6,12 +6,6 @@ import random
 from typing import Any
 
 
-def _require(data: dict[str, Any], key: str) -> Any:
-    if key not in data:
-        raise ValueError(f"Missing required config field: {key}")
-    return data[key]
-
-
 @dataclass(frozen=True)
 class BenchmarkSection:
     name: str
@@ -20,10 +14,11 @@ class BenchmarkSection:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BenchmarkSection":
-        num_episodes = int(_require(data, "num_episodes"))
-        if num_episodes <= 0:
-            raise ValueError("benchmark.num_episodes must be positive")
-        return cls(name=str(_require(data, "name")), num_episodes=num_episodes, seed=int(_require(data, "seed")))
+        return cls(
+            name=str(data["name"]),
+            num_episodes=int(data["num_episodes"]),
+            seed=int(data["seed"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -44,10 +39,8 @@ class SimulatorConfig:
         bounds = data.get("workspace_bounds", {})
         low = tuple(float(v) for v in bounds.get("low", (-1.0, -1.0, 0.0)))
         high = tuple(float(v) for v in bounds.get("high", (1.0, 1.0, 1.0)))
-        if len(low) != 3 or len(high) != 3:
-            raise ValueError("simulator.workspace_bounds low/high must be 3D")
         return cls(
-            type=str(_require(data, "type")),
+            type=str(data["type"]),
             control_dt=float(data.get("control_dt", 0.1)),
             workspace_low=low,
             workspace_high=high,
@@ -74,12 +67,10 @@ class TaskConfig:
     def from_dict(cls, data: dict[str, Any]) -> "TaskConfig":
         target = tuple(float(v) for v in data.get("target_position", (0.0, 0.0, 0.0)))
         initial = tuple(float(v) for v in data.get("initial_ee_position", (0.0, 0.0, 0.0)))
-        if len(target) != 3 or len(initial) != 3:
-            raise ValueError("task target_position and initial_ee_position must be 3D")
         return cls(
-            type=str(_require(data, "type")),
-            max_steps=int(_require(data, "max_steps")),
-            success_threshold=float(_require(data, "success_threshold")),
+            type=str(data["type"]),
+            max_steps=int(data["max_steps"]),
+            success_threshold=float(data["success_threshold"]),
             target_position=target,
             initial_ee_position=initial,
             goal_hold_steps=int(data.get("goal_hold_steps", 1)),
@@ -99,7 +90,7 @@ class CameraSpec:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CameraSpec":
         return cls(
-            name=str(_require(data, "name")),
+            name=str(data["name"]),
             type=str(data.get("type", "dummy_rgb")),
             width=int(data.get("width", 512)),
             height=int(data.get("height", 512)),
@@ -117,13 +108,10 @@ class CameraConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CameraConfig":
-        cameras = tuple(CameraSpec.from_dict(item) for item in _require(data, "cameras"))
-        if not cameras:
-            raise ValueError("camera.cameras must contain at least one camera")
         return cls(
             manager=str(data.get("manager", "fixed")),
             visible_metadata=bool(data.get("visible_metadata", True)),
-            cameras=cameras,
+            cameras=tuple(CameraSpec.from_dict(item) for item in data["cameras"]),
             params=dict(data.get("params", {})),
         )
 
@@ -138,15 +126,11 @@ class ChannelConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ChannelConfig":
         return cls(
-            kind=str(_require(data, "kind")),
+            kind=str(data["kind"]),
             values=tuple(float(v) for v in data.get("values", ())),
             minimum=float(data["min"]) if "min" in data else None,
             maximum=float(data["max"]) if "max" in data else None,
         )
-
-
-CONTROL_INTERFACE_DIMS = ("dx", "dy", "dz", "droll", "dpitch", "dyaw")
-GRIPPER_DIMS = ("gripper",)
 
 
 @dataclass(frozen=True)
@@ -182,82 +166,12 @@ class ControlInterfaceConfig:
             if raw_description is None:
                 continue
             description = str(raw_description).strip()
-            if not description:
-                raise ValueError(
-                    f"control_interface.{field_name} must not be blank"
-                )
             object.__setattr__(self, field_name, description)
-
-        commands = {
-            name: value
-            for name, value in (
-                ("gripper_open_command", self.gripper_open_command),
-                ("gripper_closed_command", self.gripper_closed_command),
-                ("gripper_hold_command", self.gripper_hold_command),
-                ("gripper_neutral_command", self.gripper_neutral_command),
-            )
-            if value is not None
-        }
-        if commands and self.gripper == "none":
-            raise ValueError(
-                "control_interface gripper commands require a virtual gripper channel"
-            )
-        allowed_values = None
-        if self.gripper == "binary":
-            allowed_values = (0.0, 1.0)
-        elif self.gripper == "ternary":
-            allowed_values = (0.0, 0.5, 1.0)
-        for name, value in commands.items():
-            if allowed_values is not None:
-                if value not in allowed_values:
-                    raise ValueError(
-                        f"control_interface.{name} must be one of {allowed_values}"
-                    )
-            elif not 0.0 <= value <= 1.0:
-                raise ValueError(
-                    f"control_interface.{name} must be within the virtual "
-                    "gripper schema [0, 1]"
-                )
-        if (
-            self.gripper_open_command is not None
-            and self.gripper_closed_command is not None
-            and self.gripper_open_command == self.gripper_closed_command
-        ):
-            raise ValueError(
-                "control_interface gripper open and closed commands must differ"
-            )
-        if (
-            self.gripper_hold_command is not None
-            and self.gripper_neutral_command is not None
-        ):
-            raise ValueError(
-                "control_interface gripper hold and neutral commands are mutually exclusive"
-            )
-        if self.gripper == "ternary" and (
-            self.gripper_open_command is None
-            or self.gripper_closed_command is None
-            or (
-                self.gripper_hold_command is None
-                and self.gripper_neutral_command is None
-            )
-        ):
-            raise ValueError(
-                "control_interface ternary gripper requires open, closed, and "
-                "hold or neutral commands"
-            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlInterfaceConfig":
-        active_dimensions = tuple(str(v) for v in _require(data, "active_dimensions"))
-        for dim in active_dimensions:
-            if dim not in CONTROL_INTERFACE_DIMS:
-                raise ValueError(f"Unsupported control_interface active dimension: {dim}")
+        active_dimensions = tuple(str(v) for v in data["active_dimensions"])
         gripper = str(data.get("gripper", "none"))
-        if gripper not in {"none", "direct", "binary", "effort", "ternary"}:
-            raise ValueError(
-                "control_interface.gripper must be one of: none, direct, binary, "
-                "effort, ternary"
-            )
         channel_kind = str(data.get("channel_kind", "discrete"))
         return cls(
             mode=str(data.get("mode", "eef_delta_pose")),
@@ -324,6 +238,14 @@ class ControlInterfaceConfig:
 
     def to_action_space_config(self) -> "ActionSpaceConfig":
         channels: dict[str, ChannelConfig] = {}
+        motion_channel = {
+            "discrete": ChannelConfig(kind="discrete", values=self.channel_values),
+            "continuous": ChannelConfig(
+                kind="continuous",
+                minimum=self.channel_minimum,
+                maximum=self.channel_maximum,
+            ),
+        }[self.channel_kind]
         for name, dim in zip(self.channel_names(), self.control_dimensions(), strict=True):
             if dim == "gripper" and self.gripper in {"direct", "effort"}:
                 channels[name] = ChannelConfig(kind="continuous", minimum=0.0, maximum=1.0)
@@ -343,21 +265,21 @@ class ControlInterfaceConfig:
                         float(self.gripper_closed_command),
                     ),
                 )
-            elif self.channel_kind == "discrete":
-                channels[name] = ChannelConfig(kind="discrete", values=self.channel_values)
-            elif self.channel_kind == "continuous":
-                channels[name] = ChannelConfig(kind="continuous", minimum=self.channel_minimum, maximum=self.channel_maximum)
             else:
-                raise ValueError(f"Unsupported control_interface.channel_kind: {self.channel_kind}")
+                channels[name] = motion_channel
         return ActionSpaceConfig(type="joystick", channels=channels)
 
     def to_mapping_config(self, seed: int | None = None) -> "MappingConfig":
-        if self.mapping_strategy not in {"fixed", "permuted", "sign_flipped", "permuted_sign_flipped"}:
-            raise ValueError(f"Unsupported control_interface.mapping_strategy: {self.mapping_strategy}")
+        permuted, sign_flipped = {
+            "fixed": (False, False),
+            "permuted": (True, False),
+            "sign_flipped": (False, True),
+            "permuted_sign_flipped": (True, True),
+        }[self.mapping_strategy]
         motion_channels = list(self.channel_names()[: len(self.active_dimensions)])
         motion_dims = list(self.active_dimensions)
         rng = random.Random(seed if seed is not None else 0)
-        if self.mapping_strategy in {"permuted", "permuted_sign_flipped"}:
+        if permuted:
             rng.shuffle(motion_dims)
             if (
                 self.mapping_strategy == "permuted_sign_flipped"
@@ -367,7 +289,7 @@ class ControlInterfaceConfig:
                 motion_dims[0], motion_dims[1] = motion_dims[1], motion_dims[0]
         channels = dict(zip(motion_channels, motion_dims, strict=True))
         signs = {channel: 1.0 for channel in motion_channels}
-        if self.mapping_strategy in {"sign_flipped", "permuted_sign_flipped"}:
+        if sign_flipped:
             signs = {channel: float(rng.choice((-1.0, 1.0))) for channel in motion_channels}
             if (
                 self.mapping_strategy == "permuted_sign_flipped"
@@ -438,7 +360,10 @@ class ActionSpaceConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ActionSpaceConfig":
-        channels = {name: ChannelConfig.from_dict(value) for name, value in _require(data, "channels").items()}
+        channels = {
+            name: ChannelConfig.from_dict(value)
+            for name, value in data["channels"].items()
+        }
         return cls(type=str(data.get("type", "joystick")), channels=channels)
 
 
@@ -454,7 +379,7 @@ class MappingConfig:
         return cls(
             type=str(data.get("type", "fixed")),
             visible_to_agent=bool(data.get("visible_to_agent", True)),
-            channels=dict(_require(data, "channels")),
+            channels=dict(data["channels"]),
             signs={str(k): float(v) for k, v in data.get("signs", {}).items()},
         )
 
@@ -469,7 +394,7 @@ class ControllerConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControllerConfig":
         return cls(
-            type=str(_require(data, "type")),
+            type=str(data["type"]),
             frame=str(data.get("frame", "base")),
             scales={k: float(v) for k, v in data.get("scales", {}).items()},
             params=dict(data.get("params", {})),
@@ -516,6 +441,7 @@ class ModelConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ModelConfig":
         values = dict(data or {})
+        # EpisodeLogger snapshots raw config values, so accepting this field would persist the secret.
         if "api_key" in values:
             raise ValueError("agent.model.api_key is forbidden; use agent.model.api_key_env")
         timeout_seconds = float(values.get("timeout_seconds", 60.0))
@@ -529,28 +455,6 @@ class ModelConfig:
         reasoning_effort = (
             str(reasoning_effort_value) if reasoning_effort_value is not None else None
         )
-        if timeout_seconds <= 0:
-            raise ValueError("agent.model.timeout_seconds must be positive")
-        if max_retries < 0:
-            raise ValueError("agent.model.max_retries must be non-negative")
-        if retry_backoff_seconds < 0:
-            raise ValueError("agent.model.retry_backoff_seconds must be non-negative")
-        if retry_backoff_max_seconds < retry_backoff_seconds:
-            raise ValueError(
-                "agent.model.retry_backoff_max_seconds must be greater than or equal to "
-                "retry_backoff_seconds"
-            )
-        if max_output_tokens <= 0:
-            raise ValueError("agent.model.max_output_tokens must be positive")
-        if response_format not in {"json_object", "none"}:
-            raise ValueError("agent.model.response_format must be one of: json_object, none")
-        if api not in {"chat_completions", "responses"}:
-            raise ValueError("agent.model.api must be one of: chat_completions, responses")
-        if reasoning_effort not in {None, "none", "low", "medium", "high", "xhigh", "max"}:
-            raise ValueError(
-                "agent.model.reasoning_effort must be one of: "
-                "none, low, medium, high, xhigh, max"
-            )
         name = values.get("name")
         base_url = values.get("base_url")
         prompt_cache_key = values.get("prompt_cache_key")
@@ -585,27 +489,13 @@ class AgentObservationConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "AgentObservationConfig":
         values = dict(data or {})
-        image_max_side = int(values.get("image_max_side", 512))
-        if image_max_side <= 0:
-            raise ValueError("agent.observation.image_max_side must be positive")
         return cls(
             cameras=tuple(str(name) for name in values.get("cameras", ())),
-            image_max_side=image_max_side,
+            image_max_side=int(values.get("image_max_side", 512)),
         )
 
 
 HistoryWindow = int | str
-
-
-def _history_window(value: Any, field_name: str, default: HistoryWindow) -> HistoryWindow:
-    parsed = default if value is None else value
-    if isinstance(parsed, str):
-        if parsed != "all":
-            raise ValueError(f"{field_name} must be a non-negative integer or 'all'")
-        return parsed
-    if not isinstance(parsed, int) or isinstance(parsed, bool) or parsed < 0:
-        raise ValueError(f"{field_name} must be a non-negative integer or 'all'")
-    return parsed
 
 
 @dataclass(frozen=True)
@@ -618,17 +508,11 @@ class AgentHistoryConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "AgentHistoryConfig":
         values = dict(data or {})
-        max_images = int(values.get("max_images_per_request", 128))
-        max_request_bytes = int(values.get("max_request_bytes", 67_108_864))
-        if max_images <= 0:
-            raise ValueError("agent.history.max_images_per_request must be positive")
-        if max_request_bytes <= 0:
-            raise ValueError("agent.history.max_request_bytes must be positive")
         return cls(
-            action_window=_history_window(values.get("action_window"), "agent.history.action_window", "all"),
-            image_window=_history_window(values.get("image_window"), "agent.history.image_window", 2),
-            max_images_per_request=max_images,
-            max_request_bytes=max_request_bytes,
+            action_window=values.get("action_window", "all"),
+            image_window=values.get("image_window", 2),
+            max_images_per_request=int(values.get("max_images_per_request", 128)),
+            max_request_bytes=int(values.get("max_request_bytes", 67_108_864)),
         )
 
 
@@ -644,31 +528,18 @@ class AgentConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AgentConfig":
-        agent_type = str(_require(data, "type"))
+        agent_type = str(data["type"])
         invalid_action_recovery = str(data.get("invalid_action_recovery", "noop"))
         history_window = int(data.get("history_window", 5))
+        # The removed field would otherwise be ignored and silently select the default API backend.
         if "action_output_mode" in data:
             raise ValueError(
                 "agent.action_output_mode has been removed; select the backend with "
                 "agent.model.api. Both chat_completions and responses accept optional "
                 "Reflection."
             )
-        if invalid_action_recovery != "noop":
-            raise ValueError("agent.invalid_action_recovery currently supports only: noop")
-        if history_window < 0:
-            raise ValueError("agent.history_window must be non-negative")
         model = ModelConfig.from_dict(data.get("model")) if agent_type == "mllm" else None
         history = AgentHistoryConfig.from_dict(data.get("history"))
-        if model is not None and model.api == "responses":
-            if history.action_window != "all" or history.image_window != "all":
-                raise ValueError(
-                    "agent.model.api=responses retains the full provider-side conversation "
-                    "and requires agent.history.action_window=all and image_window=all"
-                )
-        if model is not None and model.response_format != "json_object":
-            raise ValueError(
-                "MLLM backends require agent.model.response_format=json_object"
-            )
         return cls(
             type=agent_type,
             invalid_action_recovery=invalid_action_recovery,
@@ -692,12 +563,6 @@ class VideoConfig:
         fps = int(values.get("fps", 2))
         step_hold_seconds = float(values.get("step_hold_seconds", 1.0))
         terminal_hold_seconds = float(values.get("terminal_hold_seconds", 2.0))
-        if fps <= 0:
-            raise ValueError("logging.video.fps must be positive")
-        if step_hold_seconds <= 0:
-            raise ValueError("logging.video.step_hold_seconds must be positive")
-        if terminal_hold_seconds <= 0:
-            raise ValueError("logging.video.terminal_hold_seconds must be positive")
         return cls(
             fps=fps,
             step_hold_seconds=step_hold_seconds,
@@ -719,12 +584,13 @@ class LoggingConfig:
     def from_dict(cls, data: dict[str, Any]) -> "LoggingConfig":
         save_video = bool(data.get("save_video", False))
         video = VideoConfig.from_dict(data.get("video"))
+        # Without an MP4 there is no debug artifact to label, so this combination is invalid.
         if video.include_evaluator_debug and not save_video:
             raise ValueError(
                 "logging.video.include_evaluator_debug=true requires logging.save_video=true"
             )
         return cls(
-            output_dir=Path(str(_require(data, "output_dir"))),
+            output_dir=Path(str(data["output_dir"])),
             save_images=bool(data.get("save_images", True)),
             save_video=save_video,
             save_trajectory=bool(data.get("save_trajectory", True)),
@@ -800,37 +666,26 @@ class BenchmarkConfig:
         data: dict[str, Any],
         source_path: str | None = None,
     ) -> "BenchmarkConfig":
-        control_interface_data = _require(data, "control_interface")
-        if not isinstance(control_interface_data, dict):
-            raise ValueError("control_interface must be a YAML mapping")
+        control_interface_data = data["control_interface"]
         control_interface = ControlInterfaceConfig.from_dict(control_interface_data)
         action_space = control_interface.to_action_space_config()
         mapping = control_interface.to_mapping_config()
-        agent = AgentConfig.from_dict(_require(data, "agent"))
-        logging = LoggingConfig.from_dict(_require(data, "logging"))
+        agent = AgentConfig.from_dict(data["agent"])
+        logging = LoggingConfig.from_dict(data["logging"])
+        # ReviewVideoRenderer consumes model artifacts that human agents never produce.
         if logging.save_video and agent.type != "mllm":
             raise ValueError("logging.save_video currently supports only agent.type=mllm")
-        benchmark = BenchmarkSection.from_dict(_require(data, "benchmark"))
-        task = TaskConfig.from_dict(_require(data, "task"))
-        camera = CameraConfig.from_dict(_require(data, "camera"))
-        if agent.model is not None and agent.model.api == "responses":
-            max_retained_images = task.max_steps * (len(agent.observation.cameras) + 1)
-            if agent.history.max_images_per_request < max_retained_images:
-                raise ValueError(
-                    "agent.history.max_images_per_request must be at least "
-                    f"{max_retained_images} for responses full history across "
-                    f"task.max_steps={task.max_steps}, "
-                    f"{len(agent.observation.cameras)} configured camera(s), and "
-                    "a persistent magnifier"
-                )
+        benchmark = BenchmarkSection.from_dict(data["benchmark"])
+        task = TaskConfig.from_dict(data["task"])
+        camera = CameraConfig.from_dict(data["camera"])
         return cls(
             benchmark=benchmark,
-            simulator=SimulatorConfig.from_dict(_require(data, "simulator")),
+            simulator=SimulatorConfig.from_dict(data["simulator"]),
             task=task,
             camera=camera,
             action_space=action_space,
             mapping=mapping,
-            controller=ControllerConfig.from_dict(_require(data, "controller")),
+            controller=ControllerConfig.from_dict(data["controller"]),
             frame_transform=FrameTransformConfig.from_dict(
                 {
                     "type": control_interface.frame_transform,

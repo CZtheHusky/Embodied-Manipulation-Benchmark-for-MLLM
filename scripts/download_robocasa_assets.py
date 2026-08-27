@@ -45,9 +45,6 @@ def download_assets(
     assets_root: Path,
     download_fn: Callable[..., str] | None = None,
 ) -> None:
-    unknown = sorted(set(selected) - set(ASSET_ARCHIVES))
-    if unknown:
-        raise ValueError(f"Unknown RoboCasa asset groups: {unknown}")
     if download_fn is None:
         from huggingface_hub import hf_hub_download
 
@@ -128,17 +125,21 @@ def _load_previous_archives(
 ) -> Mapping[str, object]:
     if not marker_path.is_file():
         return {}
+    # Asset roots persist across installer versions; following a marker symlink can read ownership from another tree.
     if marker_path.is_symlink():
         raise ValueError(
             f"RoboCasa asset marker is a symbolic link: {marker_path}"
         )
+    # Existing roots may carry a legacy marker, but its ownership table must remain a mapping.
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
     archives = marker.get("archives") if isinstance(marker, Mapping) else None
+    # Transactional replacement requires a filename-to-ownership mapping.
     if not isinstance(archives, Mapping):
         raise ValueError(
             f"Invalid RoboCasa asset marker: {marker_path}"
         )
     schema_version = marker.get("schema_version")
+    # Unknown marker semantics could merge files owned by an incompatible installer.
     if schema_version not in {None, MARKER_SCHEMA_VERSION}:
         raise ValueError(
             f"Unsupported RoboCasa asset marker schema: {schema_version}"
@@ -148,18 +149,21 @@ def _load_previous_archives(
         ("revision", HF_REVISION),
     ):
         actual = marker.get(field)
+        # Reusing ownership data from another source silently mixes asset revisions.
         if actual is not None and actual != expected:
             raise ValueError(
                 f"RoboCasa asset marker {field} mismatch: {actual}"
             )
     if schema_version == MARKER_SCHEMA_VERSION:
         for filename, record in archives.items():
+            # Current marker records are the ownership contract consumed by transactional replacement.
             if not isinstance(filename, str) or not isinstance(
                 record, Mapping
             ):
                 raise ValueError(
                     f"Invalid RoboCasa archive record: {filename}"
                 )
+            # Missing ownership leaves stale archive files in place after replacement.
             if "files" not in record:
                 raise ValueError(
                     "RoboCasa archive record lacks a file manifest: "
@@ -176,6 +180,7 @@ def _require_manifests_for_preserved_archives(
     for filename, record in archives.items():
         if filename in selected_filenames:
             continue
+        # Preserved records come from legacy markers and require explicit file ownership.
         if not isinstance(record, Mapping) or "files" not in record:
             raise ValueError(
                 "Legacy RoboCasa marker cannot preserve an unselected "
@@ -188,11 +193,13 @@ def _previous_files(
     filename: str,
 ) -> tuple[str, ...]:
     record = archives.get(filename)
+    # Legacy markers can omit an archive record; current mappings carry an optional file list.
     if not isinstance(record, Mapping):
         return ()
     if "files" not in record:
         return ()
     files = record["files"]
+    # Transactional cleanup consumes these values as relative paths, not arbitrary JSON.
     if not isinstance(files, list) or not all(
         isinstance(value, str) for value in files
     ):

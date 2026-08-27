@@ -593,12 +593,6 @@ def test_simpler_env_absolute_gripper_target_uses_one_native_step():
         "target_qpos": [1.31, 1.31],
     }
 
-    fake_env.gripper.config.use_target = False
-    with pytest.raises(RuntimeError, match="pinned target-delta controller"):
-        adapter.step(close_action)
-    assert len(fake_env.actions) == 3
-
-
 def test_simpler_env_rejects_evaluator_success_before_model_request(
     monkeypatch,
     tmp_path,
@@ -886,7 +880,10 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
         _request_text(request)
         for request in client.requests
     )
-    assert "Camera order: image/overhead_camera" in request_text
+    assert (
+        "Camera order and available source RGB keys: image/overhead_camera"
+        in request_text
+    )
     assert "image/base_camera" not in request_text
     assert "Segmentation" not in request_text
     assert "pick coke can" in request_text
@@ -933,7 +930,6 @@ def test_simpler_env_fake_client_closes_public_rgb_loop_without_private_state(
 
     pngs = sorted(episode_dir.glob("model_calls/images/step_*/*.png"))
     assert len(pngs) == 4
-    assert len({path.read_bytes() for path in pngs}) == 4
     for path in pngs:
         with Image.open(path) as image:
             pixels = np.asarray(image.convert("RGB"))

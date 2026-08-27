@@ -10,13 +10,9 @@ def maniskill_sensor_config(cameras: tuple[CameraSpec, ...], sampled_pose_config
     pose_config = sampled_pose_config or {}
     for camera in cameras:
         params = dict(camera.params)
-        source = str(params.pop("source", "sensor"))
+        source = params.pop("source", "sensor")
         if source == "human_render":
             continue
-        if source != "sensor":
-            raise ValueError(
-                f"Unsupported ManiSkill camera source for {camera.name}: {source}"
-            )
         entry = {
             "width": int(camera.width),
             "height": int(camera.height),

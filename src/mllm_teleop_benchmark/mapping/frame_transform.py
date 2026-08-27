@@ -29,15 +29,13 @@ class IdentityControlFrameTransform(ControlFrameTransform):
 
     @classmethod
     def from_config(cls, config: FrameTransformConfig) -> "IdentityControlFrameTransform":
-        if config.type != "identity":
-            raise ValueError(f"Unsupported frame transform type: {config.type}")
         return cls(config.visible_to_agent)
 
     def transform_delta_position(self, delta_position: tuple[float, float, float]) -> tuple[float, float, float]:
-        return tuple(float(v) for v in delta_position)  # type: ignore[return-value]
+        return delta_position
 
     def transform_delta_rotation(self, delta_rotation_rpy: tuple[float, float, float]) -> tuple[float, float, float]:
-        return tuple(float(v) for v in delta_rotation_rpy)  # type: ignore[return-value]
+        return delta_rotation_rpy
 
     def metadata(self) -> dict[str, object]:
         return {"type": "identity", "visible_to_agent": self.visible_to_agent}
@@ -69,26 +67,24 @@ class RotationControlFrameTransform(ControlFrameTransform):
         if config.type == "rotation_3d":
             roll, pitch, yaw = _rpy_from_params(config.params, (0.0, 0.0, 0.0))
             return cls(_rotation_rpy(roll, pitch, yaw), config.type, config.visible_to_agent, {"rpy_radians": (roll, pitch, yaw)})
-        if config.type == "random_rotation_3d":
-            sampling = str(config.params.get("sampling", "uniform_so3"))
-            if sampling == "uniform_so3":
-                matrix, quat = _uniform_so3(rng)
-                return cls(matrix, config.type, config.visible_to_agent, {"sampling": "uniform_so3", "quaternion_xyzw": quat})
-            if sampling == "euler_ranges":
-                roll_range = _range_from_params(config.params, "roll_range", (0.0, 0.0))
-                pitch_range = _range_from_params(config.params, "pitch_range", (0.0, 0.0))
-                yaw_range = _range_from_params(config.params, "yaw_range", (-math.pi, math.pi))
-                roll = rng.uniform(*roll_range)
-                pitch = rng.uniform(*pitch_range)
-                yaw = rng.uniform(*yaw_range)
-                return cls(
-                    _rotation_rpy(roll, pitch, yaw),
-                    config.type,
-                    config.visible_to_agent,
-                    {"sampling": "euler_ranges", "rpy_radians": (roll, pitch, yaw), "roll_range_radians": roll_range, "pitch_range_radians": pitch_range, "yaw_range_radians": yaw_range},
-                )
-            raise ValueError(f"Unsupported random_rotation_3d sampling mode: {sampling}")
-        raise ValueError(f"Unsupported rotation frame transform type: {config.type}")
+        sampling = str(config.params.get("sampling", "uniform_so3"))
+        if sampling == "uniform_so3":
+            matrix, quat = _uniform_so3(rng)
+            return cls(matrix, config.type, config.visible_to_agent, {"sampling": "uniform_so3", "quaternion_xyzw": quat})
+        if sampling == "euler_ranges":
+            roll_range = _range_from_params(config.params, "roll_range", (0.0, 0.0))
+            pitch_range = _range_from_params(config.params, "pitch_range", (0.0, 0.0))
+            yaw_range = _range_from_params(config.params, "yaw_range", (-math.pi, math.pi))
+            roll = rng.uniform(*roll_range)
+            pitch = rng.uniform(*pitch_range)
+            yaw = rng.uniform(*yaw_range)
+            return cls(
+                _rotation_rpy(roll, pitch, yaw),
+                config.type,
+                config.visible_to_agent,
+                {"sampling": "euler_ranges", "rpy_radians": (roll, pitch, yaw), "roll_range_radians": roll_range, "pitch_range_radians": pitch_range, "yaw_range_radians": yaw_range},
+            )
+        raise ValueError(f"Unsupported random_rotation_3d sampling mode: {sampling}")
 
     def transform_delta_position(self, delta_position: tuple[float, float, float]) -> tuple[float, float, float]:
         return _matvec(self.rotation_matrix, delta_position)
@@ -119,26 +115,24 @@ def _range_from_params(params: dict[str, object], name: str, default: tuple[floa
     degrees_key = f"{name}_degrees"
     radians_key = f"{name}_radians"
     if radians_key in params:
-        values = tuple(float(v) for v in params[radians_key])  # type: ignore[arg-type]
+        values = (float(v) for v in params[radians_key])
     elif degrees_key in params:
-        values = tuple(math.radians(float(v)) for v in params[degrees_key])  # type: ignore[arg-type]
+        values = (math.radians(float(v)) for v in params[degrees_key])
     else:
-        values = default
-    if len(values) != 2:
-        raise ValueError(f"{name} must contain two values")
-    return values  # type: ignore[return-value]
+        return default
+    low, high = values
+    return low, high
 
 
 def _rpy_from_params(params: dict[str, object], default: tuple[float, float, float]) -> tuple[float, float, float]:
     if "rpy_radians" in params:
-        values = tuple(float(v) for v in params["rpy_radians"])  # type: ignore[arg-type]
+        values = (float(v) for v in params["rpy_radians"])
     elif "rpy_degrees" in params:
-        values = tuple(math.radians(float(v)) for v in params["rpy_degrees"])  # type: ignore[arg-type]
+        values = (math.radians(float(v)) for v in params["rpy_degrees"])
     else:
-        values = default
-    if len(values) != 3:
-        raise ValueError("rpy must contain three values")
-    return values  # type: ignore[return-value]
+        return default
+    roll, pitch, yaw = values
+    return roll, pitch, yaw
 
 
 def _rotation_z(angle: float) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
@@ -178,4 +172,8 @@ def _rotation_quaternion_xyzw(x: float, y: float, z: float, w: float) -> tuple[t
 
 
 def _matvec(matrix: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]], vector: tuple[float, float, float]) -> tuple[float, float, float]:
-    return tuple(float(sum(row[idx] * vector[idx] for idx in range(3))) for row in matrix)  # type: ignore[return-value]
+    return (
+        float(sum(matrix[0][idx] * vector[idx] for idx in range(3))),
+        float(sum(matrix[1][idx] * vector[idx] for idx in range(3))),
+        float(sum(matrix[2][idx] * vector[idx] for idx in range(3))),
+    )

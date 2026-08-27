@@ -177,7 +177,7 @@ def test_reflection_model_output_rejects_non_string_reflection():
 
 
 def test_model_output_requires_explicit_channels_wrapper():
-    with pytest.raises(ActionParseError, match="top-level 'channels'"):
+    with pytest.raises(ActionParseError, match="channels must be a mapping"):
         ActionParser().parse_model_output(
             {f"joystick_{idx}": 0 for idx in range(7)},
         )

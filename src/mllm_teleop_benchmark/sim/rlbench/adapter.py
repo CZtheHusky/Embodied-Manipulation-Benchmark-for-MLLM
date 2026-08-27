@@ -20,8 +20,6 @@ class RLBenchSimAdapter(SimAdapter):
     simulator_type = "rlbench"
 
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != self.simulator_type:
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.task_class_name = str(config.env_id or config.params.get("task_class", "ReachTarget"))
         self.headless = bool(config.params.get("headless", True))
@@ -40,15 +38,15 @@ class RLBenchSimAdapter(SimAdapter):
         self._runtime_lock = CoppeliaSimRuntimeLock(self.simulator_type)
 
     def set_camera_configuration(self, camera_specs: tuple[CameraSpec, ...]) -> None:
-        if self.env is not None:
-            raise RuntimeError("RLBench camera configuration must be set before the environment is launched")
+        # ObservationProvider configures cameras before task.reset launches RLBench.
+        assert self.env is None
         self._camera_specs = tuple(camera_specs)
 
     def reset(self, task_config: TaskConfig, seed: int) -> Observation:
         numpy_random_state = np.random.get_state()
         try:
             np.random.seed(seed)
-            self._ensure_task(task_config)
+            self._ensure_task()
             self.step_id = 0
             self.last_reward = None
             self.last_terminate = False
@@ -66,9 +64,7 @@ class RLBenchSimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, RLBenchAction):
-            raise TypeError(f"RLBenchSimAdapter requires RLBenchAction, got {type(action).__name__}")
-        self._ensure_task(None)
+        self._ensure_task()
         native_action = self._native_action(action)
         try:
             obs, reward, terminate = self.task.step(native_action)
@@ -101,15 +97,7 @@ class RLBenchSimAdapter(SimAdapter):
         )
 
     def render(self, camera: CameraSpec) -> Any:
-        if self.last_native_obs is None:
-            raise RuntimeError("RLBench render requested before reset")
-        frame = self._extract_rgb(self.last_native_obs, camera.name)
-        if frame is None:
-            raise RuntimeError(
-                f"RLBench observation does not contain RGB camera '{camera.name}'. "
-                "Use one of front, wrist, left_shoulder, right_shoulder, or overhead in the config."
-            )
-        return frame
+        return self._extract_rgb(self.last_native_obs, camera.name)
 
     def get_state(self) -> dict[str, Any]:
         state: dict[str, Any] = {
@@ -145,8 +133,8 @@ class RLBenchSimAdapter(SimAdapter):
             self._runtime_lock.release()
 
     def _launch_environment(self, task_class: type[Any]) -> None:
-        if self.env is None:
-            raise RuntimeError("Cannot launch CoppeliaSim without an environment")
+        # _ensure_task constructs the environment immediately before launch.
+        assert self.env is not None
         try:
             self._runtime_lock.acquire()
             self.env.launch()
@@ -158,7 +146,7 @@ class RLBenchSimAdapter(SimAdapter):
                 pass
             raise
 
-    def _ensure_task(self, task_config: TaskConfig | None) -> None:
+    def _ensure_task(self) -> None:
         if self.task is not None:
             return
         try:
@@ -173,7 +161,13 @@ class RLBenchSimAdapter(SimAdapter):
                 "and DISPLAY/headless settings before using simulator.type=rlbench."
             ) from exc
 
-        task_class = self._resolve_task_class()
+        aliases = {
+            "ReachTarget": "rlbench.tasks.reach_target:ReachTarget",
+            "reach_target": "rlbench.tasks.reach_target:ReachTarget",
+        }
+        target = aliases.get(self.task_class_name, self.task_class_name)
+        module_name, class_name = target.split(":", 1)
+        task_class = getattr(importlib.import_module(module_name), class_name)
         self._invalid_action_error_type = invalid_action_error_type
         action_mode = self._action_mode()
         obs_config = self._observation_config()
@@ -215,21 +209,6 @@ class RLBenchSimAdapter(SimAdapter):
                 gripper=GripperActionMode.OPEN_AMOUNT,
             )
 
-    def _resolve_task_class(self) -> type[Any]:
-        aliases = {
-            "ReachTarget": "rlbench.tasks.reach_target:ReachTarget",
-            "reach_target": "rlbench.tasks.reach_target:ReachTarget",
-        }
-        target = aliases.get(self.task_class_name, self.task_class_name)
-        if ":" not in target:
-            raise ValueError(
-                f"Unsupported RLBench task class: {self.task_class_name}. "
-                "The minimal backend supports ReachTarget or a full 'module:ClassName' path."
-            )
-        module_name, class_name = target.split(":", 1)
-        module = importlib.import_module(module_name)
-        return getattr(module, class_name)
-
     def _observation_config(self) -> Any:
         from rlbench.observation_config import ObservationConfig
 
@@ -260,40 +239,27 @@ class RLBenchSimAdapter(SimAdapter):
         return config
 
     def _sample_variation(self, seed: int) -> int | None:
-        if self.task is None:
-            return None
+        # reset() calls this only after _ensure_task has created the task.
+        assert self.task is not None
         variation = self.config.params.get("variation_index")
-        try:
-            if variation is not None and hasattr(self.task, "set_variation"):
-                self.task.set_variation(int(variation))
-                return int(variation)
-            if hasattr(self.task, "variation_count") and hasattr(
-                self.task, "set_variation"
-            ):
-                variation_count = int(self.task.variation_count())
-                if variation_count <= 0:
-                    raise RuntimeError(
-                        "RLBench task must expose at least one variation"
-                    )
-                sampled = int(seed) % variation_count
-                self.task.set_variation(sampled)
-                return sampled
-            if hasattr(self.task, "sample_variation"):
-                sampled = self.task.sample_variation()
-                return int(sampled) if sampled is not None else None
-        except Exception:
-            if variation is not None:
-                raise
-        return int(variation) if variation is not None else None
+        if variation is not None:
+            self.task.set_variation(int(variation))
+            return int(variation)
+        if hasattr(self.task, "variation_count") and hasattr(
+            self.task, "set_variation"
+        ):
+            variation_count = int(self.task.variation_count())
+            sampled = int(seed) % variation_count
+            self.task.set_variation(sampled)
+            return sampled
+        if hasattr(self.task, "sample_variation"):
+            sampled = self.task.sample_variation()
+            return int(sampled) if sampled is not None else None
+        return None
 
     def _native_task_success(self) -> tuple[bool, bool]:
         native_task = getattr(self.task, "_task", None)
         success = getattr(native_task, "success", None)
-        if not callable(success):
-            raise RuntimeError(
-                "Pinned RLBench TaskEnvironment does not expose its official "
-                "native Task.success() oracle"
-            )
         result = success()
         if not isinstance(result, tuple) or len(result) != 2:
             raise RuntimeError(
@@ -303,8 +269,6 @@ class RLBenchSimAdapter(SimAdapter):
 
     def _native_action(self, action: RLBenchAction) -> np.ndarray:
         pose = self._last_gripper_pose()
-        if pose is None:
-            raise RuntimeError("RLBench delta control requires obs.gripper_pose from reset before stepping")
         position = [
             clamp(float(pose[idx]) + float(action.delta_position[idx]), self.config.workspace_low[idx], self.config.workspace_high[idx])
             for idx in range(3)
@@ -418,6 +382,4 @@ def _quat_multiply(
 
 def _normalize_quat(quat: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
     norm = math.sqrt(sum(value * value for value in quat))
-    if norm <= 0.0:
-        raise ValueError("RLBench gripper_pose quaternion has zero norm")
     return tuple(float(value / norm) for value in quat)

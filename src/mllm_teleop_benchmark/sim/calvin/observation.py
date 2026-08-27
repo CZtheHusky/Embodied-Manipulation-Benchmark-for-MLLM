@@ -8,7 +8,6 @@ from mllm_teleop_benchmark.core.types import Observation
 from mllm_teleop_benchmark.observation.camera import CameraManager
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
-from mllm_teleop_benchmark.sim.calvin.adapter import CalvinSimAdapter
 
 
 class CalvinObservationProvider(ObservationProvider):
@@ -16,9 +15,6 @@ class CalvinObservationProvider(ObservationProvider):
         self.camera_manager = camera_manager
 
     def configure_sim(self, sim: SimAdapter) -> None:
-        if not isinstance(sim, CalvinSimAdapter):
-            raise TypeError(f"CalvinObservationProvider requires CalvinSimAdapter, got {type(sim).__name__}")
-
         camera_configs: dict[str, dict[str, Any]] = {}
         for camera in self.camera_manager.get_active_cameras():
             config = {
@@ -35,9 +31,6 @@ class CalvinObservationProvider(ObservationProvider):
         sim.set_camera_configuration(camera_configs)
 
     def get_observation(self, sim: SimAdapter) -> Observation:
-        if not isinstance(sim, CalvinSimAdapter):
-            raise TypeError(f"CalvinObservationProvider requires CalvinSimAdapter, got {type(sim).__name__}")
-
         state = sim.get_state()
         images = self._extract_images(sim.last_native_obs)
 
@@ -46,7 +39,7 @@ class CalvinObservationProvider(ObservationProvider):
                 images[camera.name] = sim.render(camera)
 
         return Observation(
-            step_id=int(state.get("step_id", 0)),
+            step_id=state.get("step_id", 0),
             images=images,
             state=state,
             metadata={"camera": self.camera_manager.metadata(), "simulator": "calvin"},

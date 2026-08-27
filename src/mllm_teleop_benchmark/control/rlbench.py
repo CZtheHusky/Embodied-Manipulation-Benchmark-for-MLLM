@@ -32,8 +32,6 @@ class RLBenchDeltaEEFController(Controller):
         frame_transform: ControlFrameTransform | None = None,
     ) -> "RLBenchDeltaEEFController":
         dimensions = tuple(str(v) for v in config.params.get("dimensions", ("dx", "dy", "dz", "droll", "dpitch", "dyaw")))
-        if not dimensions:
-            raise ValueError("rlbench_delta_eef controller requires at least one dimension")
         return cls(
             mapping=mapping,
             scales=config.scales,

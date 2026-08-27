@@ -22,5 +22,5 @@ class GymnasiumReacherTask(Task):
         distance = sim_state.get("distance_to_target", sim_state.get("goal_distance", float("inf")))
         return {
             "final_distance_to_target": float(distance),
-            "goal_hold_counter": int(sim_state.get("goal_hold_counter", 0)),
+            "goal_hold_counter": sim_state.get("goal_hold_counter", 0),
         }

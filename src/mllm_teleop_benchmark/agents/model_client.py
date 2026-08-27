@@ -7,7 +7,6 @@ import socket
 import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -144,9 +143,6 @@ class _OpenAIHTTPClient(ModelClient):
         sender: HttpSender | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        parsed = urlsplit(base_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username is not None:
-            raise ValueError("OpenAI-compatible base URL must be an absolute http(s) URL")
         self._endpoint = endpoint_builder(base_url)
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
@@ -199,6 +195,7 @@ class _OpenAIHTTPClient(ModelClient):
                     payload = decode_response(response_body)
                     text = _redact_text(response_text(payload), self._api_key)
                     request_id = _optional_string(payload.get("id"))
+                    # Responses continuation silently loses its provider context without this id.
                     if require_response_id and not request_id:
                         raise ModelClientError(
                             "Responses endpoint did not return a response id",
@@ -283,8 +280,6 @@ class OpenAICompatibleClient(_OpenAIHTTPClient):
         )
 
     def complete(self, request: ModelRequestType) -> ModelResponse:
-        if not isinstance(request, ModelRequest):
-            raise TypeError("Chat Completions client requires ModelRequest")
         return self._complete(
             request,
             decode_response=_decode_json,
@@ -321,8 +316,6 @@ class OpenAIResponsesClient(_OpenAIHTTPClient):
         )
 
     def complete(self, request: ModelRequestType) -> ModelResponse:
-        if not isinstance(request, ResponsesRequest):
-            raise TypeError("Responses client requires ResponsesRequest")
         return self._complete(
             request,
             decode_response=_decode_responses_payload,
@@ -408,6 +401,7 @@ def _decode_responses_sse(payload: bytes) -> dict[str, Any]:
                 output_items[index] = item
         elif event_type == "response.completed" and isinstance(event.get("response"), dict):
             completed = dict(event["response"])
+        # Error events carry the status needed by the outer retry policy.
         elif event_type in {"error", "response.failed"}:
             error = event.get("error")
             if not isinstance(error, dict) and isinstance(event.get("response"), dict):
@@ -419,6 +413,7 @@ def _decode_responses_sse(payload: bytes) -> dict[str, Any]:
                 attempts=1,
                 status_code=_responses_sse_error_status(status, error),
             )
+    # A dropped stream must become a retryable client error, not an unhandled decode failure.
     if completed is None:
         raise ModelClientError(
             "Responses stream ended without response.completed",

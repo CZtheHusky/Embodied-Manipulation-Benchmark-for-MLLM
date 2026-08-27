@@ -37,8 +37,6 @@ class LiberoDeltaEEFController(Controller):
         mapping: JoystickMapping,
         frame_transform: ControlFrameTransform,
     ) -> "LiberoDeltaEEFController":
-        if config.type != "libero_delta_eef":
-            raise ValueError(f"Unsupported controller type: {config.type}")
         return cls(
             mapping=mapping,
             frame_transform=frame_transform,
@@ -68,7 +66,10 @@ class LiberoDeltaEEFController(Controller):
                 )
             )
         )
-        gripper = self._map_gripper(command.get("gripper", 0.0))
+        gripper = clamp(command.get("gripper", 0.0), 0.0, 1.0)
+        gripper = self.gripper_open_value + gripper * (
+            self.gripper_closed_value - self.gripper_open_value
+        )
         values = np.asarray((*delta_pos, *delta_rot, gripper), dtype=np.float32)
         return LiberoAction(
             values=tuple(float(value) for value in values),
@@ -89,11 +90,6 @@ class LiberoDeltaEEFController(Controller):
             "gripper_open_value": self.gripper_open_value,
             "gripper_closed_value": self.gripper_closed_value,
         }
-
-    def _map_gripper(self, value: float) -> float:
-        clipped = clamp(float(value), 0.0, 1.0)
-        return self.gripper_open_value + clipped * (self.gripper_closed_value - self.gripper_open_value)
-
 
 def _fit_normalized_vector(
     values: tuple[float, float, float],

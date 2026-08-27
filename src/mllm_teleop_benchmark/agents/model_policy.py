@@ -25,6 +25,16 @@ TASK_REMINDER_INTERVAL = 10
 IMAGE_OMITTED = "[image omitted by history policy]"
 ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
+SYSTEM_PROMPT = (
+    "You control a robot through a virtual joystick. "
+    "Return exactly one JSON object and no prose outside that object. "
+    "Use the current observation and the permitted history only. "
+    "You may include the top-level string key Reflection and the top-level "
+    "magnifier key. "
+    "When included, Reflection may contain any information you believe "
+    "will help with future decisions, based only on public observations "
+    "and your own action history."
+)
 _HIDDEN_REASONING_KEYS = frozenset(
     {
         "analysis",
@@ -60,8 +70,8 @@ class EncodedImage:
 
 class MLLMPolicy(Agent):
     def __init__(self, config: AgentConfig, client: ModelClient, model_name: str) -> None:
-        if config.model is None:
-            raise ValueError("MLLMPolicy requires agent.model configuration")
+        # build_agent selects this policy only for parsed mllm configurations.
+        assert config.model is not None
         self.config = config
         self.client = client
         self.model_name = model_name
@@ -168,12 +178,13 @@ class MLLMPolicy(Agent):
         assert self.config.model is not None
         cameras = self._camera_names(context.observation)
         history = context.history
-        image_count = self._observation_image_count(context.observation, cameras)
+        image_count = len(cameras) + int(context.observation.magnifier is not None)
         image_count += sum(
-            self._observation_image_count(transition.observation, cameras)
+            len(cameras) + int(transition.observation.magnifier is not None)
             for index, transition in enumerate(history)
             if _selected(index, len(history), self.config.history.image_window)
         )
+        # History policies are strict: exceeding the configured limit must never truncate images.
         if image_count > self.config.history.max_images_per_request:
             raise ModelInputError(
                 "Model request contains "
@@ -184,7 +195,7 @@ class MLLMPolicy(Agent):
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": _system_prompt(),
+                "content": SYSTEM_PROMPT,
             },
             {
                 "role": "user",
@@ -240,6 +251,7 @@ class MLLMPolicy(Agent):
             prompt_cache_key=self.config.model.prompt_cache_key,
         )
         request_bytes = len(request.encoded_body())
+        # Oversized requests terminate explicitly instead of changing the selected history.
         if request_bytes > self.config.history.max_request_bytes:
             raise ModelInputError(
                 "Model request contains "
@@ -255,11 +267,9 @@ class MLLMPolicy(Agent):
     def _camera_names(self, observation: Observation) -> tuple[str, ...]:
         configured = self.config.observation.cameras
         cameras = configured or tuple(sorted(str(name) for name in observation.images))
+        # A text-only request would silently violate the visual benchmark contract.
         if not cameras:
             raise ModelInputError("Model observation does not contain an RGB camera")
-        missing = [name for name in cameras if name not in observation.images]
-        if missing:
-            raise ModelInputError(f"Model observation is missing configured cameras: {missing}")
         return cameras
 
     def _observation_message(
@@ -303,14 +313,10 @@ class MLLMPolicy(Agent):
             if not include_images:
                 content.append({"type": "text", "text": IMAGE_OMITTED})
                 continue
-            if camera not in observation.images:
-                raise ModelInputError(
-                    f"Observation step {observation.step_id} is missing configured camera {camera!r}"
-                )
             encoded = self._encoded_image(
                 observation.step_id,
                 camera,
-                observation.images[camera],
+                observation.images.get(camera),
             )
             images.append(encoded)
             content.append(
@@ -354,13 +360,6 @@ class MLLMPolicy(Agent):
                     }
                 )
         return {"role": "user", "content": content}, tuple(images)
-
-    def _observation_image_count(
-        self,
-        observation: Observation,
-        cameras: tuple[str, ...],
-    ) -> int:
-        return len(cameras) + int(observation.magnifier is not None)
 
     def _encoded_image(
         self,
@@ -470,21 +469,6 @@ class MLLMPolicy(Agent):
             prompt_version=self.prompt_version,
             artifact_dir=artifact_dir,
         )
-
-
-def _system_prompt() -> str:
-    return (
-        "You control a robot through a virtual joystick. "
-        "Return exactly one JSON object and no prose outside that object. "
-        "Use the current observation and the permitted history only. "
-        "You may include the top-level string key Reflection and the top-level "
-        "magnifier key. "
-        "When included, Reflection may contain any information you believe "
-        "will help with future decisions, based only on public observations "
-        "and your own action history."
-    )
-
-
 def _static_instruction(
     context: AgentContext,
     prompt_version: str = PROMPT_VERSION,
@@ -494,9 +478,9 @@ def _static_instruction(
         context.action_schema,
     )
     schema = json.dumps(context.action_schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
-    source_rgb_keys = context.metadata.get("source_rgb_keys")
-    if not isinstance(source_rgb_keys, (list, tuple)) or not source_rgb_keys:
-        source_rgb_keys = tuple(sorted(str(key) for key in context.observation.images))
+    source_rgb_keys = context.metadata.get("source_rgb_keys") or tuple(
+        sorted(str(key) for key in context.observation.images)
+    )
     example_source = str(source_rgb_keys[0]) if source_rgb_keys else "rgb_key"
     example_payload: dict[str, Any] = {
         "channels": {name: 0 for name in context.action_schema},
@@ -535,7 +519,7 @@ def _static_instruction(
     )
     step_budget = context.metadata.get("step_budget")
     budget_instruction = ""
-    if isinstance(step_budget, dict):
+    if step_budget is not None:
         max_agent_steps = int(step_budget["max_agent_steps"])
         budget_instruction = (
             "Interaction budget: The episode allows at most "

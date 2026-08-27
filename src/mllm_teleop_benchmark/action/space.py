@@ -15,8 +15,6 @@ class ActionSpace:
 
     @classmethod
     def from_config(cls, config: ActionSpaceConfig) -> "ActionSpace":
-        if config.type != "joystick":
-            raise ValueError(f"Unsupported action space type: {config.type}")
         return cls(channels=dict(config.channels))
 
     def schema(self) -> dict[str, Any]:
@@ -35,12 +33,8 @@ class ActionSpace:
         for name, channel in self.channels.items():
             if channel.kind == "discrete":
                 values[name] = float(rng.choice(channel.values))
-            elif channel.kind == "continuous":
-                if channel.minimum is None or channel.maximum is None:
-                    raise ValueError(f"Continuous channel {name} requires min and max")
-                values[name] = rng.uniform(channel.minimum, channel.maximum)
             else:
-                raise ValueError(f"Unsupported channel kind for sampling: {channel.kind}")
+                values[name] = rng.uniform(channel.minimum, channel.maximum)
         return JoystickAction(values)
 
     def clip_continuous_channels(

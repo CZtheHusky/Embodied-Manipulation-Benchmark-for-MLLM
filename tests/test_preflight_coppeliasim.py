@@ -452,7 +452,7 @@ def test_closebox_scripted_success_fails_loudly_without_official_capabilities():
 
     with pytest.raises(
         PreflightFailure,
-        match=r"lacks official Task.get_waypoints.*No guessed pose script",
+        match="Cannot read official CloseBox waypoints",
     ):
         run_close_box_scripted_success_canary(
             sim,

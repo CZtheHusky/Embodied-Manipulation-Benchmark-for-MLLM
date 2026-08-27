@@ -15,11 +15,11 @@ from mllm_teleop_benchmark.agents.model_policy import (
     EncodedImage,
     MLLMPolicy,
     ModelInputError,
+    SYSTEM_PROMPT,
     _cache_hit_ratio,
     _history_action,
     _json_artifact,
     _static_instruction,
-    _system_prompt,
     _unique_images,
     sanitize_provider_response,
 )
@@ -41,13 +41,8 @@ class ResponsesBuild:
 class ResponsesMLLMPolicy(MLLMPolicy):
     def __init__(self, config: AgentConfig, client: ModelClient, model_name: str) -> None:
         super().__init__(config, client, model_name)
-        if config.model is None or config.model.api != "responses":
-            raise ValueError("ResponsesMLLMPolicy requires agent.model.api=responses")
-        if config.history.action_window != "all" or config.history.image_window != "all":
-            raise ValueError(
-                "ResponsesMLLMPolicy retains the full provider-side conversation and "
-                "requires action_window=all and image_window=all"
-            )
+        # build_agent selects this subclass from model.api.
+        assert config.model is not None and config.model.api == "responses"
         self.prompt_version = PROMPT_VERSION
         self._previous_response_id: str | None = None
         self._last_response_step_id: int | None = None
@@ -90,7 +85,13 @@ class ResponsesMLLMPolicy(MLLMPolicy):
         try:
             response = self.client.complete(build.request)
         except ModelClientError as exc:
-            if _is_missing_previous_response(exc, build.request):
+            error_message = str(exc).lower()
+            if (
+                build.request.previous_response_id is not None
+                and exc.status_code in {400, 404}
+                and "previous response" in error_message
+                and "not found" in error_message
+            ):
                 recovery_count = 1
                 prior_attempts = exc.attempts
                 prior_latency_ms = exc.latency_ms or 0.0
@@ -170,8 +171,6 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                     ),
                 )
 
-        if not response.request_id:
-            raise RuntimeError("OpenAIResponsesClient returned no response id")
         self._previous_response_id = response.request_id
         self._last_response_step_id = step_id
         return AgentDecision(
@@ -211,13 +210,13 @@ class ResponsesMLLMPolicy(MLLMPolicy):
     def _build_responses_request(self, context: AgentContext) -> ResponsesBuild:
         assert self.config.model is not None
         cameras = self._camera_names(context.observation)
-        retained_image_count = self._observation_image_count(
-            context.observation,
-            cameras,
+        retained_image_count = (
+            len(cameras) + int(context.observation.magnifier is not None)
         ) + sum(
-            self._observation_image_count(transition.observation, cameras)
+            len(cameras) + int(transition.observation.magnifier is not None)
             for transition in context.history
         )
+        # Provider-side full history is strict and must not be truncated to fit the limit.
         if retained_image_count > self.config.history.max_images_per_request:
             raise ModelInputError(
                 "Responses conversation retains "
@@ -229,7 +228,10 @@ class ResponsesMLLMPolicy(MLLMPolicy):
         input_items: list[dict[str, Any]] = []
         images: list[EncodedImage] = []
         for transition in context.history:
-            if self._is_uncommitted(transition):
+            if (
+                self._last_response_step_id is None
+                or transition.step_id > self._last_response_step_id
+            ):
                 observation, turn_images = self._responses_observation(
                     transition.observation,
                     cameras,
@@ -238,7 +240,10 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                 input_items.append(observation)
                 images.extend(turn_images)
                 input_items.append(self._execution_feedback(transition, context.action_schema))
-            elif self._needs_execution_feedback(transition):
+            elif (
+                transition.step_id == self._last_response_step_id
+                and not transition.validation.is_valid
+            ):
                 input_items.append(self._execution_feedback(transition, context.action_schema))
 
         current, current_images = self._responses_observation(
@@ -253,7 +258,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
         unique_images = _unique_images(images)
         request = ResponsesRequest(
             model=self.model_name,
-            instructions=f"{_system_prompt()}\n\n{_static_instruction(context, PROMPT_VERSION)}",
+            instructions=f"{SYSTEM_PROMPT}\n\n{_static_instruction(context, PROMPT_VERSION)}",
             input=tuple(input_items),
             temperature=self.config.model.temperature,
             max_output_tokens=self.config.model.max_output_tokens,
@@ -264,6 +269,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
             stream=self.config.model.stream,
         )
         request_bytes = len(request.encoded_body())
+        # Oversized requests terminate explicitly instead of changing retained context.
         if request_bytes > self.config.history.max_request_bytes:
             raise ModelInputError(
                 "Model request contains "
@@ -306,19 +312,6 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                     }
                 )
         return {"role": "user", "content": content}, images
-
-    def _is_uncommitted(self, transition: StepTransition) -> bool:
-        return (
-            self._last_response_step_id is None
-            or transition.step_id > self._last_response_step_id
-        )
-
-    def _needs_execution_feedback(self, transition: StepTransition) -> bool:
-        return (
-            self._last_response_step_id is not None
-            and transition.step_id == self._last_response_step_id
-            and not transition.validation.is_valid
-        )
 
     @staticmethod
     def _execution_feedback(
@@ -432,20 +425,6 @@ class ResponsesMLLMPolicy(MLLMPolicy):
             prompt_version=PROMPT_VERSION,
             artifact_dir=artifact_dir,
         )
-
-
-def _is_missing_previous_response(
-    error: ModelClientError,
-    request: ResponsesRequest,
-) -> bool:
-    message = str(error).lower()
-    return (
-        request.previous_response_id is not None
-        and error.status_code in {400, 404}
-        and "previous response" in message
-        and "not found" in message
-    )
-
 
 def _sanitized_responses_request(
     request: ResponsesRequest,

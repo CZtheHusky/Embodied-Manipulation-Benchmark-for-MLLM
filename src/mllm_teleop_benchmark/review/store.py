@@ -74,8 +74,8 @@ class EpisodeReviewStore:
                         "episode_id",
                         _episode_number(episode_id),
                     ),
-                    "success": bool(summary.get("success", False)),
-                    "steps": int(summary.get("steps", len(steps))),
+                "success": summary.get("success", False),
+                "steps": summary.get("steps", len(steps)),
                     "termination_reason": summary.get(
                         "termination_reason",
                         "incomplete",
@@ -103,7 +103,7 @@ class EpisodeReviewStore:
         display_messages = _display_messages(request)
         if not isinstance(request, dict) or display_messages is None:
             raise ReviewDataError(f"Invalid request artifact for {episode_id} step {step_id}")
-        images = self._images(episode_id, episode_dir, request_wrapper)
+        images = self._images(episode_id, request_wrapper)
         response = self._read_optional_json(artifact_dir / "response.json")
         error = self._read_optional_json(artifact_dir / "error.json")
         transition = self._trajectory(episode_id).get(step_id, {})
@@ -178,22 +178,21 @@ class EpisodeReviewStore:
     def artifact(self, episode_id: str, relative_path: str) -> Path:
         episode_dir = self._episode_dir(episode_id)
         normalized = Path(relative_path)
+        # The review HTTP endpoint may serve only model-visible files inside this episode.
         if normalized.is_absolute() or ".." in normalized.parts:
             raise ReviewDataError("Artifact path must stay within the episode directory")
         allowed = self._artifact_allowlist(episode_id, episode_dir)
         posix_path = normalized.as_posix()
+        # The allowlist prevents exposing evaluator-only or unrelated episode artifacts.
         if posix_path not in allowed:
             raise ReviewDataError("Artifact is not a model-visible request image")
         target = (episode_dir / normalized).resolve()
+        # Resolve catches symlink-based escapes that lexical path checks cannot see.
         if not target.is_relative_to(episode_dir):
             raise ReviewDataError("Artifact path escapes the episode directory")
-        if not target.is_file():
-            raise ReviewDataError(f"Artifact does not exist: {relative_path}")
         return target
 
     def _discover_episodes(self, root: Path) -> dict[str, Path]:
-        if not root.is_dir():
-            raise ReviewDataError(f"Review path does not exist: {root}")
         if _episode_has_requests(root):
             candidates = [root]
         else:
@@ -204,6 +203,7 @@ class EpisodeReviewStore:
                 and path.name.startswith("episode_")
                 and _episode_has_requests(path)
             )
+        # Without request artifacts this store would silently expose an empty episode catalog.
         if not candidates:
             raise ReviewDataError(
                 "Review path must be an episode directory or a run containing "
@@ -241,7 +241,6 @@ class EpisodeReviewStore:
     def _images(
         self,
         episode_id: str,
-        episode_dir: Path,
         request_wrapper: dict[str, Any],
     ) -> list[dict[str, Any]]:
         records = request_wrapper.get("images")
@@ -432,8 +431,6 @@ class ReviewCatalogStore:
         self.default_run_id = self._default_run_id()
 
     def _discover_runs(self, root: Path) -> dict[str, Path]:
-        if not root.is_dir():
-            raise ReviewDataError(f"Review path does not exist: {root}")
         if _episode_has_requests(root):
             candidates = {root}
         elif self._reviewable_episodes(root):
@@ -448,10 +445,6 @@ class ReviewCatalogStore:
                 and self._has_model_requests(model_calls.parent)
                 and model_calls.parent.resolve().is_relative_to(root)
             }
-        if not candidates:
-            raise ReviewDataError(
-                "Review path contains no episodes with model request artifacts"
-            )
         return {
             self._relative_run_id(path): path
             for path in sorted(candidates, key=lambda value: value.as_posix())

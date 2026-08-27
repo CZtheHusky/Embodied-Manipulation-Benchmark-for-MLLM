@@ -9,14 +9,12 @@ import numpy as np
 import yaml
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import LiberoAction, Observation, SimulatorAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 
 class LiberoSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "libero":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.env: Any | None = None
         self.step_id = 0
@@ -38,23 +36,25 @@ class LiberoSimAdapter(SimAdapter):
         self.last_reward = None
         self.last_done = False
         self.last_info = {}
-        self._max_steps = int(
-            self.config.params.get("max_episode_steps", task_config.max_steps)
+        self._max_steps = self.config.params.get(
+            "max_episode_steps", task_config.max_steps
         )
 
-        suite_name = str(task_config.params.get("suite_name", self.config.params.get("suite_name", "libero_spatial")))
-        task_id = int(task_config.params.get("task_id", self.config.params.get("task_id", 0)))
-        task_order_index = int(task_config.params.get("task_order_index", self.config.params.get("task_order_index", 0)))
+        suite_name = task_config.params.get(
+            "suite_name", self.config.params.get("suite_name", "libero_spatial")
+        )
+        task_id = task_config.params.get(
+            "task_id", self.config.params.get("task_id", 0)
+        )
+        task_order_index = task_config.params.get(
+            "task_order_index", self.config.params.get("task_order_index", 0)
+        )
 
         benchmark_dict = benchmark.get_benchmark_dict()
-        if suite_name not in benchmark_dict:
-            raise ValueError(f"Unsupported LIBERO suite {suite_name!r}; available suites: {sorted(benchmark_dict)}")
         task_suite = benchmark_dict[suite_name](task_order_index=task_order_index)
         task = task_suite.get_task(task_id)
         self._validate_language_instruction(task_config, task)
         bddl_file = task_suite.get_task_bddl_file_path(task_id)
-        if not Path(bddl_file).exists():
-            raise FileNotFoundError(f"LIBERO BDDL file is missing: {bddl_file}")
 
         init_states = task_suite.get_task_init_states(task_id)
         init_state_id, init_state_strategy = self._select_init_state(
@@ -62,14 +62,19 @@ class LiberoSimAdapter(SimAdapter):
             seed,
             len(init_states),
         )
-        self._task_metadata = self._benchmark_validity(
-            task_config,
-            task,
-            suite_name,
-            task_id,
-            init_state_id,
-            init_state_strategy,
-        )
+        self._task_metadata = {
+            "language_instruction": task.language,
+            "suite_name": suite_name,
+            "task_id": task_id,
+            "task_name": task.name,
+            "init_state_id": init_state_id,
+            "init_state_strategy": init_state_strategy,
+            "settling_steps": self.config.params.get("settling_steps", 5),
+            "no_language_baseline": task_config.params.get(
+                "no_language_baseline", False
+            ),
+            "random_baseline": task_config.params.get("random_baseline", False),
+        }
         env_args = self._env_args(task_config, bddl_file)
         self.env = offscreen_env(**env_args)
         if hasattr(self.env, "seed"):
@@ -81,19 +86,7 @@ class LiberoSimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, LiberoAction):
-            raise TypeError(f"LiberoSimAdapter requires LiberoAction, got {type(action).__name__}")
-        if self.env is None:
-            raise RuntimeError("LIBERO environment has not been reset")
-
         native_action = np.asarray(action.values, dtype=np.float32)
-        if native_action.shape != (7,):
-            raise ValueError(f"LIBERO action must contain 7 values, got shape {native_action.shape}")
-        if not np.all(np.isfinite(native_action)):
-            raise ValueError("LIBERO action values must be finite")
-        if np.any(native_action < -1.0) or np.any(native_action > 1.0):
-            raise ValueError("LIBERO OSC_POSE action values must remain within [-1, 1]")
-
         obs, reward, done, info = self.env.step(native_action)
         self.step_id += 1
         self.last_native_obs = obs
@@ -110,11 +103,9 @@ class LiberoSimAdapter(SimAdapter):
         )
 
     def render(self, camera: CameraSpec) -> Any:
-        image = self._image_from_observation(camera.name)
+        image = self._extract_images(self.last_native_obs).get(camera.name)
         if image is not None:
             return image
-        if self.env is None:
-            raise RuntimeError("LIBERO environment has not been reset")
         frame = self._as_hwc_uint8(
             self.env.sim.render(
                 camera_name=camera.name,
@@ -123,10 +114,6 @@ class LiberoSimAdapter(SimAdapter):
                 depth=False,
             )
         )
-        if frame is None:
-            raise RuntimeError(
-                f"LIBERO render returned an invalid image for camera {camera.name!r}"
-            )
         return np.flipud(frame).copy()
 
     def get_state(self) -> dict[str, Any]:
@@ -174,8 +161,6 @@ class LiberoSimAdapter(SimAdapter):
             benchmark_root = Path(env_root).expanduser().resolve()
         else:
             spec = importlib.util.find_spec("libero")
-            if spec is None or spec.submodule_search_locations is None:
-                raise ImportError("LIBERO package is not installed")
             benchmark_root = Path(tuple(spec.submodule_search_locations)[0]).resolve()
         config_root.mkdir(parents=True, exist_ok=True)
         with config_file.open("w", encoding="utf-8") as handle:
@@ -200,36 +185,37 @@ class LiberoSimAdapter(SimAdapter):
         env_args.setdefault("camera_heights", height)
         env_args.setdefault("camera_widths", width)
         env_args.setdefault("use_camera_obs", True)
-        policy_horizon = int(
-            self.config.params.get(
-                "max_episode_steps",
-                self.config.params.get("horizon", task_config.max_steps),
-            )
+        policy_horizon = self.config.params.get(
+            "max_episode_steps",
+            self.config.params.get("horizon", task_config.max_steps),
         )
-        required_native_horizon = policy_horizon + self._settling_steps()
-        if "horizon" in env_args and int(env_args["horizon"]) < required_native_horizon:
+        required_native_horizon = policy_horizon + self.config.params.get("settling_steps", 5)
+        # A shorter upstream horizon silently truncates the benchmark before its action budget.
+        if "horizon" in env_args and env_args["horizon"] < required_native_horizon:
             raise ValueError(
                 "LIBERO env_kwargs.horizon must include both the policy action "
                 f"budget and settling steps; expected at least {required_native_horizon}"
             )
         env_args.setdefault("horizon", required_native_horizon)
-        env_args.setdefault("control_freq", int(self.config.params.get("control_freq", 20)))
-        env_args.setdefault("hard_reset", bool(self.config.params.get("hard_reset", True)))
+        env_args.setdefault("control_freq", self.config.params.get("control_freq", 20))
+        env_args.setdefault("hard_reset", self.config.params.get("hard_reset", True))
         if "render_gpu_device_id" in self.config.params:
-            env_args.setdefault("render_gpu_device_id", int(self.config.params["render_gpu_device_id"]))
+            env_args.setdefault(
+                "render_gpu_device_id", self.config.params["render_gpu_device_id"]
+            )
         return env_args
 
     def _camera_names(self) -> list[str]:
         if self._camera_specs:
             return [camera.name for camera in self._camera_specs]
         raw_names = self.config.params.get("camera_names", ("agentview", "robot0_eye_in_hand"))
-        return [str(name) for name in raw_names]
+        return list(raw_names)
 
     def _camera_dimensions(self) -> tuple[int | list[int], int | list[int]]:
         if not self._camera_specs:
             return (
-                int(self.config.params.get("camera_height", 128)),
-                int(self.config.params.get("camera_width", 128)),
+                self.config.params.get("camera_height", 128),
+                self.config.params.get("camera_width", 128),
             )
         heights = [camera.height for camera in self._camera_specs]
         widths = [camera.width for camera in self._camera_specs]
@@ -237,39 +223,10 @@ class LiberoSimAdapter(SimAdapter):
         width: int | list[int] = widths[0] if len(set(widths)) == 1 else widths
         return height, width
 
-    def _benchmark_validity(
-        self,
-        task_config: TaskConfig,
-        task: Any,
-        suite_name: str,
-        task_id: int,
-        init_state_id: int,
-        init_state_strategy: str,
-    ) -> dict[str, Any]:
-        return {
-            "language_instruction": str(getattr(task, "language", task_config.params.get("language_instruction", ""))),
-            "suite_name": suite_name,
-            "task_id": task_id,
-            "task_name": str(getattr(task, "name", "")),
-            "init_state_id": init_state_id,
-            "init_state_strategy": init_state_strategy,
-            "settling_steps": self._settling_steps(),
-            "no_language_baseline": bool(task_config.params.get("no_language_baseline", False)),
-            "random_baseline": bool(task_config.params.get("random_baseline", False)),
-        }
-
     def _validate_language_instruction(self, task_config: TaskConfig, task: Any) -> None:
-        configured = task_config.params.get("language_instruction")
-        if configured is None:
-            raise ValueError(
-                "LIBERO task.params.language_instruction is required so the "
-                "public instruction can be checked against the selected upstream task"
-            )
-        upstream = getattr(task, "language", None)
-        if upstream is None:
-            raise RuntimeError("Selected LIBERO task does not expose its language instruction")
-        configured_text = " ".join(str(configured).split())
-        upstream_text = " ".join(str(upstream).split())
+        configured_text = " ".join(task_config.params["language_instruction"].split())
+        upstream_text = " ".join(task.language.split())
+        # A mismatch otherwise runs one task while recording and prompting another.
         if configured_text != upstream_text:
             raise ValueError(
                 "Configured LIBERO language instruction does not match the selected "
@@ -277,9 +234,9 @@ class LiberoSimAdapter(SimAdapter):
             )
 
     def _settle_after_init_state(self) -> None:
-        if self.env is None:
-            raise RuntimeError("LIBERO environment has not been reset")
-        settling_steps = self._settling_steps()
+        # reset() creates the environment immediately before settling it.
+        assert self.env is not None
+        settling_steps = self.config.params.get("settling_steps", 5)
         for _ in range(settling_steps):
             obs, _reward, done, info = self.env.step(
                 np.zeros(7, dtype=np.float32)
@@ -291,43 +248,22 @@ class LiberoSimAdapter(SimAdapter):
             self.last_done = self._check_success()
         self.last_reward = None
 
-    def _settling_steps(self) -> int:
-        settling_steps = int(self.config.params.get("settling_steps", 5))
-        if settling_steps < 0:
-            raise ValueError("LIBERO simulator.params.settling_steps must be non-negative")
-        return settling_steps
-
     def _select_init_state(
         self,
         task_config: TaskConfig,
         seed: int,
         init_state_count: int,
     ) -> tuple[int, str]:
-        if init_state_count <= 0:
-            raise RuntimeError("LIBERO task does not provide any initial states")
-        strategy = str(
-            task_config.params.get(
-                "init_state_strategy",
-                self.config.params.get("init_state_strategy", "fixed"),
-            )
+        strategy = task_config.params.get(
+            "init_state_strategy",
+            self.config.params.get("init_state_strategy", "fixed"),
         )
-        if strategy == "seed_modulo":
-            return int(seed) % init_state_count, strategy
-        if strategy != "fixed":
-            raise ValueError(
-                "LIBERO init_state_strategy must be 'fixed' or 'seed_modulo'"
-            )
-        init_state_id = int(
-            task_config.params.get(
-                "init_state_id",
-                self.config.params.get("init_state_id", 0),
-            )
+        if {"fixed": False, "seed_modulo": True}[strategy]:
+            return seed % init_state_count, strategy
+        init_state_id = task_config.params.get(
+            "init_state_id",
+            self.config.params.get("init_state_id", 0),
         )
-        if init_state_id < 0 or init_state_id >= init_state_count:
-            raise IndexError(
-                f"LIBERO init_state_id {init_state_id} is outside available "
-                f"range 0..{init_state_count - 1}"
-            )
         return init_state_id, strategy
 
     def _observation(self) -> Observation:
@@ -349,9 +285,6 @@ class LiberoSimAdapter(SimAdapter):
                 if frame is not None:
                     images[camera_name] = np.flipud(frame).copy()
         return images
-
-    def _image_from_observation(self, camera_name: str) -> Any | None:
-        return self._extract_images(self.last_native_obs).get(camera_name)
 
     def _obs_value(self, key: str) -> Any | None:
         if not isinstance(self.last_native_obs, dict) or key not in self.last_native_obs:

@@ -196,13 +196,19 @@ class PusherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action):
         self._apply_camera_configuration()
-        array = np.asarray(action, dtype=np.float32).reshape(-1)
-        if array.size != 3:
-            raise ValueError(f"Pusher delta EEF action must be 3D, got {array.shape}")
+        array = np.asarray(action, dtype=np.float32).reshape(3)
         array = np.clip(array, -1.0, 1.0)
         if self.target_eef_xyz is None:
             self.target_eef_xyz = self.get_body_com(TIP_BODY).astype(np.float64)
-        target_xyz, clamped = self._clamp_workspace(self.target_eef_xyz + array.astype(np.float64) * self.eef_step_scale)
+        requested_target = (
+            self.target_eef_xyz + array.astype(np.float64) * self.eef_step_scale
+        )
+        target_xyz = np.clip(
+            requested_target,
+            self.workspace_low,
+            self.workspace_high,
+        )
+        clamped = bool(np.any(np.abs(target_xyz - requested_target) > 1e-12))
         ctrl = self.ik.solve_xyz(target_xyz)
         self.target_eef_xyz = target_xyz
         self.last_target_clamped = clamped
@@ -240,10 +246,6 @@ class PusherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
             "reward_dist": reward_dist,
             "reward_ctrl": reward_ctrl,
         }
-
-    def _clamp_workspace(self, target_xyz: np.ndarray) -> tuple[np.ndarray, bool]:
-        clipped = np.clip(np.asarray(target_xyz, dtype=np.float64).reshape(3), self.workspace_low, self.workspace_high)
-        return clipped, bool(np.any(np.abs(clipped - target_xyz) > 1e-12))
 
     def _object_goal_distance(self) -> float:
         return float(np.linalg.norm(self.get_body_com(OBJECT_BODY) - self.get_body_com(GOAL_BODY)))

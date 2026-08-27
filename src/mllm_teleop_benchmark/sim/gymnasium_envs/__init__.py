@@ -1,3 +1,1 @@
 from mllm_teleop_benchmark.sim.gymnasium_envs.adapter import GymnasiumSimAdapter
-
-__all__ = ["GymnasiumSimAdapter"]

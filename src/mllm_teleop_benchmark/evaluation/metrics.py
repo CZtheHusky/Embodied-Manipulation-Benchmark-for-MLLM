@@ -75,7 +75,11 @@ class MetricsRecorder:
                     "model_api_error_count": self.model_api_error_count,
                     "model_input_error_count": self.model_input_error_count,
                     "model_retry_count": self.model_retry_count,
-                    "model_latency_ms_mean": _mean(self.model_latencies_ms),
+                    "model_latency_ms_mean": (
+                        sum(self.model_latencies_ms) / len(self.model_latencies_ms)
+                        if self.model_latencies_ms
+                        else None
+                    ),
                     "model_latency_ms_p50": _percentile(self.model_latencies_ms, 0.50),
                     "model_latency_ms_p95": _percentile(self.model_latencies_ms, 0.95),
                     "input_tokens": sum(self.model_input_tokens) if self.model_input_tokens else None,
@@ -91,12 +95,6 @@ class MetricsRecorder:
             )
         metrics.update(task_metrics)
         return metrics
-
-
-def _mean(values: list[float]) -> float | None:
-    return sum(values) / len(values) if values else None
-
-
 def _percentile(values: list[float], quantile: float) -> float | None:
     if not values:
         return None

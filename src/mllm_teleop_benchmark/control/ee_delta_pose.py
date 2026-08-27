@@ -29,8 +29,6 @@ class EEDeltaPoseController(Controller):
         mapping: JoystickMapping,
         frame_transform: ControlFrameTransform,
     ) -> "EEDeltaPoseController":
-        if config.type != "ee_delta_pose":
-            raise ValueError(f"Unsupported controller type: {config.type}")
         return cls(mapping=mapping, frame_transform=frame_transform, scales=config.scales, frame=config.frame)
 
     def translate(self, action: JoystickAction) -> SimAction:

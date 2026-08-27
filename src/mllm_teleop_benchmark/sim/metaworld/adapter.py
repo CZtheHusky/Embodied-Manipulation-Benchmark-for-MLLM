@@ -15,13 +15,9 @@ DEFAULT_BENCHMARK_ID = "Meta-World/MT1"
 
 class MetaworldSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "metaworld":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.env_id = config.env_id or DEFAULT_BENCHMARK_ID
         self.env_name = str(config.params.get("env_name", config.env_kwargs.get("env_name", "")))
-        if not self.env_name:
-            raise ValueError("Meta-World simulator requires simulator.params.env_name or simulator.env_kwargs.env_name")
         self.env: Any | None = None
         self.step_id = 0
         self.last_native_obs: Any = None
@@ -41,8 +37,6 @@ class MetaworldSimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, MetaworldAction):
-            raise TypeError(f"MetaworldSimAdapter requires MetaworldAction, got {type(action).__name__}")
         self._ensure_env(None, None)
         native_action, clip_metadata = self._native_action(action)
         step_result = self.env.step(native_action)
@@ -69,13 +63,6 @@ class MetaworldSimAdapter(SimAdapter):
             raise ImportError(
                 "Meta-World rendering requires the MuJoCo Python package."
             ) from exc
-        camera_id = mujoco.mj_name2id(
-            unwrapped.model,
-            mujoco.mjtObj.mjOBJ_CAMERA,
-            camera.name,
-        )
-        if camera_id < 0:
-            raise ValueError(f"Unknown Meta-World camera: {camera.name}")
         renderer_key = (camera.width, camera.height)
         renderer = self._renderers.get(renderer_key)
         if renderer is None:
@@ -89,11 +76,8 @@ class MetaworldSimAdapter(SimAdapter):
         frame = renderer.render()
         self.last_render = self._first_array(frame)
         expected_shape = (camera.height, camera.width, 3)
-        if self.last_render.shape != expected_shape:
-            raise RuntimeError(
-                "Meta-World render shape does not match the configured camera: "
-                f"expected {expected_shape}, got {self.last_render.shape}"
-            )
+        # The renderer above is constructed with this camera's exact RGB dimensions.
+        assert self.last_render.shape == expected_shape
         return self.last_render
 
     def get_state(self) -> dict[str, Any]:
@@ -140,6 +124,7 @@ class MetaworldSimAdapter(SimAdapter):
         self.env = gym.make(self.env_id, **kwargs)
         expected_horizon = self.config.params.get("max_episode_steps")
         actual_horizon = getattr(self.env, "_max_episode_steps", None)
+        # A smaller native TimeLimit would truncate before the agent-command budget.
         if (
             expected_horizon is not None
             and actual_horizon is not None
@@ -176,15 +161,13 @@ class MetaworldSimAdapter(SimAdapter):
 
     def _native_action(self, action: MetaworldAction) -> tuple[np.ndarray, dict[str, Any]]:
         values = np.asarray(action.values, dtype=np.float32)
-        if not np.all(np.isfinite(values)):
-            raise ValueError("Meta-World action contains non-finite values")
         action_space = getattr(self.env, "action_space", None)
         metadata: dict[str, Any] = {"clipped": False}
         if action_space is None or not hasattr(action_space, "shape"):
             return values, metadata
         target_shape = tuple(int(value) for value in action_space.shape)
-        if values.shape != target_shape:
-            raise ValueError(f"Meta-World action shape mismatch: controller produced {values.shape}, env expects {target_shape}")
+        # MetaworldController derives its tuple width from this environment action space.
+        assert values.shape == target_shape
         if hasattr(action_space, "low") and hasattr(action_space, "high"):
             before = values.copy()
             values = np.clip(values, action_space.low, action_space.high).astype(np.float32)

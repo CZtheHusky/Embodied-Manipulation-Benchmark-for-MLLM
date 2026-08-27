@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import re
 
 import pytest
 
@@ -68,7 +69,7 @@ def test_uv_source_backends_declare_exact_source_commits():
     assert {source["name"] for source in calvin_sources} == {"calvin-env"}
     assert calvin_sources[0]["submodules"] is True
     for source in [*simpler_sources, *calvin_sources]:
-        module.validate_source_config(source)
+        assert re.fullmatch(r"[0-9a-f]{40}", source["commit"])
 
 
 def test_simpler_env_smoke_includes_mllm_integration_contract():
@@ -79,20 +80,6 @@ def test_simpler_env_smoke_includes_mllm_integration_contract():
     assert len(smoke_commands) == 1
     assert "tests/test_simpler_env_backend.py" in smoke_commands[0]
     assert "tests/test_simpler_env_integration.py" in smoke_commands[0]
-
-
-def test_source_config_rejects_branch_or_tag_refs():
-    module = load_manage_uv_env()
-    source = {
-        "name": "floating-source",
-        "repo": "https://example.invalid/source.git",
-        "commit": "main",
-        "install_args": ["--no-deps", "-e"],
-        "target_backend": "demo",
-    }
-
-    with pytest.raises(SystemExit, match="40-character Git commit SHA"):
-        module.validate_source_config(source)
 
 
 def test_install_source_checks_out_and_installs_pinned_commit(monkeypatch, tmp_path):

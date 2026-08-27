@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import Observation, RoboCasaAction, SimulatorAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 
@@ -16,8 +16,6 @@ DEFAULT_ENV_ID = "robocasa/PickPlaceCounterToCabinet"
 
 class RoboCasaSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "robocasa":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self._env = None
         self._last_reward = 0.0
@@ -39,6 +37,7 @@ class RoboCasaSimAdapter(SimAdapter):
         self._env = gym.make(env_id, **env_kwargs)
         expected_horizon = self.config.params.get("max_episode_steps")
         actual_horizon = getattr(self._env, "_max_episode_steps", None)
+        # A shorter Gym wrapper horizon silently truncates the simulator action budget.
         if (
             expected_horizon is not None
             and actual_horizon is not None
@@ -60,9 +59,11 @@ class RoboCasaSimAdapter(SimAdapter):
         return self._format_observation(obs)
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, RoboCasaAction):
-            raise TypeError(f"RoboCasaSimAdapter requires RoboCasaAction, got {type(action).__name__}")
-        obs, reward, terminated, truncated, info = self._env.step(_coerce_action_dict(action.values))
+        native_action = {
+            str(key): np.asarray(value, dtype=np.float32)
+            for key, value in action.values.items()
+        }
+        obs, reward, terminated, truncated, info = self._env.step(native_action)
         self._step_id += 1
         self._last_reward = float(reward)
         self._last_terminated = bool(terminated)
@@ -78,12 +79,15 @@ class RoboCasaSimAdapter(SimAdapter):
 
     def render(self, camera: CameraSpec) -> Any:
         cached = self._cached_camera_image(camera.name)
-        if cached is not None and _matches_camera_spec(cached, camera):
-            return cached
+        if cached is not None:
+            array = np.asarray(cached)
+            if array.ndim >= 2 and array.shape[:2] == (camera.height, camera.width):
+                return cached
 
         direct = self._render_native_camera(camera)
         if direct is not None:
             return direct
+        # Returning the cached wrong-size frame would violate the configured camera contract.
         if cached is not None:
             raise RuntimeError(
                 f"RoboCasa camera {camera.name!r} returned {np.asarray(cached).shape[:2]} "
@@ -92,8 +96,6 @@ class RoboCasaSimAdapter(SimAdapter):
             )
 
         rendered = self._env.render()
-        if rendered is None:
-            raise RuntimeError(f"RoboCasa render returned no image for camera {camera.name!r}")
         return rendered
 
     def _cached_camera_image(self, camera_name: str) -> Any | None:
@@ -136,8 +138,6 @@ class RoboCasaSimAdapter(SimAdapter):
     def _env_kwargs(self, task_config: TaskConfig, seed: int) -> dict[str, Any]:
         kwargs = dict(self.config.env_kwargs)
         task_env_kwargs = task_config.params.get("env_kwargs", {})
-        if not isinstance(task_env_kwargs, dict):
-            raise ValueError("task.params.env_kwargs must be a mapping when provided")
         kwargs.update(task_env_kwargs)
         if "split" in task_config.params and "split" not in kwargs:
             kwargs["split"] = task_config.params["split"]
@@ -169,7 +169,11 @@ class RoboCasaSimAdapter(SimAdapter):
         images: dict[str, Any] = {}
         state: dict[str, Any] = {}
         for key, value in obs_dict.items():
-            if _is_image(value):
+            if (
+                isinstance(value, np.ndarray)
+                and value.ndim == 3
+                and value.shape[-1] in {3, 4}
+            ):
                 images[str(key)] = value
                 normalized = _normalized_image_name(str(key))
                 images.setdefault(normalized, value)
@@ -227,23 +231,9 @@ class RoboCasaSimAdapter(SimAdapter):
             ) from exc
         return gym
 
-
-def _coerce_action_dict(values: Mapping[str, Any]) -> dict[str, Any]:
-    return {str(key): np.asarray(value, dtype=np.float32) for key, value in values.items()}
-
-
-def _is_image(value: Any) -> bool:
-    return isinstance(value, np.ndarray) and value.ndim == 3 and value.shape[-1] in {3, 4}
-
-
 def _normalized_image_name(key: str) -> str:
     if key.startswith("video."):
         return key[len("video.") :]
     if key.endswith("_image"):
         return key[: -len("_image")]
     return key
-
-
-def _matches_camera_spec(value: Any, camera: CameraSpec) -> bool:
-    array = np.asarray(value)
-    return array.ndim >= 2 and array.shape[:2] == (camera.height, camera.width)

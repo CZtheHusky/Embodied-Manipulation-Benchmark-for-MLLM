@@ -61,18 +61,16 @@ class BenchmarkRunner:
         if episode_ids is None:
             return tuple(range(self.config.benchmark.num_episodes))
         selected = tuple(episode_ids)
-        if not selected:
-            raise ValueError("At least one episode id must be selected")
+        # CLI-selected ids map directly to seeds and episode directories; duplicates overwrite artifacts.
         if len(set(selected)) != len(selected):
             raise ValueError("Episode ids must be unique")
         invalid = [
             episode_id
             for episode_id in selected
-            if not isinstance(episode_id, int)
-            or isinstance(episode_id, bool)
-            or episode_id < 0
+            if episode_id < 0
             or episode_id >= self.config.benchmark.num_episodes
         ]
+        # Out-of-range ids would run and aggregate episodes outside the declared benchmark size.
         if invalid:
             raise ValueError(
                 "Episode ids must be integers in "
@@ -130,9 +128,8 @@ class BenchmarkRunner:
                 if not line:
                     continue
                 value = json.loads(line)
-                trace = value.get("agent_trace") if isinstance(value, dict) else None
-                model = trace.get("model") if isinstance(trace, dict) else None
-                if isinstance(model, str) and model:
+                model = value["agent_trace"].get("model")
+                if model:
                     observed_models.add(model)
         summary = {
             "run_id": run_id,

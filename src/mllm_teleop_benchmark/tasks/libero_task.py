@@ -8,6 +8,7 @@ from mllm_teleop_benchmark.tasks.base import Task
 class LiberoTask(Task):
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
         observation = sim.reset(self.config, seed)
+        # Reset-success seeds would count as model successes without an agent command.
         if (
             self.config.params.get("reject_initial_success", False)
             and self.is_success(observation, observation.state)
@@ -19,17 +20,15 @@ class LiberoTask(Task):
         return observation
 
     def instruction(self) -> str:
-        if bool(self.config.params.get("no_language_baseline", False)):
+        if self.config.params.get("no_language_baseline", False):
             return ""
-        return str(
-            self.config.params.get(
-                "language_instruction",
-                self.config.params.get("instruction", "Complete the LIBERO manipulation task."),
-            )
+        return self.config.params.get(
+            "language_instruction",
+            self.config.params.get("instruction", "Complete the LIBERO manipulation task."),
         )
 
     def is_success(self, observation: Observation, sim_state: dict[str, object]) -> bool:
-        return bool(sim_state.get("is_success", sim_state.get("success", False)))
+        return sim_state.get("is_success", sim_state.get("success", False))
 
     def metrics(self, sim_state: dict[str, object]) -> dict[str, object]:
         validity = dict(self.config.params.get("benchmark_validity", {}))
@@ -38,7 +37,7 @@ class LiberoTask(Task):
             validity.update(runtime_validity)
 
         return {
-            "is_success": bool(sim_state.get("is_success", False)),
+            "is_success": sim_state.get("is_success", False),
             "reward": sim_state.get("reward"),
             "benchmark_validity": validity,
         }

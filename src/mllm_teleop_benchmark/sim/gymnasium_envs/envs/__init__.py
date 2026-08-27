@@ -1,4 +1,2 @@
 from mllm_teleop_benchmark.sim.gymnasium_envs.envs.reacher_delta_eef import ReacherDeltaEEFEnv
 from mllm_teleop_benchmark.sim.gymnasium_envs.envs.pusher_delta_eef import PusherDeltaEEFEnv
-
-__all__ = ["PusherDeltaEEFEnv", "ReacherDeltaEEFEnv"]

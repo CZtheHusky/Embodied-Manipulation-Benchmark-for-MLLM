@@ -184,9 +184,7 @@ class ReacherDeltaEEFEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action):
         self._apply_camera_configuration()
-        array = np.asarray(action, dtype=np.float32).reshape(-1)
-        if array.size != 2:
-            raise ValueError(f"Reacher delta EEF action must be 2D, got {array.shape}")
+        array = np.asarray(action, dtype=np.float32).reshape(2)
         array = np.clip(array, -1.0, 1.0)
         delta_xy = array.astype(np.float64) * self.eef_step_scale
         if self.target_eef_xy is None:

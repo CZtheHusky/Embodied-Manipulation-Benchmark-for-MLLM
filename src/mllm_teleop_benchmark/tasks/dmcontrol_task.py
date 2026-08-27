@@ -8,6 +8,7 @@ from mllm_teleop_benchmark.tasks.base import Task
 class DMControlTask(Task):
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
         observation = sim.reset(self.config, seed)
+        # Reset-success seeds would count as model successes without an agent command.
         if (
             self.config.params.get("reject_initial_success", False)
             and self.is_success(observation, observation.state)
@@ -19,7 +20,7 @@ class DMControlTask(Task):
         return observation
 
     def instruction(self) -> str:
-        return str(self.config.params.get("instruction", "Complete the DMControl task."))
+        return self.config.params.get("instruction", "Complete the DMControl task.")
 
     def is_success(self, observation: Observation, sim_state: dict[str, object]) -> bool:
         # DMControl tasks often return a reward between 0 and 1.

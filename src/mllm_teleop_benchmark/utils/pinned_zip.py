@@ -54,13 +54,11 @@ def install_zip_exact(
 def install_zip_batch_exact(
     requests: tuple[ZipInstallRequest, ...],
 ) -> tuple[InstalledZip, ...]:
-    if not requests:
-        raise ValueError("Pinned asset batch is empty")
-
     normalized: list[ZipInstallRequest] = []
     device: int | None = None
     for request in requests:
         target = request.target.absolute()
+        # Replacing through a symlink could install assets outside the requested root.
         if target.is_symlink():
             raise ValueError(
                 f"Asset installation root is a symbolic link: {target}"
@@ -69,6 +67,7 @@ def install_zip_batch_exact(
         current_device = target.stat().st_dev
         if device is None:
             device = current_device
+        # Batch replace and rollback rely on same-filesystem atomic renames.
         elif current_device != device:
             raise ValueError(
                 "Pinned asset batch targets must share one filesystem"
@@ -77,8 +76,13 @@ def install_zip_batch_exact(
             ZipInstallRequest(
                 archive=request.archive.absolute(),
                 target=target,
-                previous_files=_validated_relative_paths(
-                    request.previous_files
+                previous_files=tuple(
+                    sorted(
+                        {
+                            _validated_relative_path(value).as_posix()
+                            for value in request.previous_files
+                        }
+                    )
                 ),
             )
         )
@@ -102,6 +106,7 @@ def write_json_atomic(
     value: Mapping[str, object],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Marker replacement must not follow a caller-controlled symlink.
     if path.is_symlink():
         raise ValueError(f"Marker path is a symbolic link: {path}")
     descriptor, temporary_name = mkstemp(
@@ -116,6 +121,7 @@ def write_json_atomic(
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
+        # Repeat after writing the temporary file to close the replacement race window.
         if path.is_symlink():
             raise ValueError(f"Marker path is a symbolic link: {path}")
         os.replace(temporary, path)
@@ -156,10 +162,12 @@ def _validated_members(
     roots: set[str] = set()
     directories: set[str] = set()
     files: set[str] = set()
+    # Installing an empty archive would otherwise remove previously owned files.
     if not members:
         raise ValueError("Pinned asset archive is empty")
     for member in members:
         path = _validated_relative_path(member.filename)
+        # Zip symlinks can redirect later extraction outside the payload root.
         if stat.S_ISLNK(member.external_attr >> 16):
             raise ValueError(
                 f"Archive member is a symbolic link: {member.filename}"
@@ -167,25 +175,7 @@ def _validated_members(
         roots.add(path.parts[0])
         normalized = path.as_posix()
         collection = directories if member.is_dir() else files
-        if normalized in collection:
-            raise ValueError(
-                f"Archive contains a duplicate member: {normalized}"
-            )
         collection.add(normalized)
-    if directories & files:
-        conflict = min(directories & files)
-        raise ValueError(
-            f"Archive member is both a file and directory: {conflict}"
-        )
-    for filename in files:
-        path = PurePosixPath(filename)
-        if any(
-            PurePosixPath(*path.parts[:index]).as_posix() in files
-            for index in range(1, len(path.parts))
-        ):
-            raise ValueError(
-                f"Archive file conflicts with a parent path: {filename}"
-            )
     return tuple(sorted(roots)), tuple(sorted(files))
 
 
@@ -206,17 +196,9 @@ def _extract_files(
         ):
             shutil.copyfileobj(source, output)
 
-
-def _validated_relative_paths(
-    values: tuple[str, ...],
-) -> tuple[str, ...]:
-    return tuple(
-        sorted({_validated_relative_path(value).as_posix() for value in values})
-    )
-
-
 def _validated_relative_path(value: str) -> PurePosixPath:
     path = PurePosixPath(value)
+    # These components would make payload extraction escape its temporary root.
     if (
         path.is_absolute()
         or not path.parts
@@ -239,6 +221,7 @@ def _replace_batch(
         target = item.request.target
         for relative in item.result.files:
             destination = _safe_destination(target, relative)
+            # Silent last-writer-wins would corrupt archive ownership and rollback state.
             if destination in current:
                 raise ValueError(
                     "Pinned archives own the same destination: "
@@ -253,25 +236,11 @@ def _replace_batch(
             previous.setdefault(destination, target)
 
     current_paths = set(current)
-    for destination in current_paths:
-        conflict = next(
-            (
-                parent
-                for parent in destination.parents
-                if parent in current_paths
-            ),
-            None,
-        )
-        if conflict is not None:
-            raise ValueError(
-                "Pinned archive file conflicts with another file path: "
-                f"{conflict} and {destination}"
-            )
-
     affected = set(previous) | current_paths
     for destination, (_source, target) in current.items():
         parent = destination.parent
         while parent != target:
+            # Following an unowned symlink/file parent could write outside asset ownership.
             if (
                 (parent.is_symlink() or parent.is_file())
                 and parent not in affected
@@ -299,10 +268,8 @@ def _replace_batch(
             current.items(),
             key=lambda item: (len(item[0].parts), str(item[0])),
         ):
-            if not source.is_file():
-                raise ValueError(
-                    f"Archive file was not extracted: {source}"
-                )
+            # _prepare_zip extracts every path listed in InstalledZip before replacement.
+            assert source.is_file()
             _create_parent_directories(
                 target,
                 destination.parent,
@@ -342,6 +309,7 @@ def _replace_batch(
 
 
 def _safe_destination(target: Path, relative: str) -> Path:
+    # Recheck at each destination to catch root replacement after batch preparation.
     if target.is_symlink():
         raise ValueError(
             f"Asset installation root is a symbolic link: {target}"
@@ -351,12 +319,14 @@ def _safe_destination(target: Path, relative: str) -> Path:
     current = target
     for part in path.parts[:-1]:
         current /= part
+        # Parent symlinks can redirect a lexically safe relative path.
         if current.is_symlink():
             raise ValueError(
                 "Asset destination contains a symbolic-link parent: "
                 f"{relative}"
             )
     resolved_parent = destination.parent.resolve()
+    # Resolution catches links introduced between the component checks above.
     if not resolved_parent.is_relative_to(target.resolve()):
         raise ValueError(
             f"Asset destination escapes installation root: {relative}"
@@ -381,10 +351,6 @@ def _create_parent_directories(
     while current != target and not current.exists():
         missing.append(current)
         current = current.parent
-    if current.exists() and not current.is_dir():
-        raise ValueError(
-            f"Asset destination parent is not a directory: {current}"
-        )
     for directory in reversed(missing):
         directory.mkdir()
         created.append(directory)

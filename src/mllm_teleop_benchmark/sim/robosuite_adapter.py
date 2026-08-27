@@ -7,14 +7,12 @@ from typing import Any
 import numpy as np
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import Observation, RobosuiteAction, SimulatorAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 
 class RobosuiteSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "robosuite":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self._env = None
         self._modder = None
@@ -100,8 +98,6 @@ class RobosuiteSimAdapter(SimAdapter):
         return self._format_observation(obs_dict)
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, RobosuiteAction):
-            raise TypeError(f"RobosuiteSimAdapter requires RobosuiteAction, got {type(action).__name__}")
         obs_dict, reward, done, info = self._env.step(np.asarray(action.values, dtype=np.float32))
         self._step_id += 1
         self._last_reward = float(reward)
@@ -181,41 +177,23 @@ def _default_camera_side(name: str) -> int:
 
 
 def sample_camera_randomization(config: object, seed: int) -> dict[str, dict[str, Any]]:
-    if not isinstance(config, dict):
-        raise ValueError("robosuite camera_randomization must be a mapping")
     rng = random.Random(seed)
     sampled: dict[str, dict[str, Any]] = {}
     for cam_name, raw_params in config.items():
-        if not isinstance(raw_params, dict):
-            raise ValueError(f"camera_randomization.{cam_name} must be a mapping")
         params: dict[str, Any] = {}
         if "pos" in raw_params:
-            params["pos"] = _fixed_vector(raw_params["pos"], "pos", 3)
+            params["pos"] = [float(item) for item in raw_params["pos"]]
         if "pos_range" in raw_params:
-            params["pos"] = [_sample_range(rng, value, "pos_range") for value in _range_vector(raw_params["pos_range"], "pos_range", 3)]
+            params["pos"] = [
+                rng.uniform(float(value[0]), float(value[1]))
+                for value in raw_params["pos_range"]
+            ]
         if "quat" in raw_params:
-            params["quat"] = _fixed_vector(raw_params["quat"], "quat", 4)
+            params["quat"] = [float(item) for item in raw_params["quat"]]
         if "fovy" in raw_params:
             params["fovy"] = float(raw_params["fovy"])
         if "fovy_range" in raw_params:
-            params["fovy"] = _sample_range(rng, raw_params["fovy_range"], "fovy_range")
+            value = raw_params["fovy_range"]
+            params["fovy"] = rng.uniform(float(value[0]), float(value[1]))
         sampled[str(cam_name)] = params
     return sampled
-
-
-def _fixed_vector(value: object, name: str, length: int) -> list[float]:
-    if not isinstance(value, list | tuple) or len(value) != length:
-        raise ValueError(f"{name} must contain {length} numeric values")
-    return [float(item) for item in value]
-
-
-def _range_vector(value: object, name: str, length: int) -> list[object]:
-    if not isinstance(value, list | tuple) or len(value) != length:
-        raise ValueError(f"{name} must contain {length} ranges")
-    return list(value)
-
-
-def _sample_range(rng: random.Random, value: object, name: str) -> float:
-    if not isinstance(value, list | tuple) or len(value) != 2:
-        raise ValueError(f"{name} entries must be [low, high]")
-    return rng.uniform(float(value[0]), float(value[1]))

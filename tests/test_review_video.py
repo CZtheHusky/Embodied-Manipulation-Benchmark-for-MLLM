@@ -195,7 +195,7 @@ def _fake_encoder(captured):
     return encode
 
 
-def test_model_review_projection_excludes_oracle_and_debug_is_whitelisted(tmp_path):
+def test_model_review_projection_excludes_oracle_and_debug_is_whitelisted():
     transition = _transition(0)
     transition = replace(
         transition,

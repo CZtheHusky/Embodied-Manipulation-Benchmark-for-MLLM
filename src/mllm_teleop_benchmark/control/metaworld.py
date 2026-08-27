@@ -35,8 +35,6 @@ class MetaworldBoxActionController(Controller):
         frame_transform: ControlFrameTransform | None = None,
     ) -> "MetaworldBoxActionController":
         dimensions = tuple(str(value) for value in config.params.get("dimensions", ("dx", "dy", "dz", "gripper")))
-        if not dimensions:
-            raise ValueError("metaworld_box controller requires at least one dimension")
         return cls(
             mapping=mapping,
             dimensions=dimensions,
@@ -63,7 +61,7 @@ class MetaworldBoxActionController(Controller):
                 if dim in values_by_dim:
                     values_by_dim[dim] = value
 
-        values = [float(values_by_dim.get(dim, 0.0)) for dim in self.dimensions if dim != "gripper"]
+        values = [values_by_dim.get(dim, 0.0) for dim in self.dimensions if dim != "gripper"]
         if "gripper" in self.dimensions:
             values.append(self._gripper_value(command.values))
 

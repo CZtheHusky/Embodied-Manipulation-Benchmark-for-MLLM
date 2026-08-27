@@ -32,10 +32,7 @@ class ExecutionBudget:
 
 
 def execution_budget(config: BenchmarkConfig) -> ExecutionBudget:
-    max_agent_steps = int(config.task.max_steps)
-    if max_agent_steps <= 0:
-        raise ValueError("task.max_steps must be positive")
-
+    max_agent_steps = config.task.max_steps
     max_substeps = _max_internal_substeps(config)
     required_simulator_steps = max_agent_steps * max_substeps
     requested_horizon = _configured_horizon(config.simulator)
@@ -66,20 +63,10 @@ def _max_internal_substeps(config: BenchmarkConfig) -> int:
     maximum_magnitude = 0.0
     for name in motion_channels:
         channel = config.action_space.channels[name]
-        if channel.kind == "continuous":
-            if channel.minimum is None or channel.maximum is None:
-                raise ValueError(
-                    f"Continuous motion channel {name} requires min and max"
-                )
-            magnitude = max(abs(channel.minimum), abs(channel.maximum))
-        elif channel.kind == "discrete":
+        if channel.kind == "discrete":
             magnitude = max((abs(value) for value in channel.values), default=0.0)
         else:
-            raise ValueError(
-                f"Unsupported motion channel kind for execution budget: {channel.kind}"
-            )
-        if not math.isfinite(magnitude):
-            raise ValueError(f"Motion channel {name} bounds must be finite")
+            magnitude = max(abs(channel.minimum), abs(channel.maximum))
         maximum_magnitude = max(maximum_magnitude, magnitude)
     return max(1, math.ceil(maximum_magnitude))
 
@@ -88,9 +75,4 @@ def _configured_horizon(config: SimulatorConfig) -> int | None:
     raw_horizon = config.params.get("max_episode_steps")
     if raw_horizon is None:
         return None
-    if isinstance(raw_horizon, bool):
-        raise ValueError("simulator.params.max_episode_steps must be a positive integer")
-    horizon = int(raw_horizon)
-    if horizon <= 0:
-        raise ValueError("simulator.params.max_episode_steps must be a positive integer")
-    return horizon
+    return int(raw_horizon)

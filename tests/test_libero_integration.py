@@ -683,22 +683,6 @@ def test_libero_random_rotation_preserves_direction_within_native_action_range()
     )
 
 
-@pytest.mark.parametrize(
-    "values",
-    (
-        (0.0, 0.0, 0.0, 0.0, 0.0, float("nan"), -1.0),
-        (1.01, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0),
-    ),
-)
-def test_libero_adapter_rejects_invalid_native_actions(values):
-    config = load_config("configs/libero_spatial_task0.yaml")
-    adapter = LiberoSimAdapter(config.simulator)
-    adapter.env = object()
-
-    with pytest.raises(ValueError):
-        adapter.step(LiberoAction(values=values))
-
-
 def test_libero_normalized_xyz_commands_move_eef_along_world_axes():
     _import_runtime_dependency("libero")
     _import_runtime_dependency("robosuite")

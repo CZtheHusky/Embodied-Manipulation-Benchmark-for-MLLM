@@ -24,7 +24,7 @@ class DefaultObservationProvider(ObservationProvider):
         state = sim.get_state()
         images = {camera.name: sim.render(camera) for camera in self.camera_manager.get_active_cameras()}
         return Observation(
-            step_id=int(state.get("step_id", 0)),
+            step_id=state.get("step_id", 0),
             images=images,
             state=state,
             metadata={"camera": self.camera_manager.metadata()},

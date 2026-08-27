@@ -10,10 +10,10 @@ class MetaworldTask(Task):
         return sim.reset(self.config, seed)
 
     def instruction(self) -> str:
-        return str(self.config.params.get("instruction", "Complete the Meta-World manipulation task."))
+        return self.config.params.get("instruction", "Complete the Meta-World manipulation task.")
 
     def is_success(self, observation: Observation, sim_state: dict[str, object]) -> bool:
-        success_key = str(self.config.params.get("success_key", "success"))
+        success_key = self.config.params.get("success_key", "success")
         if success_key in sim_state:
             value = sim_state[success_key]
             if isinstance(value, int | float) and not isinstance(value, bool):
@@ -23,7 +23,7 @@ class MetaworldTask(Task):
         return reward is not None and float(reward) >= self.config.success_threshold
 
     def metrics(self, sim_state: dict[str, object]) -> dict[str, object]:
-        success_key = str(self.config.params.get("success_key", "success"))
+        success_key = self.config.params.get("success_key", "success")
         metrics: dict[str, object] = {
             "success": self.is_success(Observation(0, {}, {}, {}), sim_state),
             "reward": sim_state.get("reward"),

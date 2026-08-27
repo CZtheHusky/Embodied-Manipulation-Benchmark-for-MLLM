@@ -53,7 +53,7 @@ class ControlDebugRecorder:
             "source": source,
             "control_id": control_id,
             "step_before": int(step_before),
-            "step_after": int(state_after.get("step_id", step_before + 1)),
+            "step_after": state_after.get("step_id", step_before + 1),
             "raw_action": raw_action,
             "valid_action": validation.is_valid,
             "validation_errors": list(validation.errors),
@@ -132,7 +132,7 @@ class ControlDebugRecorder:
             "ee_target_before": before_target,
             "ee_target_after": after_target,
             "ee_target_delta": self._delta_vector(after_target, before_target),
-            "target_clamped": bool(state_after.get("ee_target_reachability_clamped", False)),
+            "target_clamped": state_after.get("ee_target_reachability_clamped", False),
         }
 
     def _expected_description(self, expected_delta: dict[str, float]) -> str:

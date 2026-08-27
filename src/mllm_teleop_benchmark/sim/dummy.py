@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import Observation, Pose, SimAction, SimulatorAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, Pose, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.utils.math import add_vec3, clamp, distance
 
@@ -12,8 +12,6 @@ class DummySimAdapter(SimAdapter):
     """Small deterministic kinematic simulator for pipeline tests."""
 
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "dummy":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.step_id = 0
         self.ee_pose = Pose((0.0, 0.0, 0.0))
@@ -28,8 +26,6 @@ class DummySimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, SimAction):
-            raise TypeError(f"DummySimAdapter requires SimAction, got {type(action).__name__}")
         self.step_id += 1
         raw_pos = add_vec3(self.ee_pose.position, action.delta_position)
         low = self.config.workspace_low

@@ -25,15 +25,6 @@ class ColosseumSimAdapter(RLBenchSimAdapter):
         self.perturbation_name = str(
             config.params.get("perturbation", "manip_obj_color")
         )
-        if self.task_name != "close_box":
-            raise ValueError(
-                "The minimal Colosseum backend supports only task close_box"
-            )
-        if self.spreadsheet_idx != 2 or self.perturbation_name != "manip_obj_color":
-            raise ValueError(
-                "The minimal Colosseum backend supports only "
-                "spreadsheet_idx=2 (manip_obj_color)"
-            )
         self.task_class_name = self.task_name
         self.episode_seed: int | None = None
         self._official_config: Any | None = None
@@ -55,11 +46,11 @@ class ColosseumSimAdapter(RLBenchSimAdapter):
         }
         return state
 
-    def _ensure_task(self, task_config: TaskConfig | None) -> None:
+    def _ensure_task(self) -> None:
         if self.task is not None:
             return
-        if self.episode_seed is None:
-            raise RuntimeError("Colosseum reset requires an episode seed")
+        # reset() stores the seed before the inherited task setup is entered.
+        assert self.episode_seed is not None
         try:
             import pyrep  # noqa: F401
             from colosseum import (
@@ -92,12 +83,8 @@ class ColosseumSimAdapter(RLBenchSimAdapter):
         ) as handle:
             collection_config = json.load(handle)
         strategy = collection_config.get("strategy", [])
-        if self.spreadsheet_idx >= len(strategy):
-            raise RuntimeError(
-                f"Colosseum task {self.task_name} has no spreadsheet_idx="
-                f"{self.spreadsheet_idx}"
-            )
         selected = strategy[self.spreadsheet_idx]
+        # The official table must match the perturbation recorded in benchmark metadata.
         if (
             int(selected.get("spreadsheet_idx", -1)) != self.spreadsheet_idx
             or selected.get("variation_name") != self.perturbation_name
@@ -114,10 +101,6 @@ class ColosseumSimAdapter(RLBenchSimAdapter):
         )
 
         task_class = name_to_class(self.task_name, TASKS_PY_FOLDER)
-        if task_class is None:
-            raise RuntimeError(
-                f"Colosseum could not resolve official task {self.task_name}"
-            )
         self._invalid_action_error_type = invalid_action_error_type
         kwargs = dict(self.config.env_kwargs)
         kwargs.setdefault("headless", self.headless)

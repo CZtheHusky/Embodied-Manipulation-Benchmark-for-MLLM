@@ -74,6 +74,7 @@ def main() -> None:
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    # A zero process status would otherwise advertise a failed matrix as completed.
     if any(result["return_code"] != 0 for result in results):
         raise SystemExit(f"One or more condition runs failed; see {summary_path}")
     print(f"All condition runs completed: {summary_path}", flush=True)

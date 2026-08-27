@@ -12,26 +12,19 @@ from mllm_teleop_benchmark.tasks.base import Task
 
 
 class CalvinTask(Task):
-    _BLOCK_COLORS = frozenset({"red", "blue", "pink"})
     _DRAWER_JOINT = "base__drawer"
     _DRAWER_CLOSED_STATE = 0.0
     _DRAWER_CLOSED_ATOL = 1e-6
 
     def __init__(self, config: TaskConfig) -> None:
         super().__init__(config)
-        self._target_color = str(config.params.get("target_block_color", "red")).strip().lower()
-        if self._target_color not in self._BLOCK_COLORS:
-            raise ValueError(
-                "task.params.target_block_color must be one of: blue, pink, red"
-            )
-        self._instruction = str(
-            config.params.get(
-                "instruction",
-                (
-                    f"Open the drawer, pick up the {self._target_color} block, "
-                    f"and place the {self._target_color} block inside the drawer."
-                ),
-            )
+        self._target_color = config.params.get("target_block_color", "red").strip().lower()
+        self._instruction = config.params.get(
+            "instruction",
+            (
+                f"Open the drawer, pick up the {self._target_color} block, "
+                f"and place the {self._target_color} block inside the drawer."
+            ),
         )
         self._task_oracle: Any | None = None
         self._reset_info: dict[str, object] | None = None
@@ -48,6 +41,7 @@ class CalvinTask(Task):
         self._reset_info = self._copy_oracle_info(observation.state)
         if self.config.params.get("reject_initial_success", False):
             violations = self._reset_invariant_violations(self._reset_info)
+            # A violated reset invariant would make the staged task trivially or incorrectly solved.
             if violations:
                 raise RuntimeError(
                     f"CALVIN reset invariant failed for seed {seed}: "
@@ -63,8 +57,8 @@ class CalvinTask(Task):
     def is_success(self, observation: Observation, sim_state: dict[str, object]) -> bool:
         if self._success:
             return True
-        if self._reset_info is None or self._task_oracle is None:
-            raise RuntimeError("CALVIN task success was checked before reset()")
+        # reset() initializes both objects before EpisodeManager can query success.
+        assert self._reset_info is not None and self._task_oracle is not None
 
         current_info = self._copy_oracle_info(sim_state)
         if self._opened_info is None:
@@ -81,7 +75,10 @@ class CalvinTask(Task):
             achieved = self._task_oracle.get_task_info_for_set(
                 self._opened_info,
                 current_info,
-                self._target_lift_tasks(),
+                {
+                    f"lift_{self._target_color}_block_table",
+                    f"lift_{self._target_color}_block_slider",
+                },
             )
             if achieved:
                 self._held_info = deepcopy(current_info)
@@ -105,20 +102,8 @@ class CalvinTask(Task):
                 metrics[key] = value
         return metrics
 
-    def _target_lift_tasks(self) -> set[str]:
-        return {
-            f"lift_{self._target_color}_block_table",
-            f"lift_{self._target_color}_block_slider",
-        }
-
     @staticmethod
     def _copy_oracle_info(state: dict[str, object]) -> dict[str, object]:
-        missing = {"robot_info", "scene_info"} - state.keys()
-        if missing:
-            raise RuntimeError(
-                "CALVIN task oracle requires reset/step info fields: "
-                + ", ".join(sorted(missing))
-            )
         return deepcopy(
             {
                 "robot_info": state["robot_info"],

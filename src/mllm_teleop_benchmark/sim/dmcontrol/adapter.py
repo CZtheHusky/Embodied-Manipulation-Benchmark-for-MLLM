@@ -17,9 +17,8 @@ from mllm_teleop_benchmark.sim.dmcontrol.actions import action_to_native
 
 class DMControlSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "dmcontrol":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
-        if bool(config.params.get("visualize_reward", False)):
+        # DMControl would otherwise draw privileged reward information into public RGB.
+        if config.params.get("visualize_reward", False):
             raise ValueError(
                 "DMControl visualize_reward must remain false because it encodes "
                 "privileged reward information in public RGB observations"
@@ -32,8 +31,6 @@ class DMControlSimAdapter(SimAdapter):
         self.config = config
         domain_name = str(config.params.get("domain_name", ""))
         task_name = str(config.params.get("task_name", ""))
-        if not domain_name or not task_name:
-            raise ValueError("DMControl requires simulator.params.domain_name and simulator.params.task_name")
 
         self.domain_name = domain_name
         self.task_name = task_name
@@ -43,16 +40,7 @@ class DMControlSimAdapter(SimAdapter):
         self.planar_eef_velocity_damping = float(
             config.params.get("planar_eef_velocity_damping", 5.0)
         )
-        raw_action_repeat = config.params.get("action_repeat", 1)
-        if (
-            isinstance(raw_action_repeat, bool)
-            or not isinstance(raw_action_repeat, int)
-            or raw_action_repeat < 1
-        ):
-            raise ValueError(
-                "DMControl simulator.params.action_repeat must be a positive integer"
-            )
-        self.action_repeat = raw_action_repeat
+        self.action_repeat = config.params.get("action_repeat", 1)
         task_kwargs = dict(config.env_kwargs)
         task_kwargs["time_limit"] = float("inf")
         environment_kwargs = dict(config.params.get("environment_kwargs", {}))
@@ -86,7 +74,7 @@ class DMControlSimAdapter(SimAdapter):
             planar_target = self._planar_eef_target(action)
             native_action = None
         elif isinstance(action, DMControlAction):
-            native_action = action_to_native(action, self.env.action_spec(), clip=True)
+            native_action = action_to_native(action, self.env.action_spec())
             planar_target = None
         else:
             raise TypeError(
@@ -152,26 +140,10 @@ class DMControlSimAdapter(SimAdapter):
     def close(self) -> None:
         self.env.close()
 
-    def _planar_eef_to_native(self, action: DMControlPlanarEEFAction) -> Any:
-        return self._planar_eef_target_to_native(
-            self._planar_eef_target(action),
-            action.gripper,
-        )
-
     def _planar_eef_target(self, action: DMControlPlanarEEFAction) -> Any:
-        if self.domain_name != "manipulator":
-            raise ValueError(
-                "DMControlPlanarEEFAction is only supported for the manipulator domain"
-            )
-
         import numpy as np
 
         delta = np.asarray(action.delta_xy, dtype=np.float64)
-        if delta.shape != (2,) or not np.all(np.isfinite(delta)):
-            raise ValueError("DMControl planar EEF delta must contain two finite values")
-        if not np.isfinite(action.gripper) or not 0.0 <= action.gripper <= 1.0:
-            raise ValueError("DMControl planar EEF gripper must be within [0, 1]")
-
         physics = self.env.physics
         model = physics.model
         data = physics.data
@@ -191,11 +163,6 @@ class DMControlSimAdapter(SimAdapter):
         import numpy as np
 
         target = np.asarray(target_position, dtype=np.float64)
-        if target.shape != (2,) or not np.all(np.isfinite(target)):
-            raise ValueError("DMControl planar EEF target must contain two finite values")
-        if not np.isfinite(gripper) or not 0.0 <= gripper <= 1.0:
-            raise ValueError("DMControl planar EEF gripper must be within [0, 1]")
-
         physics = self.env.physics
         model = physics.model
         data = physics.data
@@ -225,8 +192,8 @@ class DMControlSimAdapter(SimAdapter):
         )
 
         arm_gear = np.asarray(model.actuator_gear[arm_actuator_ids, 0])
-        if np.any(np.isclose(arm_gear, 0.0)):
-            raise ValueError("DMControl manipulator arm actuator gear must be non-zero")
+        # The manipulator model defines every selected arm actuator with a finite torque gear.
+        assert not np.any(np.isclose(arm_gear, 0.0))
         arm_control = joint_torque / arm_gear
 
         action_spec = self.env.action_spec()
@@ -237,7 +204,6 @@ class DMControlSimAdapter(SimAdapter):
         return action_to_native(
             DMControlAction(values=tuple(float(value) for value in native)),
             action_spec,
-            clip=True,
         )
 
     def _observation(self) -> Observation:

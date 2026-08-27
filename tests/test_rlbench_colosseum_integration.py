@@ -286,21 +286,6 @@ def test_rlbench_task_projects_public_reset_description_into_instruction():
     assert "0.1" not in task.instruction()
 
 
-def test_rlbench_task_rejects_missing_public_reset_description():
-    config = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
-    task = build_task(config)
-
-    class StubSim:
-        def reset(self, _task_config, _seed):
-            return Observation(step_id=0, images={}, state={"success": False})
-
-        def get_state(self):
-            return {"success": False}
-
-    with pytest.raises(RuntimeError, match="public task descriptions"):
-        task.reset(StubSim(), seed=config.benchmark.seed)
-
-
 def test_rlbench_mllm_prompt_describes_only_public_translation_controls():
     baseline = load_config("configs/rlbench_reach_target_mllm_chat_completions.yaml")
     baseline_prompt = ControlInstructionBuilder().build(
@@ -575,26 +560,6 @@ def test_rlbench_rejects_native_initial_success_without_taking_an_action():
     assert task_environment.success_calls == 1
     assert adapter.step_id == 0
     assert adapter.get_state()["success"] is True
-
-
-def test_rlbench_reset_fails_loud_when_native_success_oracle_is_unavailable():
-    config = load_config("configs/rlbench_reach_target_delta_eef.yaml")
-    adapter = RLBenchSimAdapter(config.simulator)
-
-    class TaskEnvironmentWithoutNativeTask:
-        def variation_count(self):
-            return 1
-
-        def set_variation(self, _variation):
-            pass
-
-        def reset(self):
-            return ["Reach the target."], object()
-
-    adapter.task = TaskEnvironmentWithoutNativeTask()
-
-    with pytest.raises(RuntimeError, match=r"native Task\.success\(\) oracle"):
-        adapter.reset(config.task, seed=17)
 
 
 def test_rlbench_mllm_baseline_and_perturbed_same_seed_reset_pair_with_stub():

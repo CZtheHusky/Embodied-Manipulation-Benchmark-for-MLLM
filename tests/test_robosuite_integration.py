@@ -734,7 +734,7 @@ def _request_pngs(request) -> list[tuple[str, np.ndarray]]:
             if not isinstance(item, dict):
                 continue
             if item.get("type") == "text":
-                text = str(item.get("text", ""))
+                text = item.get("text", "")
                 if text.startswith("Camera ") and text.endswith(":"):
                     camera = text[len("Camera ") : -1]
                 continue

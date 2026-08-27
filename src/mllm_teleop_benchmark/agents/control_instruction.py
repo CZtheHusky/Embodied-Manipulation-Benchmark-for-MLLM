@@ -18,14 +18,14 @@ class ControlInstructionBuilder:
 
         channels = list(interface.get("joystick_channels", ()))
         dimensions = list(interface.get("active_dimensions", ()))
-        gripper = str(interface.get("gripper", "none"))
-        mode = str(interface.get("mode", "unknown"))
-        scale_mode = str(interface.get("scale_mode", "configured_by_controller"))
-        visible = bool(interface.get("visible_metadata", True))
-        mapping_complexity = bool(interface.get("mapping_complexity_present", False))
-        frame_complexity = bool(interface.get("frame_complexity_present", False))
+        gripper = interface.get("gripper", "none")
+        mode = interface.get("mode", "unknown")
+        scale_mode = interface.get("scale_mode", "configured_by_controller")
+        visible = interface.get("visible_metadata", True)
+        mapping_complexity = interface.get("mapping_complexity_present", False)
+        frame_complexity = interface.get("frame_complexity_present", False)
         mapping_summary = _mapping_summary(interface.get("mapping"))
-        control_frame_description = str(interface.get("control_frame_description", "")).strip()
+        control_frame_description = interface.get("control_frame_description", "").strip()
         motion_channels = channels[: len(dimensions)]
 
         text_lines = [
@@ -42,21 +42,21 @@ class ControlInstructionBuilder:
         ]
 
         if dimensions and visible:
-            text_lines.append(f"The active controllable dimensions are: {', '.join(str(v) for v in dimensions)}.")
-            dimension_semantics = str(
-                interface.get("dimension_semantics_description", "")
+            text_lines.append(f"The active controllable dimensions are: {', '.join(dimensions)}.")
+            dimension_semantics = interface.get(
+                "dimension_semantics_description", ""
             ).strip()
             if not dimension_semantics:
                 dimension_semantics = _dimension_semantics(
                     dimensions,
-                    str(interface.get("rotation_representation", "")),
+                    interface.get("rotation_representation", ""),
                 )
             if dimension_semantics:
                 text_lines.append(_sentence(dimension_semantics))
             if control_frame_description:
                 text_lines.append(f"The physical controller frame is {control_frame_description}.")
                 panel_lines.append(f"controller frame: {control_frame_description}")
-            panel_lines.append(f"active dims: {', '.join(str(v) for v in dimensions)}")
+            panel_lines.append(f"active dims: {', '.join(dimensions)}")
             if mapping_summary:
                 text_lines.append(f"The visible joystick mapping is: {mapping_summary}.")
                 panel_lines.append(f"mapping: {mapping_summary}")
@@ -88,8 +88,8 @@ class ControlInstructionBuilder:
 
         if gripper != "none":
             text_lines.append(f"A gripper channel is available with {gripper} control. The gripper is always the final virtual joystick.")
-            gripper_semantics = str(
-                interface.get("gripper_semantics_description", "")
+            gripper_semantics = interface.get(
+                "gripper_semantics_description", ""
             ).strip()
             if not gripper_semantics:
                 gripper_semantics = _gripper_semantics(
@@ -113,8 +113,7 @@ def _motion_value_instruction(
         for channel in motion_channels
     ]
     if schemas and all(
-        isinstance(schema, dict)
-        and schema.get("kind") == "continuous"
+        schema.get("kind") == "continuous"
         and schema.get("min") is not None
         and schema.get("max") is not None
         for schema in schemas
@@ -122,7 +121,6 @@ def _motion_value_instruction(
         ranges = {
             (float(schema["min"]), float(schema["max"]))
             for schema in schemas
-            if isinstance(schema, dict)
         }
         if len(ranges) == 1:
             minimum, maximum = ranges.pop()
@@ -139,19 +137,15 @@ def _motion_value_instruction(
     return "Each motion joystick value must satisfy the action schema."
 
 
-def _mapping_summary(mapping: object) -> str:
-    if not isinstance(mapping, dict):
+def _mapping_summary(mapping: dict[str, Any] | None) -> str:
+    if mapping is None:
         return ""
     channels = mapping.get("channels")
     signs = mapping.get("signs", {})
-    if not isinstance(channels, dict):
-        return ""
-    if not isinstance(signs, dict):
-        signs = {}
     parts: list[str] = []
     for channel in sorted(channels):
-        dim = str(channels[channel])
-        sign = float(signs.get(channel, 1.0))
+        dim = channels[channel]
+        sign = signs.get(channel, 1.0)
         target = f"-{dim}" if sign < 0.0 and dim != "gripper" else dim
         parts.append(f"{channel} -> {target}")
     return "; ".join(parts)
@@ -222,8 +216,8 @@ def _join_terms(values: list[str]) -> str:
     return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
-def _gripper_semantics(commands: object) -> str:
-    if not isinstance(commands, dict):
+def _gripper_semantics(commands: dict[str, float] | None) -> str:
+    if commands is None:
         return ""
     parts = [
         f"{_format_number(value)} means {name}"
@@ -235,6 +229,5 @@ def _gripper_semantics(commands: object) -> str:
     return "For the final gripper joystick, " + ", ".join(parts) + "."
 
 
-def _format_number(value: object) -> str:
-    number = float(value)
+def _format_number(number: float) -> str:
     return str(int(number)) if number.is_integer() else str(number)

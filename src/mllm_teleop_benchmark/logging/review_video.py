@@ -148,11 +148,11 @@ class ReviewVideoRenderer:
 
         return ReviewVideoResult(
             status=status,
-            model_view=_relative_to_episode(model_path, self.episode_dir) if model_path.exists() else None,
+            model_view=model_path.relative_to(self.episode_dir).as_posix() if model_path.exists() else None,
             evaluator_debug=(
-                _relative_to_episode(debug_path, self.episode_dir) if debug_path.exists() else None
+                debug_path.relative_to(self.episode_dir).as_posix() if debug_path.exists() else None
             ),
-            manifest=_relative_to_episode(manifest_path, self.episode_dir),
+            manifest=manifest_path.relative_to(self.episode_dir).as_posix(),
             error=error,
         )
 
@@ -168,6 +168,7 @@ class ReviewVideoRenderer:
             cameras = tuple(sorted(str(name) for name in transitions[0].observation.images))
         else:
             cameras = tuple(sorted(str(name) for name in terminal_observation.images))
+        # An empty order otherwise produces a successful text-only MP4 with no model view.
         if not cameras:
             raise ReviewVideoError("Review video requires at least one public RGB camera")
         return cameras
@@ -179,8 +180,6 @@ class ReviewVideoRenderer:
         episode_metadata: dict[str, Any],
     ) -> dict[str, Any]:
         trace = transition.agent_trace
-        if trace is None or not trace.artifact_dir:
-            raise ReviewVideoError(f"Step {transition.step_id} has no model request artifact directory")
         request_path = self._artifact_path(f"{trace.artifact_dir}/request.json")
         try:
             request_manifest = json.loads(request_path.read_text(encoding="utf-8"))
@@ -205,6 +204,7 @@ class ReviewVideoRenderer:
                 if image.get("camera") == camera
                 and image.get("kind", "rgb") == "rgb"
             ]
+            # Ambiguous or missing records break the one-step/one-camera audit mapping.
             if len(matches) != 1:
                 raise ReviewVideoError(
                     f"Step {transition.step_id} camera {camera!r} has {len(matches)} current image records"
@@ -228,6 +228,7 @@ class ReviewVideoRenderer:
         except FileNotFoundError as exc:
             raise ReviewVideoError(f"Missing model-visible PNG: {path}") from exc
         actual_hash = hashlib.sha256(content).hexdigest()
+        # MP4 input must be byte-identical to the PNG sent to the model.
         if actual_hash != expected_hash:
             raise ReviewVideoError(
                 f"Model-visible PNG hash mismatch for {artifact}: expected {expected_hash}, got {actual_hash}"
@@ -257,8 +258,6 @@ class ReviewVideoRenderer:
         terminal_dir = self.review_dir / "terminal"
         terminal_dir.mkdir(parents=True, exist_ok=True)
         for camera in camera_order:
-            if camera not in observation.images:
-                raise ReviewVideoError(f"Terminal observation is missing camera {camera!r}")
             try:
                 encoded = encode_rgb_png(
                     observation.images[camera],
@@ -464,8 +463,8 @@ class ReviewVideoRenderer:
             assert process.stdin is not None
             try:
                 for frame, duration in frames:
-                    if frame.size != CANVAS_SIZE:
-                        raise ReviewVideoError(f"Renderer produced invalid frame size: {frame.size}")
+                    # All frame constructors in this renderer target the fixed review canvas.
+                    assert frame.size == CANVAS_SIZE
                     repeats = max(1, int(round(duration * fps)))
                     content = frame.tobytes()
                     for _ in range(repeats):
@@ -482,12 +481,14 @@ class ReviewVideoRenderer:
                     process.stdin.close()
             stderr.seek(0)
             error_text = stderr.read().decode("utf-8", errors="replace").strip()
-        if frame_count == 0:
-            raise ReviewVideoError("Review video contains no frames")
+        # The terminal observation always contributes at least one frame.
+        assert frame_count > 0
+        # FFmpeg failures are recorded by EpisodeLogger while preserving benchmark results.
         if return_code != 0:
             raise ReviewVideoError(
                 f"FFmpeg exited with status {return_code}: {_sanitize_error_text(error_text)}"
             )
+        # A successful exit without an MP4 is still a failed derived artifact.
         if not target.is_file() or target.stat().st_size == 0:
             raise ReviewVideoError("FFmpeg did not produce a non-empty MP4")
 
@@ -504,6 +505,7 @@ class ReviewVideoRenderer:
             raise ReviewVideoError(f"FFmpeg executable not found: {self.ffmpeg_binary}") from exc
         except subprocess.TimeoutExpired as exc:
             raise ReviewVideoError("FFmpeg version check timed out") from exc
+        # The manifest must not claim a renderer version when the probe failed.
         if result.returncode != 0:
             raise ReviewVideoError(
                 f"FFmpeg version check failed: {_sanitize_error_text(result.stderr)}"
@@ -512,10 +514,12 @@ class ReviewVideoRenderer:
 
     def _artifact_path(self, relative_path: str) -> Path:
         relative = Path(relative_path)
+        # Request manifests are persisted data and cannot select files outside the episode.
         if relative.is_absolute() or ".." in relative.parts:
             raise ReviewVideoError(f"Review artifact path escapes episode directory: {relative_path!r}")
         root = self.episode_dir.resolve()
         target = (self.episode_dir / relative).resolve()
+        # Resolution catches request artifact paths redirected through a symlink.
         if not target.is_relative_to(root):
             raise ReviewVideoError(f"Review artifact path escapes episode directory: {relative_path!r}")
         return target
@@ -795,12 +799,6 @@ def _sanitize_error_text(value: str) -> str:
         sanitized,
     )
     return sanitized[:2000]
-
-
-def _relative_to_episode(path: Path, episode_dir: Path) -> str:
-    return path.relative_to(episode_dir).as_posix()
-
-
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:

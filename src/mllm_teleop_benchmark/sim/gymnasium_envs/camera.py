@@ -7,7 +7,6 @@ import numpy as np
 
 VECTOR_CAMERA_KEYS = {"lookat", "fixedcampos", "fixedcamlookat"}
 INT_CAMERA_KEYS = {"trackbodyid"}
-ALLOWED_CAMERA_KEYS = VECTOR_CAMERA_KEYS | INT_CAMERA_KEYS | {"distance", "azimuth", "elevation"}
 
 
 class MujocoCameraConfigurator:
@@ -16,13 +15,8 @@ class MujocoCameraConfigurator:
             return None
         prepared: dict[str, Any] = {}
         for key, value in camera_configuration.items():
-            if key not in ALLOWED_CAMERA_KEYS:
-                raise ValueError(f"Unsupported MuJoCo camera attribute: {key}")
             if key in VECTOR_CAMERA_KEYS:
-                array = np.asarray(value, dtype=np.float64)
-                if array.shape != (3,):
-                    raise ValueError(f"Camera attribute {key} must be length 3")
-                prepared[key] = array
+                prepared[key] = np.asarray(value, dtype=np.float64)
             elif key in INT_CAMERA_KEYS:
                 prepared[key] = int(value)
             else:

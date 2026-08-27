@@ -29,8 +29,6 @@ class DMControlController(Controller):
         frame_transform: ControlFrameTransform | None = None,
     ) -> "DMControlController":
         dimensions = tuple(str(value) for value in config.params.get("dimensions", ()))
-        if not dimensions:
-            raise ValueError("dmcontrol controller requires params.dimensions")
         return cls(mapping=mapping, dimensions=dimensions, scales=config.scales, frame_transform=frame_transform)
 
     def translate(self, action: JoystickAction) -> DMControlAction:
@@ -62,7 +60,7 @@ class DMControlController(Controller):
                     values_by_dim[dim] = value
 
         return DMControlAction(
-            values=tuple(float(values_by_dim.get(dim, 0.0)) for dim in self.dimensions),
+            values=tuple(values_by_dim.get(dim, 0.0) for dim in self.dimensions),
             metadata={
                 "controller": "dmcontrol",
                 "dimensions": self.dimensions,
@@ -100,16 +98,8 @@ class DMControlPlanarEEFController(Controller):
         cls,
         config: ControllerConfig,
         mapping: JoystickMapping,
-        frame_transform: ControlFrameTransform | None = None,
+        frame_transform: ControlFrameTransform,
     ) -> "DMControlPlanarEEFController":
-        dimensions = tuple(str(value) for value in config.params.get("dimensions", ()))
-        if dimensions != cls._DIMENSIONS:
-            raise ValueError(
-                "dmcontrol_planar_eef controller requires "
-                "params.dimensions=[dx, dy, gripper]"
-            )
-        if frame_transform is None:
-            raise ValueError("dmcontrol_planar_eef controller requires a frame transform")
         return cls(mapping=mapping, scales=config.scales, frame_transform=frame_transform)
 
     def translate(self, action: JoystickAction) -> DMControlPlanarEEFAction:

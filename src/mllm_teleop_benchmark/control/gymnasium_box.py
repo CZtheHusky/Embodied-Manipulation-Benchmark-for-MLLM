@@ -18,8 +18,6 @@ class GymnasiumBoxActionController(Controller):
     @classmethod
     def from_config(cls, config: ControllerConfig, mapping: JoystickMapping, frame_transform: ControlFrameTransform | None = None) -> "GymnasiumBoxActionController":
         dimensions = tuple(str(v) for v in config.params.get("dimensions", ()))
-        if not dimensions:
-            raise ValueError("gymnasium_box controller requires params.dimensions")
         return cls(mapping=mapping, dimensions=dimensions, scales=config.scales, frame_transform=frame_transform)
 
     def translate(self, action: JoystickAction) -> GymBoxAction:

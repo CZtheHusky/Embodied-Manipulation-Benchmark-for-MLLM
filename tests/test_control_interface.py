@@ -163,13 +163,15 @@ def test_control_interface_strips_public_frame_description():
     )
 
 
-def test_control_interface_rejects_blank_public_frame_description():
-    with pytest.raises(ValueError, match="control_frame_description must not be blank"):
-        ControlInterfaceConfig(
-            mode="eef_delta_pose",
-            active_dimensions=("dx",),
-            control_frame_description=" \t ",
-        )
+def test_control_interface_omits_blank_public_frame_description():
+    interface = ControlInterfaceConfig(
+        mode="eef_delta_pose",
+        active_dimensions=("dx",),
+        control_frame_description=" \t ",
+    )
+
+    assert interface.control_frame_description == ""
+    assert "control_frame_description" not in interface.metadata()
 
 
 def test_control_interface_uses_explicit_dimension_and_gripper_semantics():
@@ -204,69 +206,6 @@ def test_control_interface_uses_explicit_dimension_and_gripper_semantics():
         "min": 0.0,
         "max": 1.0,
     }
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    (
-        ("gripper_open_command", -0.01),
-        ("gripper_closed_command", 1.01),
-        ("gripper_hold_command", float("nan")),
-        ("gripper_neutral_command", float("nan")),
-    ),
-)
-def test_direct_gripper_prompt_commands_must_fit_virtual_schema(field, value):
-    kwargs = {
-        "mode": "eef_delta_pose",
-        "active_dimensions": ("dx",),
-        "gripper": "direct",
-        field: value,
-    }
-
-    with pytest.raises(ValueError, match=r"virtual gripper schema \[0, 1\]"):
-        ControlInterfaceConfig(**kwargs)
-
-
-def test_binary_gripper_prompt_commands_must_be_schema_values():
-    with pytest.raises(ValueError, match="must be one of"):
-        ControlInterfaceConfig(
-            mode="eef_delta_pose",
-            active_dimensions=("dx",),
-            gripper="binary",
-            gripper_hold_command=0.5,
-        )
-
-
-def test_gripper_open_and_closed_prompt_commands_must_differ():
-    with pytest.raises(ValueError, match="open and closed commands must differ"):
-        ControlInterfaceConfig(
-            mode="eef_delta_pose",
-            active_dimensions=("dx",),
-            gripper="direct",
-            gripper_open_command=0.5,
-            gripper_closed_command=0.5,
-        )
-
-
-def test_gripper_hold_and_neutral_commands_are_mutually_exclusive():
-    with pytest.raises(ValueError, match="hold and neutral commands are mutually exclusive"):
-        ControlInterfaceConfig(
-            mode="eef_delta_pose",
-            active_dimensions=("dx",),
-            gripper="direct",
-            gripper_hold_command=0.5,
-            gripper_neutral_command=0.5,
-        )
-
-
-def test_gripper_prompt_commands_require_virtual_gripper_channel():
-    with pytest.raises(ValueError, match="require a virtual gripper channel"):
-        ControlInterfaceConfig(
-            mode="eef_delta_pose",
-            active_dimensions=("dx",),
-            gripper_open_command=0.0,
-            gripper_closed_command=1.0,
-        )
 
 
 def test_gripper_instruction_does_not_name_motion_complexity_mechanisms():

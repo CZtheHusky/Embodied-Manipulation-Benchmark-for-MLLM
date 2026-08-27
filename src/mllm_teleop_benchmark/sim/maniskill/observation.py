@@ -8,7 +8,6 @@ from mllm_teleop_benchmark.core.types import Observation
 from mllm_teleop_benchmark.observation.camera import CameraManager
 from mllm_teleop_benchmark.observation.provider import ObservationProvider
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
-from mllm_teleop_benchmark.sim.maniskill.adapter import ManiSkillSimAdapter
 from mllm_teleop_benchmark.sim.maniskill.camera import maniskill_sensor_config
 
 
@@ -17,32 +16,20 @@ class ManiSkillObservationProvider(ObservationProvider):
         self.camera_manager = camera_manager
 
     def configure_sim(self, sim: SimAdapter) -> None:
-        if not isinstance(sim, ManiSkillSimAdapter):
-            raise TypeError(f"ManiSkillObservationProvider requires ManiSkillSimAdapter, got {type(sim).__name__}")
         sim.set_camera_configuration(maniskill_sensor_config(self.camera_manager.get_active_cameras()))
 
     def get_observation(self, sim: SimAdapter) -> Observation:
-        if not isinstance(sim, ManiSkillSimAdapter):
-            raise TypeError(f"ManiSkillObservationProvider requires ManiSkillSimAdapter, got {type(sim).__name__}")
         state = sim.get_state()
         sensor_images = self._extract_images(sim.last_native_obs)
         images: dict[str, Any] = {}
         for camera in self.camera_manager.get_active_cameras():
-            source = str(camera.params.get("source", "sensor"))
+            source = camera.params.get("source", "sensor")
             if source == "human_render":
                 images[camera.name] = sim.render(camera)
-            elif source == "sensor":
-                if camera.name not in sensor_images:
-                    raise RuntimeError(
-                        f"ManiSkill observation is missing configured sensor camera: {camera.name}"
-                    )
-                images[camera.name] = sensor_images[camera.name]
             else:
-                raise ValueError(
-                    f"Unsupported ManiSkill camera source for {camera.name}: {source}"
-                )
+                images[camera.name] = sensor_images[camera.name]
         return Observation(
-            step_id=int(state.get("step_id", 0)),
+            step_id=state.get("step_id", 0),
             images=images,
             state=state,
             metadata={"camera": self.camera_manager.metadata(), "simulator": "maniskill"},

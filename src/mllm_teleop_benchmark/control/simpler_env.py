@@ -36,8 +36,6 @@ class SimplerEnvDeltaEEFController(Controller):
             str(value)
             for value in config.params.get("dimensions", ("dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"))
         )
-        if not dimensions:
-            raise ValueError("simpler_env_delta_eef controller requires at least one dimension")
         return cls(
             mapping=mapping,
             dimensions=dimensions,
@@ -77,7 +75,14 @@ class SimplerEnvDeltaEEFController(Controller):
 
         ordered_dims = ("dx", "dy", "dz", "droll", "dpitch", "dyaw")
         values = [values_by_dim.get(dim, 0.0) for dim in ordered_dims]
-        values.append(self._map_gripper(command.get("gripper", 0.0)) if "gripper" in self.dimensions else self.gripper_open_value)
+        if "gripper" in self.dimensions:
+            gripper = min(max(command.get("gripper", 0.0), 0.0), 1.0)
+            values.append(
+                self.gripper_open_value
+                + gripper * (self.gripper_closed_value - self.gripper_open_value)
+            )
+        else:
+            values.append(self.gripper_open_value)
 
         return SimplerEnvAction(
             values=tuple(float(value) for value in values),
@@ -100,7 +105,3 @@ class SimplerEnvDeltaEEFController(Controller):
             "gripper_open_value": self.gripper_open_value,
             "gripper_closed_value": self.gripper_closed_value,
         }
-
-    def _map_gripper(self, value: float) -> float:
-        clipped = min(max(float(value), 0.0), 1.0)
-        return self.gripper_open_value + clipped * (self.gripper_closed_value - self.gripper_open_value)

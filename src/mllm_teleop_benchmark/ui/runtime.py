@@ -120,26 +120,18 @@ class SimAdapterWorkerRuntime(PlayerRuntime):
     def _ensure_started(self) -> None:
         if self.worker is None:
             self.start()
-        if self.worker is None or self.action_queue is None or self.result_queue is None:
-            raise RuntimeError("Player runtime failed to start worker process")
-        if not self.worker.is_alive():
-            raise RuntimeError(f"Player runtime worker is not alive; exitcode={self.worker.exitcode}")
 
     def _put(self, command: PlayerCommand) -> None:
-        if self.action_queue is None:
-            raise RuntimeError("Player runtime command queue is unavailable")
         self.action_queue.put(command)
 
     def _get_result(self) -> PlayerRuntimeResult:
-        if self.result_queue is None:
-            raise RuntimeError("Player runtime result queue is unavailable")
         try:
             result = self.result_queue.get(timeout=self.config.ui.worker_timeout_seconds)
         except queue.Empty as exc:
             exitcode = self.worker.exitcode if self.worker is not None else None
             raise RuntimeError(f"Timed out waiting for player runtime worker result; exitcode={exitcode}") from exc
         if not isinstance(result, PlayerRuntimeResult):
-            raise RuntimeError(f"Player runtime returned unsupported result: {type(result).__name__}")
+            raise RuntimeError(f"Player runtime returned unsupported result: {result!r}")
         return result
 
 
@@ -164,7 +156,7 @@ def sim_adapter_worker_entry(config: BenchmarkConfig, command_queue: mp.Queue, r
             if command is None:
                 break
             if not isinstance(command, PlayerCommand):
-                result_queue.put(_error_result(TypeError(f"Unsupported player command: {type(command).__name__}")))
+                result_queue.put(_error_result(TypeError(f"Unsupported player command: {command!r}")))
                 continue
             try:
                 if command.kind == "reset":
@@ -184,8 +176,6 @@ def sim_adapter_worker_entry(config: BenchmarkConfig, command_queue: mp.Queue, r
                         )
                     )
                 elif command.kind == "step":
-                    if command.action is None:
-                        raise ValueError("Player step command requires a simulator action")
                     step_result = sim.step(command.action)
                     evaluator_state = dict(sim.get_state())
                     observation = observation_provider.get_observation(sim)
@@ -202,8 +192,6 @@ def sim_adapter_worker_entry(config: BenchmarkConfig, command_queue: mp.Queue, r
                     )
                 elif command.kind == "close":
                     break
-                else:
-                    raise ValueError(f"Unknown player command kind: {command.kind}")
             except Exception as exc:
                 result_queue.put(_error_result(exc))
     finally:

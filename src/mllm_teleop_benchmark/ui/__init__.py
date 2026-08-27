@@ -9,13 +9,14 @@ _LAZY_EXPORTS = {
     "build_runtime": "mllm_teleop_benchmark.ui.registry",
 }
 
-__all__ = list(_LAZY_EXPORTS)
-
 
 def __getattr__(name: str):
-    if name not in _LAZY_EXPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    module = import_module(_LAZY_EXPORTS[name])
+    try:
+        module_name = _LAZY_EXPORTS[name]
+    except KeyError:
+        # Python's module attribute protocol requires AttributeError for unknown lazy exports.
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    module = import_module(module_name)
     value = getattr(module, name)
     globals()[name] = value
     return value

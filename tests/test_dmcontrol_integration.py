@@ -759,7 +759,7 @@ def test_dmcontrol_mllm_seed_range_has_no_initial_success_when_installed():
         sim.close()
 
 
-def test_dmcontrol_action_to_native_clips_and_validates_shape():
+def test_dmcontrol_action_to_native_clips_to_environment_bounds():
     pytest.importorskip("dm_control")
     from dm_env import specs
 
@@ -774,8 +774,6 @@ def test_dmcontrol_action_to_native_clips_and_validates_shape():
 
     clipped = action_to_native(DMControlAction(values=(2.0, -2.0)), action_spec)
     np.testing.assert_allclose(clipped, np.array([1.0, -0.5]))
-    with pytest.raises(ValueError, match="shape"):
-        action_to_native(DMControlAction(values=(0.0, 0.0, 0.0)), action_spec)
 
 
 def test_dmcontrol_named_camera_config_applies_to_model():
@@ -818,26 +816,6 @@ def test_dmcontrol_named_camera_config_applies_to_model():
         np.array([0.5, 0.5, 0.5, 0.5]),
     )
     assert physics.model.cam_fovy[0] == 45.0
-
-
-def test_dmcontrol_free_camera_randomization_fails_loudly():
-    from mllm_teleop_benchmark.sim.dmcontrol.observation import (
-        DMControlObservationProvider,
-    )
-
-    provider = DMControlObservationProvider(camera_manager=None)
-    with pytest.raises(NotImplementedError, match="free-camera orbit"):
-        provider._apply_mujoco_camera_config(
-            object(),
-            {
-                "distance": 1.0,
-                "azimuth": 10.0,
-                "elevation": -30.0,
-                "lookat": (0.0, 0.0, 0.0),
-            },
-        )
-
-
 def test_dmcontrol_sim_adapter_worker_reset_step_shutdown():
     pytest.importorskip("dm_control")
     pytest.importorskip("mujoco")

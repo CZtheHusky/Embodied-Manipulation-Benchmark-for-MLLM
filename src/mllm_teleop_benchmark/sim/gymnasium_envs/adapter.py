@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from mllm_teleop_benchmark.config.schema import CameraSpec, SimulatorConfig, TaskConfig
-from mllm_teleop_benchmark.core.types import GymBoxAction, Observation, SimulatorAction, StepResult
+from mllm_teleop_benchmark.core.types import Observation, SimulatorAction, StepResult
 from mllm_teleop_benchmark.sim.adapter import SimAdapter
 from mllm_teleop_benchmark.sim.gymnasium_envs.actions import action_to_native
 from mllm_teleop_benchmark.sim.gymnasium_envs.registry import REGISTERED_REACHER_DELTA_EEF_ID, register_gymnasium_envs
@@ -12,8 +12,6 @@ from mllm_teleop_benchmark.sim.gymnasium_envs.registry import REGISTERED_REACHER
 
 class GymnasiumSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "gymnasium":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         if config.render_mode == "rgb_array":
             os.environ.setdefault("MUJOCO_GL", str(config.params.get("mujoco_gl", "egl")))
         import gymnasium as gym
@@ -31,6 +29,7 @@ class GymnasiumSimAdapter(SimAdapter):
         self.env = gym.make(self.env_id, **kwargs)
         expected_horizon = config.params.get("max_episode_steps")
         actual_horizon = getattr(self.env, "_max_episode_steps", None)
+        # A smaller TimeLimit would truncate before the agent-command budget.
         if (
             expected_horizon is not None
             and actual_horizon is not None
@@ -56,8 +55,6 @@ class GymnasiumSimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, GymBoxAction):
-            raise TypeError(f"GymnasiumSimAdapter requires GymBoxAction, got {type(action).__name__}")
         native_action = action_to_native(action)
         native_obs, reward, terminated, truncated, info = self.env.step(native_action)
         self.step_id += 1
@@ -73,11 +70,13 @@ class GymnasiumSimAdapter(SimAdapter):
 
     def render(self, camera: CameraSpec) -> Any:
         frame = self._render_frame()
+        # MuJoCo has returned transient black frames in recorded evaluations; retry the viewer.
         if self._is_all_zero_rgb(frame):
             frame = self._render_frame()
             if self._is_all_zero_rgb(frame):
                 self._recreate_render_viewer()
                 frame = self._render_frame()
+                # Persisting after both recovery paths would send an observed black frame to the model.
                 if self._is_all_zero_rgb(frame):
                     raise RuntimeError(
                         "Gymnasium rgb_array renderer returned an all-zero frame "

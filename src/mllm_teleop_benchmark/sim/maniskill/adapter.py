@@ -11,12 +11,8 @@ from mllm_teleop_benchmark.sim.adapter import SimAdapter
 
 class ManiSkillSimAdapter(SimAdapter):
     def __init__(self, config: SimulatorConfig) -> None:
-        if config.type != "maniskill":
-            raise ValueError(f"Unsupported simulator type: {config.type}")
         self.config = config
         self.env_id = config.env_id
-        if self.env_id is None:
-            raise ValueError("ManiSkill simulator requires simulator.env_id")
         self.env: Any | None = None
         self.step_id = 0
         self.last_native_obs: Any = None
@@ -38,8 +34,6 @@ class ManiSkillSimAdapter(SimAdapter):
         return self._observation()
 
     def step(self, action: SimulatorAction) -> StepResult:
-        if not isinstance(action, ManiSkillAction):
-            raise TypeError(f"ManiSkillSimAdapter requires ManiSkillAction, got {type(action).__name__}")
         self._ensure_env(None)
         native_action, clip_metadata = self._native_action(action)
         native_obs, reward, terminated, truncated, info = self.env.step(native_action)
@@ -112,6 +106,7 @@ class ManiSkillSimAdapter(SimAdapter):
         self.env = self._wrap_cpu(env)
         expected_horizon = self.config.params.get("max_episode_steps")
         actual_horizon = getattr(env, "_max_episode_steps", None)
+        # A smaller native TimeLimit would truncate before the agent-command budget.
         if (
             expected_horizon is not None
             and actual_horizon is not None
@@ -157,11 +152,10 @@ class ManiSkillSimAdapter(SimAdapter):
         if action_space is None or not hasattr(action_space, "shape"):
             return values, metadata
         target_shape = tuple(int(v) for v in action_space.shape)
+        # ManiSkill versions expose either batched (1, N) or unbatched (N,) actions.
         if values.shape != target_shape:
             if len(target_shape) == 2 and target_shape[0] == 1 and values.shape == target_shape[1:]:
                 values = values.reshape(target_shape)
-            else:
-                raise ValueError(f"ManiSkill action shape mismatch: controller produced {values.shape}, env expects {target_shape}")
         if hasattr(action_space, "low") and hasattr(action_space, "high"):
             before = values.copy()
             values = np.clip(values, action_space.low, action_space.high)

@@ -320,6 +320,8 @@ def test_pusher_fake_client_closes_privilege_safe_visual_loop(
             "logging.save_video=false",
         ),
     )
+    assert config.control_interface.mapping_strategy == mapping_strategy
+    assert config.control_interface.frame_transform == frame_transform
 
     episode = BenchmarkRunner(config).run((0,)).episodes[0]
 
@@ -332,7 +334,7 @@ def test_pusher_fake_client_closes_privilege_safe_visual_loop(
         request.encoded_body().decode("utf-8") for request in client.requests
     )
     assert "You may include the top-level string key Reflection" in request_text
-    assert "what each joystick channel controls" in request_text
+    assert "Reflection may contain any information you believe" in request_text
     assert "Each motion joystick accepts any finite numeric value" in request_text
     assert "Values outside [-30, 30] are clipped" in request_text
     assert "A value of 1 requests one configured default motion step" in request_text

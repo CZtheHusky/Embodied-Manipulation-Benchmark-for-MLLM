@@ -9,16 +9,17 @@ from mllm_teleop_benchmark.tasks.base import Task
 class RoboCasaGenericTask(Task):
     def __init__(self, config: TaskConfig) -> None:
         super().__init__(config)
-        self._instruction = _configured_instruction(config)
+        self._instruction = config.params.get(
+            "instruction",
+            "Complete the RoboCasa household manipulation task.",
+        )
 
     def reset(self, sim: SimAdapter, seed: int) -> Observation:
         observation = sim.reset(self.config, seed)
         if self.config.params.get("instruction_from_observation", False):
-            key = str(
-                self.config.params.get(
-                    "instruction_observation_key",
-                    "annotation.human.task_description",
-                )
+            key = self.config.params.get(
+                "instruction_observation_key",
+                "annotation.human.task_description",
             )
             value = observation.state.get(key)
             if not isinstance(value, str) or not value.strip():
@@ -28,7 +29,11 @@ class RoboCasaGenericTask(Task):
                 )
             self._instruction = value.strip()
         else:
-            self._instruction = _configured_instruction(self.config)
+            self._instruction = self.config.params.get(
+                "instruction",
+                "Complete the RoboCasa household manipulation task.",
+            )
+        # Reset-success seeds would count as model successes without an agent command.
         if (
             self.config.params.get("reject_initial_success", False)
             and _success_from_state(sim.get_state())
@@ -61,12 +66,3 @@ def _success_from_state(sim_state: dict[str, object]) -> bool:
     if isinstance(info, dict):
         return bool(info.get("success", False))
     return False
-
-
-def _configured_instruction(config: TaskConfig) -> str:
-    return str(
-        config.params.get(
-            "instruction",
-            "Complete the RoboCasa household manipulation task.",
-        )
-    )
