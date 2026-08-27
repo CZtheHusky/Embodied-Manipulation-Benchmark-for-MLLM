@@ -17,5 +17,3 @@ dependencies:
   - cffi
   - cmake
   - make
-  - pip:
-      - -e ..

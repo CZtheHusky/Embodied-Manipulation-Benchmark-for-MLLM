@@ -21,7 +21,7 @@ BACKENDS: dict[str, dict[str, object]] = {
         "env_name": "mllm-teleop-rlbench",
         "env_file": "envs/environment-rlbench.yml",
         "require_flag": "MLLM_TELEOP_REQUIRE_RLBENCH",
-        "root_install_args": ["-e"],
+        "root_install_args": ["--no-build-isolation", "-e"],
         "sources": [
             {
                 "name": "pyrep",
@@ -33,7 +33,7 @@ BACKENDS: dict[str, dict[str, object]] = {
                 "name": "rlbench",
                 "repo": "https://github.com/stepjam/RLBench.git",
                 "commit": "f214b6ecc177babce12d3ad13dd92049c824c1d9",
-                "install_args": ["-e"],
+                "install_args": ["--no-build-isolation", "-e"],
             },
         ],
         "smoke": [
@@ -45,7 +45,7 @@ BACKENDS: dict[str, dict[str, object]] = {
         "env_name": "mllm-teleop-colosseum",
         "env_file": "envs/environment-colosseum.yml",
         "require_flag": "MLLM_TELEOP_REQUIRE_COLOSSEUM",
-        "root_install_args": ["--no-deps", "-e"],
+        "root_install_args": ["--no-build-isolation", "--no-deps", "-e"],
         "sources": [
             {
                 "name": "colosseum-pyrep",
@@ -57,13 +57,13 @@ BACKENDS: dict[str, dict[str, object]] = {
                 "name": "colosseum-rlbench",
                 "repo": "https://github.com/stepjam/RLBench.git",
                 "commit": "7c3f425f4a0b6b5ce001ba7246354eb3c70555be",
-                "install_args": ["--no-deps", "-e"],
+                "install_args": ["--no-build-isolation", "--no-deps", "-e"],
             },
             {
                 "name": "colosseum",
                 "repo": "https://github.com/robot-colosseum/robot-colosseum.git",
                 "commit": "098a910ae1d490524adb49b8d50735b00a1a62de",
-                "install_args": ["--no-deps", "-e"],
+                "install_args": ["--no-build-isolation", "--no-deps", "-e"],
             },
         ],
         "smoke": [
@@ -75,13 +75,13 @@ BACKENDS: dict[str, dict[str, object]] = {
         "env_name": "mllm-teleop-libero",
         "env_file": "envs/environment-libero.yml",
         "require_flag": "MLLM_TELEOP_REQUIRE_LIBERO",
-        "root_install_args": ["--no-deps", "-e"],
+        "root_install_args": ["--no-build-isolation", "--no-deps", "-e"],
         "sources": [
             {
                 "name": "libero",
                 "repo": "https://github.com/Lifelong-Robot-Learning/LIBERO.git",
                 "commit": "8f1084e3132a39270c3a13ebe37270a43ece2a01",
-                "install_args": ["--no-deps", "-e"],
+                "install_args": ["--no-build-isolation", "--no-deps", "-e"],
             },
         ],
         "smoke": [

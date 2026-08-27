@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 def load_manage_conda_env():
@@ -61,3 +62,19 @@ def test_run_backend_verifies_sources_before_conda_command(monkeypatch):
         ("verify", "rlbench"),
         ("run", "rlbench", ["python", "-c", "pass"]),
     ]
+
+
+def test_editable_conda_installs_use_existing_build_dependencies():
+    module = load_manage_conda_env()
+
+    for backend in module.BACKENDS.values():
+        assert "--no-build-isolation" in backend["root_install_args"]
+        for source in backend["sources"]:
+            assert "--no-build-isolation" in source["install_args"]
+
+
+def test_rlbench_environment_does_not_install_repo_during_conda_transaction():
+    root = Path(__file__).resolve().parents[1]
+    environment = yaml.safe_load((root / "envs/environment-rlbench.yml").read_text())
+
+    assert not any(isinstance(dependency, dict) for dependency in environment["dependencies"])
