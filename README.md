@@ -14,6 +14,7 @@ python3 scripts/manage_uv_env.py create maniskill-cu126
 python3 scripts/manage_uv_env.py create robosuite
 python3 scripts/manage_uv_env.py create dmcontrol
 python3 scripts/manage_uv_env.py create calvin
+python3 scripts/manage_uv_env.py create language-table
 ```
 
 Run commands through the target backend environment:
@@ -189,6 +190,20 @@ python3 scripts/manage_uv_env.py run calvin -- python scripts/run_benchmark.py -
 
 The initial config wraps `PlayTableSimEnv`, extracts `static` and `gripper` RGB observations, and runs a random-policy smoke episode. More details are in `docs/calvin_integration.md`.
 
+## Run Language-Table
+
+Language-Table uses a pinned official source checkout and a separate uv runtime:
+
+```bash
+python3 scripts/manage_uv_env.py create language-table
+python3 scripts/manage_uv_env.py smoke language-table
+python3 scripts/manage_uv_env.py run language-table -- python scripts/play_benchmark.py --config configs/language_table_block2block.yaml
+```
+
+The initial config exposes the official four-block `blocktoblock` task, its dynamic
+language instruction, two planar 1 cm controls, and the native `rgb 320x180`
+observation. See `docs/language_table_integration.md`.
+
 ## Package Layout
 
 ```text
@@ -213,6 +228,8 @@ src/mllm_teleop_benchmark/
                optional DeepMind Control Suite adapter
   sim/calvin/
                optional CALVIN adapter
+  sim/language_table/
+               pinned Language-Table PyBullet adapter
   tasks/        task interface and reach-target task
   ui/           human keyboard/Pygame evaluation interface
 ```

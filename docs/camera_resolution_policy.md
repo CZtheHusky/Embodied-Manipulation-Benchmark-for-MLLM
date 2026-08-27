@@ -13,6 +13,9 @@ and never enlarges it.
 - A camera without an upstream size or aspect ratio uses `512x512`.
 - Auxiliary hand, wrist, gripper, or eye-in-hand cameras retain their upstream
   default size.
+- A published benchmark observation with fixed RGB dimensions may retain that
+  native observation contract when resizing would only interpolate pixels or alter
+  the published camera intrinsics. Language-Table retains its `rgb 320x180` array.
 - If the only RGB camera is hand-mounted, it is treated as the main public
   camera and its longest edge is set to 512.
 - Resizing is applied through each simulator's native camera or renderer
@@ -33,6 +36,7 @@ and never enlarges it.
 | RLBench | five RGB cameras default to `128x128` | `front 512x512` |
 | Colosseum | inherited RLBench camera default is `128x128` | `front 512x512` |
 | LIBERO | `agentview` and `robot0_eye_in_hand` default to `128x128` | `agentview 512x512`; eye-in-hand `128x128` |
+| Language-Table | published `rgb` observation is `320x180` | `rgb 320x180` |
 | Dummy | no upstream camera default | `front 512x512` |
 
 The audit targets the pinned or locked sources used by this repository:
@@ -40,6 +44,7 @@ Gymnasium 1.3.0, Meta-World 3.0.0, ManiSkill 3.0.1, robosuite 1.4.1,
 dm_control 1.0.43, RoboCasa `8f3c96e`, SimplerEnv `06accac`,
 ManiSkill2_real2sim `ef7a4d4`, CALVIN `797142c`, RLBench `f214b6e`,
 Colosseum `098a910` with RLBench `7c3f425`, and LIBERO `8f1084e`.
+Language-Table is pinned at `dab1ca4`.
 
 ## Backend Application Paths
 
@@ -56,6 +61,8 @@ Colosseum `098a910` with RLBench `7c3f425`, and LIBERO `8f1084e`.
   matrix before reset.
 - RLBench and Colosseum set `CameraConfig.image_size` before CoppeliaSim launch.
 - dm_control renders each configured camera directly at its requested size.
+- Language-Table forwards the native `rgb` observation without post-render
+  interpolation; API `image_max_side` also leaves this sub-512 frame unchanged.
 
 `tests/test_camera_resolution_policy.py` guards the complete config matrix.
 Backend integration tests additionally assert the actual RGB array shapes.

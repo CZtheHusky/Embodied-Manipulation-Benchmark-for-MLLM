@@ -135,6 +135,12 @@ class DMControlPlanarEEFAction(SimulatorAction):
 
 
 @dataclass(frozen=True)
+class LanguageTableAction(SimulatorAction):
+    delta_xy: tuple[float, float]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class StepResult:
     observation: Observation
     terminated: bool

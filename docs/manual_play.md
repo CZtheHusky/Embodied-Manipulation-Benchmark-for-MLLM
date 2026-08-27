@@ -149,6 +149,19 @@ ui:
 
 The CALVIN player reuses the benchmark parser, validator, mapping, controller, logging, and debug recorders in the main process. The worker owns CALVIN environment creation, reset, stepping, and RGB frame extraction through `CalvinSimAdapter` and `CalvinObservationProvider`.
 
+## Language-Table
+
+Run:
+
+```bash
+python3 scripts/manage_uv_env.py run language-table -- python scripts/play_benchmark.py --config configs/language_table_block2block.yaml
+```
+
+The worker owns the PyBullet environment and returns the official `320x180` RGB
+observation. `W/S` and `A/D` control the two planar workspace axes through the same
+two-channel action schema used by MLLM evaluation. The instruction shown by the player
+is the instruction sampled by Language-Table for the current reset.
+
 ## robosuite Lift
 
 Run:

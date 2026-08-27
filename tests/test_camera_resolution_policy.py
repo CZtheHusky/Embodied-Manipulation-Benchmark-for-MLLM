@@ -15,6 +15,7 @@ EXPECTED_CAMERAS = {
     "dummy": {"front": (512, 512)},
     "gymnasium": {"front": (512, 512)},
     "libero": {"agentview": (512, 512), "robot0_eye_in_hand": (128, 128)},
+    "language_table": {"rgb": (320, 180)},
     "maniskill": {"render_camera": (512, 512)},
     "metaworld": {"topview": (512, 512), "behindGripper": (480, 480)},
     "rlbench": {"front": (512, 512)},

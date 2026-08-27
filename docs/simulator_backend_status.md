@@ -1,19 +1,19 @@
 # Simulator Backend Status
 
-Last updated: 2026-07-30. Runtime results below were last verified on 2026-06-24.
+Last updated: 2026-08-27. Runtime results below include newer per-backend verification dates in the notes where applicable.
 
 This file records the environment-management and human-play status for simulator backends in `main`. It is not a replacement for each backend's integration document.
 
 ## Support Levels
 
 - `uv`: uv lock plus normal package install.
-- `uv_source`: uv lock plus pinned source checkouts installed after sync.
+- `uv_source`: uv lock plus pinned source checkouts installed or exposed on a backend-only `PYTHONPATH` after sync.
 - `external_runtime`: uv-managed Python dependencies plus required host runtime, simulator binary, GPU driver, or display stack.
 - `fallback_blocked`: uv is not currently reliable enough; use a documented conda or container fallback instead.
 
 ## Source Pinning Rule
 
-Backends that depend on upstream source trees must record the source repository and exact 40-character commit SHA in the corresponding environment manager. Floating branches, tags, dirty tracked sources, or unverified PyPI wheels are not enough for runtime verification. Environment creation fetches each source into `.venvs/_sources/`, checks out the pinned commit, verifies `HEAD`, rejects tracked modifications while allowing untracked downloaded assets, and installs that checkout into the backend environment. The `run` and `smoke` commands repeat the source verification before starting the backend.
+Backends that depend on upstream source trees must record the source repository and exact 40-character commit SHA in the corresponding environment manager. Floating branches, tags, dirty tracked sources, or unverified PyPI wheels are not enough for runtime verification. Environment creation fetches each source into `.venvs/_sources/`, checks out the pinned commit, verifies `HEAD`, and rejects tracked modifications while allowing untracked downloaded assets. It then installs the checkout or, when upstream has no package metadata, exposes it only on that backend's `PYTHONPATH`. The `run` and `smoke` commands repeat the source verification before starting the backend.
 
 ## Integrated In `main`
 
@@ -30,6 +30,7 @@ documented environment. It does not mean every upstream task has a dedicated con
 | `maniskill-cpu` | `uv` | Ready | `configs/maniskill_pickcube_delta_eef.yaml`; CPU runtime. |
 | `maniskill-cu126` | `external_runtime` | Ready on compatible NVIDIA hosts | Uses the same ManiSkill config. uv manages Python dependencies; runtime requires a working NVIDIA driver and CUDA-capable Torch wheel. |
 | `metaworld` | `uv` | Ready | `configs/metaworld_reach.yaml`. |
+| `language-table` | `uv_source` | Ready | `configs/language_table_block2block.yaml`. Pins official Language-Table commit `dab1ca4df68cab1727c1d8f26b48252ab2f3d473`; native PyBullet RGB is `320x180`. Runtime verified locally on 2026-08-27. |
 | `simpler-env` | `uv_source` | Ready with host GPU/display access | `configs/simpler_env_google_robot_pick_coke_can.yaml`. Installs pinned `mani_skill2_real2sim` commit `ef7a4d4fdf4b69f2c2154db5b15b9ac8dfe10682` and `simpler_env` commit `06accaca93535902d408da4855f21cece12bceb7`. SAPIEN/Vulkan can fail in restricted sandboxes. |
 | `calvin` | `uv_source` | Ready | `configs/calvin_delta_eef.yaml`. Installs pinned `calvin_env` commit `797142c588c21e76717268b7b430958dbd13bf48`. |
 | `robocasa` | `uv_source` | Ready | `configs/robocasa_pick_place_counter_to_cabinet.yaml`. Pins RoboCasa commit `8f3c96ec8d1bfcd8126cad2bca887da98d30e997` and robosuite commit `85abee228d1c43ab1939bce33028099945d453b4`; required kitchen assets must be downloaded. |

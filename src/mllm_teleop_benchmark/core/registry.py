@@ -94,6 +94,10 @@ def build_sim(config: BenchmarkConfig) -> SimAdapter:
         from mllm_teleop_benchmark.sim.libero.adapter import LiberoSimAdapter
 
         return LiberoSimAdapter(simulator_config)
+    if simulator_config.type == "language_table":
+        from mllm_teleop_benchmark.sim.language_table.adapter import LanguageTableSimAdapter
+
+        return LanguageTableSimAdapter(simulator_config)
     raise ValueError(f"Unsupported simulator type: {simulator_config.type}")
 
 
@@ -140,6 +144,10 @@ def build_task(config: BenchmarkConfig) -> Task:
         from mllm_teleop_benchmark.tasks.libero_task import LiberoTask
 
         return LiberoTask(config.task)
+    if config.task.type == "language_table_generic":
+        from mllm_teleop_benchmark.tasks.language_table_task import LanguageTableTask
+
+        return LanguageTableTask(config.task)
     raise ValueError(f"Unsupported task type: {config.task.type}")
 
 
@@ -297,4 +305,8 @@ def build_controller(config: BenchmarkConfig, mapping: JoystickMapping, seed: in
         from mllm_teleop_benchmark.control.libero_controller import LiberoDeltaEEFController
 
         return LiberoDeltaEEFController.from_config(config.controller, mapping, frame_transform)
+    if config.controller.type == "language_table_planar":
+        from mllm_teleop_benchmark.control.language_table import LanguageTablePlanarController
+
+        return LanguageTablePlanarController.from_config(config.controller, mapping, frame_transform)
     raise ValueError(f"Unsupported controller type: {config.controller.type}")

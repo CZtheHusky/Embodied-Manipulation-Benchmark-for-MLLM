@@ -25,6 +25,7 @@ def _effective_step(config, dimension: str) -> float:
         "robocasa": 0.05 if dimension in TRANSLATION_DIMS else 0.5,
         "robosuite": 0.05 if dimension in TRANSLATION_DIMS else 0.5,
         "libero": 0.05 if dimension in TRANSLATION_DIMS else 0.5,
+        "language_table": 1.0,
         "simpler_env": 1.0,
         "calvin": 0.02 if dimension in TRANSLATION_DIMS else 0.05,
         "dmcontrol": 1.0,

@@ -1,0 +1,1 @@
+from mllm_teleop_benchmark.sim.language_table.adapter import LanguageTableSimAdapter

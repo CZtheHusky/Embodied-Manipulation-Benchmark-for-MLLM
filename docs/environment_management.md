@@ -12,7 +12,7 @@ Conda env files under `envs/environment-*.yml` remain as a fallback during the u
 - Do not commit `.venvs/` or upstream source checkouts under `.venvs/_sources/`.
 - Classify every backend with one support level:
   - `uv`: uv lock plus normal package install.
-  - `uv_source`: uv lock plus pinned source checkouts installed after sync.
+- `uv_source`: uv lock plus pinned source checkouts installed or exposed on a backend-only `PYTHONPATH` after sync.
   - `external_runtime`: uv-managed Python dependencies plus a required host runtime, simulator binary, or driver stack.
   - `fallback_blocked`: uv is not currently reliable enough; use a documented conda or container fallback instead.
 - For source-backed environments, declare each upstream repository with a
@@ -42,7 +42,9 @@ For `uv_source` backends, `create` runs in this order:
 2. Install this repository editable.
 3. Fetch each declared upstream source into `.venvs/_sources/<name>`.
 4. Check out and verify the exact commit.
-5. Install that checkout into the target backend environment.
+5. Install that checkout into the target backend environment, or for an upstream
+   repository without package metadata, expose the verified checkout only on that
+   backend's `PYTHONPATH`.
 
 Regenerate a lock:
 
@@ -162,6 +164,20 @@ python3 scripts/manage_uv_env.py create metaworld
 python3 scripts/manage_uv_env.py smoke metaworld
 python3 scripts/manage_uv_env.py run metaworld -- python scripts/run_benchmark.py --config configs/metaworld_reach.yaml
 ```
+
+Language-Table:
+
+```bash
+python3 scripts/manage_uv_env.py create language-table
+python3 scripts/manage_uv_env.py smoke language-table
+python3 scripts/manage_uv_env.py run language-table -- python scripts/play_benchmark.py --config configs/language_table_block2block.yaml
+```
+
+Language-Table is pinned to upstream commit
+`dab1ca4df68cab1727c1d8f26b48252ab2f3d473`. Because the upstream repository has no
+package metadata, the manager verifies the checkout and places it on this backend's
+`PYTHONPATH` instead of attempting an editable install. See
+`docs/language_table_integration.md` for the runtime/training dependency boundary.
 
 CALVIN:
 

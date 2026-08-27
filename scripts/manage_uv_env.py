@@ -116,6 +116,31 @@ BACKENDS: dict[str, dict[str, object]] = {
             ["python", "scripts/run_benchmark.py", "--config", "configs/metaworld_reach.yaml"],
         ],
     },
+    "language-table": {
+        "python": "3.11",
+        "input": "language-table.in",
+        "support_level": "uv_source",
+        "sources": [
+            {
+                "name": "language-table",
+                "repo": "https://github.com/google-research/language-table.git",
+                "commit": "dab1ca4df68cab1727c1d8f26b48252ab2f3d473",
+                "install": False,
+                "pythonpath": True,
+            },
+        ],
+        "smoke": [
+            ["python", "-m", "pytest", "-q", "tests/test_language_table_integration.py"],
+            [
+                "python",
+                "scripts/run_benchmark.py",
+                "--config",
+                "configs/language_table_block2block.yaml",
+                "--set",
+                "task.max_steps=2",
+            ],
+        ],
+    },
     "simpler-env": {
         "python": "3.10",
         "input": "simpler-env.in",
@@ -321,6 +346,8 @@ def install_source(default_backend: str, source: dict[str, object]) -> None:
     ensure_git_checkout(source_dir, str(source["repo"]), str(source["commit"]))
     if source.get("submodules"):
         run(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
+    if not source.get("install", True):
+        return
     target_backend = source.get("target_backend", default_backend)
     install_args = [str(arg) for arg in source.get("install_args", ["--no-deps", "-e"])]
     run(["uv", "pip", "install", "--python", str(venv_path(target_backend)), *install_args, str(source_dir)])
@@ -411,7 +438,13 @@ def smoke_backend(name: str) -> None:
 def backend_env(name: str) -> dict[str, str]:
     cfg = backend_config(name)
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT / "src")
+    python_paths = [str(ROOT / "src")]
+    python_paths.extend(
+        str(source_path(source))
+        for source in backend_sources(name)
+        if source.get("pythonpath")
+    )
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
     if name == "libero":
         env.setdefault("LIBERO_CONFIG_PATH", str(VENV_DIR / "libero_config"))
     env.update(cfg.get("env", {}))

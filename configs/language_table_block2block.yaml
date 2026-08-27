@@ -1,0 +1,80 @@
+benchmark:
+  name: language_table_block2block_v0
+  num_episodes: 1
+  seed: 7
+
+simulator:
+  type: language_table
+  params:
+    block_mode: BLOCK_4
+    reward: blocktoblock
+    training: true
+    control_frequency: 10.0
+    delay_reward_steps: 0
+    add_invisible_walls: false
+
+task:
+  type: language_table_generic
+  max_steps: 200
+  success_threshold: 1.0
+  params: {}
+
+camera:
+  manager: fixed
+  visible_metadata: true
+  cameras:
+    - name: rgb
+      type: pybullet_rgb
+      width: 320
+      height: 180
+
+control_interface:
+  mode: planar_eef_delta
+  active_dimensions: [dx, dy]
+  gripper: none
+  channel_kind: discrete
+  channel_values: [-1, 0, 1]
+  mapping_strategy: fixed
+  visible_metadata: true
+  mapping_visible_to_agent: true
+  frame_transform: identity
+  frame_visible_to_agent: true
+  control_frame_description: >-
+    the Language-Table planar workspace x-y frame. A mapped magnitude-1
+    command moves the end-effector target by 0.01 meters along that axis
+  params:
+    scale_mode: language_table_world_xy_0_01m
+
+controller:
+  type: language_table_planar
+  scales:
+    dx: 0.01
+    dy: 0.01
+  params:
+    dimensions: [dx, dy]
+
+agent:
+  type: random
+  invalid_action_recovery: noop
+  history_window: 5
+
+logging:
+  output_dir: outputs/language_table_block2block
+  save_images: false
+  save_video: false
+  save_trajectory: true
+  save_config_snapshot: true
+
+ui:
+  backend: pygame
+  runtime: sim_adapter_worker
+  frame_camera: rgb
+  window_width: 640
+  window_height: 360
+  info_panel_height: 190
+  fps: 10
+  max_steps: 200
+  step_when_idle: false
+  simple_blit: true
+  debug_frames: true
+  debug_control_history: true

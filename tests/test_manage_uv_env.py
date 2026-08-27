@@ -26,6 +26,7 @@ def test_list_backends_reports_support_levels():
     assert "maniskill-cu126\texternal_runtime" in lines
     assert "simpler-env\tuv_source" in lines
     assert "calvin\tuv_source" in lines
+    assert "language-table\tuv_source" in lines
 
 
 def test_robocasa_runner_enforces_offscreen_egl(monkeypatch):
@@ -64,11 +65,15 @@ def test_uv_source_backends_declare_exact_source_commits():
 
     simpler_sources = module.backend_sources("simpler-env")
     calvin_sources = module.backend_sources("calvin")
+    language_table_sources = module.backend_sources("language-table")
 
     assert {source["name"] for source in simpler_sources} == {"mani-skill2-real2sim", "simpler-env"}
     assert {source["name"] for source in calvin_sources} == {"calvin-env"}
+    assert {source["name"] for source in language_table_sources} == {"language-table"}
     assert calvin_sources[0]["submodules"] is True
-    for source in [*simpler_sources, *calvin_sources]:
+    assert language_table_sources[0]["install"] is False
+    assert language_table_sources[0]["pythonpath"] is True
+    for source in [*simpler_sources, *calvin_sources, *language_table_sources]:
         assert re.fullmatch(r"[0-9a-f]{40}", source["commit"])
 
 
@@ -145,6 +150,49 @@ def test_install_source_updates_submodules_when_requested(monkeypatch, tmp_path)
 
     source_dir = tmp_path / ".venvs" / "_sources" / "demo-source"
     assert (["git", "submodule", "update", "--init", "--recursive"], source_dir, None) in commands
+
+
+def test_source_only_checkout_is_not_passed_to_pip(monkeypatch, tmp_path):
+    module = load_manage_uv_env()
+    commit = "a" * 40
+    source = {
+        "name": "source-only",
+        "repo": "https://example.invalid/source-only.git",
+        "commit": commit,
+        "install": False,
+        "pythonpath": True,
+    }
+    commands = []
+
+    monkeypatch.setattr(module, "VENV_DIR", tmp_path / ".venvs")
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda command, *, cwd=None, env=None: commands.append((command, cwd, env)),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_output",
+        lambda command, *, cwd=None: (
+            commit if command[:2] == ["git", "rev-parse"] else ""
+        ),
+    )
+
+    module.install_source("demo-backend", source)
+
+    assert not any(command[0][:3] == ["uv", "pip", "install"] for command in commands)
+
+
+def test_language_table_source_is_added_to_pythonpath(monkeypatch, tmp_path):
+    module = load_manage_uv_env()
+    monkeypatch.setattr(module, "VENV_DIR", tmp_path / ".venvs")
+
+    env = module.backend_env("language-table")
+
+    assert env["PYTHONPATH"].split(module.os.pathsep) == [
+        str(module.ROOT / "src"),
+        str(tmp_path / ".venvs" / "_sources" / "language-table"),
+    ]
 
 
 def test_verify_git_checkout_rejects_mismatched_head(monkeypatch, tmp_path):

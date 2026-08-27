@@ -1,0 +1,13 @@
+absl-py>=2.0
+gym==0.23.0
+imageio>=2.0
+numpy>=1.26,<2.0
+opencv-python-headless>=4.10,<4.12
+Pillow>=10.0
+pybullet==3.2.7
+pygame>=2.5
+pytest>=8.0
+PyYAML>=6.0
+scipy>=1.11,<2.0
+six>=1.16
+tensorflow-cpu==2.20.0
