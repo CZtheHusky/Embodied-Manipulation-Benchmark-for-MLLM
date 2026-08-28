@@ -303,7 +303,7 @@ def test_metaworld_mllm_configs_are_explicit_and_switchable(
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.agent.history.image_window == 3
     assert config.agent.observation.cameras == ("topview", "behindGripper")
     assert config.logging.save_video is False
@@ -559,7 +559,7 @@ def test_metaworld_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v11"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

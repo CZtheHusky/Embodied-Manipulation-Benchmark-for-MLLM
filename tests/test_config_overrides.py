@@ -71,7 +71,7 @@ def test_chat_completions_config_can_use_three_prior_images():
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.agent.history.image_window == 3
 
 
@@ -81,6 +81,7 @@ def test_responses_backend_accepts_reflection_contract_with_full_history():
         (
             "agent.model.api=responses",
             "agent.history.image_window=all",
+            "agent.history.action_window=all",
             "agent.history.max_images_per_request=256",
         ),
     )
@@ -91,13 +92,25 @@ def test_responses_backend_accepts_reflection_contract_with_full_history():
     assert config.agent.history.image_window == "all"
 
 
-def test_chat_completions_backend_allows_configurable_image_history():
+def test_chat_completions_backend_allows_configurable_paired_history():
     config = load_config(
         "configs/reacher_delta_eef_mllm_chat_completions.yaml",
-        ("agent.history.image_window=2",),
+        (
+            "agent.history.image_window=2",
+            "agent.history.action_window=2",
+        ),
     )
 
     assert config.agent.history.image_window == 2
+    assert config.agent.history.action_window == 2
+
+
+def test_chat_completions_rejects_unpaired_history_windows():
+    with pytest.raises(ValueError, match="action_window to equal"):
+        load_config(
+            "configs/reacher_delta_eef_mllm_chat_completions.yaml",
+            ("agent.history.image_window=2",),
+        )
 
 
 def test_removed_action_output_mode_is_rejected_with_backend_guidance():
@@ -109,20 +122,24 @@ def test_removed_action_output_mode_is_rejected_with_backend_guidance():
 
 
 @pytest.mark.parametrize(
-    ("override", "expected"),
+    ("window", "expected"),
     [
-        ("agent.history.image_window=0", 0),
-        ("agent.history.image_window=7", 7),
-        ("agent.history.image_window=all", "all"),
+        ("0", 0),
+        ("7", 7),
+        ("all", "all"),
     ],
 )
-def test_mllm_image_history_override_accepts_zero_integer_or_all(override, expected):
+def test_mllm_paired_history_override_accepts_zero_integer_or_all(window, expected):
     config = load_config(
         "configs/reacher_delta_eef_mllm_chat_completions.yaml",
-        (override,),
+        (
+            f"agent.history.image_window={window}",
+            f"agent.history.action_window={window}",
+        ),
     )
 
     assert config.agent.history.image_window == expected
+    assert config.agent.history.action_window == expected
 
 
 def test_mllm_config_rejects_inline_api_key():

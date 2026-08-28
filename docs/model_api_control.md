@@ -24,7 +24,7 @@ randomization values, or other simulator metadata. Those values remain
 available to evaluators and debug logs, but not to the model client.
 
 Chat Completions uses prompt version
-`mllm_joystick_chat_completions_v10`. Responses uses
+`mllm_joystick_chat_completions_v11`. Responses uses
 `mllm_joystick_responses_v10`. Static system text, task text, control
 instructions, and schema are placed before episode turns. Request IDs,
 timestamps, and other per-call values are not inserted into prompt text.
@@ -158,12 +158,16 @@ no-step behavior.
 
 ## History policy
 
-'action_window' and 'image_window' accept a non-negative integer or 'all'.
+`action_window` and `image_window` accept a non-negative integer or `all`.
+For Chat Completions they must have the same value, because every historical
+action and Reflection is sent only with the public image that produced it.
 
-- 'image_window=0' sends no historical images and always sends the current frame.
-- 'image_window=N' sends the previous N frames plus the current frame.
-- 'image_window=all' sends every episode frame plus the current frame.
-- 'action_window=all' retains every normalized action in chronological order.
+- `image_window=action_window=0` sends no historical turns and always sends the
+  current frame.
+- `image_window=action_window=N` sends the previous N complete
+  image/action/Reflection turns plus the current frame.
+- `image_window=action_window=all` sends every complete episode turn plus the
+  current frame.
 
 At public observation steps `10, 20, 30, ...`, both backends append
 `Task reminder at agent step N: <task instruction>` to that observation. The
@@ -171,9 +175,9 @@ counter is the agent-command step ID; simulator internal substeps do not affect
 the cadence. Step `0` does not repeat the instruction. Reconstructed history
 preserves the reminder on the same numbered observation.
 
-Omitted historical images use '[image omitted by history policy]'; action text
-is retained independently. The 'all' mode is strict: exceeding
-'max_images_per_request' or 'max_request_bytes' fails instead of truncating.
+Chat Completions never sends an action-only historical turn. The `all` mode is
+strict: exceeding `max_images_per_request` or `max_request_bytes` fails instead
+of truncating.
 
 Frames and magnifier crops are deterministically normalized to uint8 RGB,
 resized without changing aspect ratio, and PNG encoded once. Historical
@@ -349,7 +353,7 @@ agent trace. The server does not expose arbitrary files: image routes are
 restricted to PNG artifacts named in request manifests, and evaluator
 state/info are not returned by its API.
 
-`mllm_joystick_chat_completions_v10` and
+`mllm_joystick_chat_completions_v11` and
 `mllm_joystick_responses_v10` are prompt contract versions, not model versions.
 They identify the system instruction, public-input projection, history layout,
 image policy, and joystick response schema. A behavior-changing prompt update

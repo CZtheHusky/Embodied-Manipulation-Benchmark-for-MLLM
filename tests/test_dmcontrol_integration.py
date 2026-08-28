@@ -263,7 +263,7 @@ def test_dmcontrol_mllm_config_is_planar_eef_not_native_motor_aliases(
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.history.image_window == 3
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.task.params["success_key"] == "current_reward"
     assert config.task.params["reject_initial_success"] is True
 

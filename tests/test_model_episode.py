@@ -94,7 +94,7 @@ def _config(tmp_path, image_window):
         ),
         observation=AgentObservationConfig(cameras=("front",), image_max_side=32),
         history=AgentHistoryConfig(
-            action_window="all",
+            action_window=image_window,
             image_window=image_window,
             max_images_per_request=128,
             max_request_bytes=67_108_864,
@@ -194,8 +194,8 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert (
         group_dir.name
         == f"model-fake-model__reasoning-default__api-chat_completions"
-        f"__prompt-mllm_joystick_chat_completions_v10"
-        f"__history-images-{image_window}-actions-all__episodes-1__maxsteps-3"
+        f"__prompt-mllm_joystick_chat_completions_v11"
+        f"__history-images-{image_window}-actions-{image_window}__episodes-1__maxsteps-3"
     )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 3
@@ -246,7 +246,7 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
 
     assert make_experiment_group(config) == (
         "model-fake-model__reasoning-default__api-chat_completions"
-        "__prompt-mllm_joystick_chat_completions_v10"
+        "__prompt-mllm_joystick_chat_completions_v11"
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
@@ -292,10 +292,10 @@ def test_reflection_mode_records_and_replays_reflection_with_distinct_group(
         "joystick_0 may control horizontal motion"
     )
     run_dir = episode_dir.parent
-    assert "__prompt-mllm_joystick_chat_completions_v10__" in run_dir.parent.name
+    assert "__prompt-mllm_joystick_chat_completions_v11__" in run_dir.parent.name
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v11"
 
 
 def test_responses_experiment_group_records_prompt_version(tmp_path):

@@ -22,7 +22,7 @@ Verified again on 2026-07-29 with the pinned `.venvs/calvin` environment:
 - Every model request used public `static` and `gripper` RGB images. The per-request image counts were `2, 4, 6, 8`, matching three historical turns plus the current turn.
 - All eight model-input PNGs per condition were valid, non-black RGB images.
 - Every parsed action was valid and translated to a finite seven-value native action with six bounded relative pose commands and a native gripper command in `{-1, 1}`.
-- The run manifest records the `chat_completions` backend, optional Reflection, reasoning `low`, image history `3`, all action history, and prompt version `mllm_joystick_chat_completions_v10`.
+- The run manifest records the `chat_completions` backend, optional Reflection, reasoning `low`, three paired image/action history turns, and prompt version `mllm_joystick_chat_completions_v11`.
 - Sentinel state, reward, success, distance, object/EEF pose, simulator action, seed, and sampled hidden-control values did not enter the model request.
 - Task success uses the pinned CALVIN `Tasks.get_task_info_for_set()` API. It requires `open_drawer`, then the configured target block's table/slider lift task, and finally `place_in_drawer`, deep-copying the state at each completed phase. Success remains sticky and never uses `push_into_drawer`.
 - Both MLLM configurations enable `reject_initial_success`. The reset check uses absolute scene state: the drawer joint must be closed, the red block must not contact the drawer link, and the red block and robot must not contact each other.
@@ -81,7 +81,7 @@ Both configurations use:
 - `chat_completions` with optional Reflection.
 - reasoning effort `low`.
 - `max_output_tokens: 192`.
-- `image_window: 3` and `action_window: all`.
+- `image_window: 3` and `action_window: 3`.
 - the default-position `static` and `gripper` public RGB cameras.
 - ten episodes and review video enabled by default.
 

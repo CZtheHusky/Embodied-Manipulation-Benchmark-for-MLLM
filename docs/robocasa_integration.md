@@ -32,9 +32,9 @@ The PickPlaceCounterToCabinet task has two switchable Chat Completions configs:
 - `configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions.yaml`: `fixed + identity`.
 - `configs/robocasa_pick_place_counter_to_cabinet_mllm_chat_completions_perturbed.yaml`: hidden `permuted_sign_flipped + random_rotation_3d`.
 
-Both use `chat_completions` with optional Reflection, reasoning effort `low`, three historical image
-steps, all action history, and prompt contract
-`mllm_joystick_chat_completions_v10`. After reset, both conditions project the upstream
+Both use `chat_completions` with optional Reflection, reasoning effort `low`, three paired historical
+image/action turns, and prompt contract
+`mllm_joystick_chat_completions_v11`. After reset, both conditions project the upstream
 public `annotation.human.task_description` string into the prompt. This names the
 episode's target object and avoids the ambiguous static fallback when distractor
 objects are present. A missing or empty upstream instruction is a runtime error.

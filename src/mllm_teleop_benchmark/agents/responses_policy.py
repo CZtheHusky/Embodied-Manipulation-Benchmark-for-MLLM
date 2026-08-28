@@ -294,7 +294,6 @@ class ResponsesMLLMPolicy(MLLMPolicy):
         message, images = self._observation_message(
             observation,
             cameras,
-            include_images=True,
             task_instruction=task_instruction,
         )
         content = []
@@ -318,7 +317,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
         transition: StepTransition,
         action_schema: dict[str, Any],
     ) -> dict[str, Any]:
-        action = _history_action(transition, action_schema, include_action=True)
+        action = _history_action(transition, action_schema)
         return {
             "role": "user",
             "content": [

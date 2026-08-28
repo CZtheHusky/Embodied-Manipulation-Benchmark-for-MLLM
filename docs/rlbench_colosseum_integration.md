@@ -276,7 +276,7 @@ reach the red target
 ```
 
 They use the `chat_completions` backend with optional Reflection, reasoning
-effort `low`, three historical image turns, all textual action history, and the
+effort `low`, three paired historical image/action turns, and the
 public `front` RGB camera. The public control surface contains only `dx`, `dy`,
 and `dz`; it does not expose rotation or gripper channels because `ReachTarget`
 does not need them. A magnitude-1 mapped translation is `0.01 m` before the

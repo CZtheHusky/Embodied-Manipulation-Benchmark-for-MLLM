@@ -121,7 +121,7 @@ Both use:
 - `chat_completions` with optional Reflection
 - OpenAI-compatible Chat Completions
 - reasoning effort `low`
-- three historical image turns and all textual action history
+- three paired historical image/action turns
 - public `agentview` and `robot0_eye_in_hand` RGB
 - one fixed upstream `libero_spatial` task with deterministic seed-selected
   official init states

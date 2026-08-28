@@ -91,7 +91,7 @@ PickCube has two standalone MLLM configurations:
 | `configs/maniskill_pickcube_delta_eef_mllm_chat_completions_perturbed.yaml` | `permuted_sign_flipped` | `random_rotation_3d` | The permutation/sign and 3D-frame rules are public, but their episode realization is hidden. |
 
 Both use the OpenAI-compatible Chat Completions API,
-`chat_completions` with optional Reflection, `image_window: 3`, and `action_window: all`. They
+`chat_completions` with optional Reflection, `image_window: 3`, and `action_window: 3`. They
 send the official `render_camera` RGB stream. ManiSkill sensor observations
 intentionally hide the green PickCube goal site, so the benchmark uses the
 human render camera where both the red cube and green goal marker are public.

@@ -190,7 +190,7 @@ def test_robocasa365_configs_load_with_exact_task_metadata(
         assert config.agent.model.api == "chat_completions"
         assert config.agent.model.reasoning_effort == "low"
         assert config.agent.observation.cameras == PUBLIC_CAMERAS
-        assert config.agent.history.action_window == "all"
+        assert config.agent.history.action_window == 3
         assert config.agent.history.image_window == 3
 
 

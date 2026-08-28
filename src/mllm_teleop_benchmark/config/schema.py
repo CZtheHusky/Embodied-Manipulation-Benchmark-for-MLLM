@@ -500,7 +500,7 @@ HistoryWindow = int | str
 
 @dataclass(frozen=True)
 class AgentHistoryConfig:
-    action_window: HistoryWindow = "all"
+    action_window: HistoryWindow = 2
     image_window: HistoryWindow = 2
     max_images_per_request: int = 128
     max_request_bytes: int = 67_108_864
@@ -508,9 +508,10 @@ class AgentHistoryConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "AgentHistoryConfig":
         values = dict(data or {})
+        image_window = values.get("image_window", 2)
         return cls(
-            action_window=values.get("action_window", "all"),
-            image_window=values.get("image_window", 2),
+            action_window=values.get("action_window", image_window),
+            image_window=image_window,
             max_images_per_request=int(values.get("max_images_per_request", 128)),
             max_request_bytes=int(values.get("max_request_bytes", 67_108_864)),
         )
@@ -540,6 +541,17 @@ class AgentConfig:
             )
         model = ModelConfig.from_dict(data.get("model")) if agent_type == "mllm" else None
         history = AgentHistoryConfig.from_dict(data.get("history"))
+        if (
+            model is not None
+            and model.api == "chat_completions"
+            and history.action_window != history.image_window
+        ):
+            # CLI overrides can change only one window; without rejection, run metadata
+            # records that unmatched value while the request builder emits paired turns.
+            raise ValueError(
+                "Chat Completions requires agent.history.action_window to equal "
+                "agent.history.image_window"
+            )
         return cls(
             type=agent_type,
             invalid_action_recovery=invalid_action_recovery,

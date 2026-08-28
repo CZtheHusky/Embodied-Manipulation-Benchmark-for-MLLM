@@ -152,7 +152,7 @@ def test_robosuite_mllm_configs_are_explicit_and_switchable(
     assert config.agent.model is not None
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.response_format == "json_object"
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.agent.history.image_window == 3
     assert config.task.success_threshold == 0.04
     assert config.task.params["reject_initial_success"] is True

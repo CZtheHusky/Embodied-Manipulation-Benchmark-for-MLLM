@@ -40,8 +40,8 @@ All three use:
 
 Both MLLM conditions reject an environment that is already successful
 immediately after reset. They use the Chat Completions API, reasoning effort
-`low`, `chat_completions` with optional Reflection, all action history, and three historical image
-steps.
+`low`, `chat_completions` with optional Reflection, and three paired historical
+image/action turns.
 
 ## Control Contract
 

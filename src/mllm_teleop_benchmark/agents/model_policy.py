@@ -20,10 +20,8 @@ from mllm_teleop_benchmark.core.types import (
 from mllm_teleop_benchmark.utils.images import encode_rgb_png, safe_artifact_name
 
 
-PROMPT_VERSION = "mllm_joystick_chat_completions_v10"
+PROMPT_VERSION = "mllm_joystick_chat_completions_v11"
 TASK_REMINDER_INTERVAL = 10
-IMAGE_OMITTED = "[image omitted by history policy]"
-ACTION_OMITTED = "[action omitted by history policy]"
 HIDDEN_REASONING_REDACTION = "[REDACTED: hidden reasoning]"
 SYSTEM_PROMPT = (
     "You control a robot through a virtual joystick. "
@@ -207,14 +205,11 @@ class MLLMPolicy(Agent):
         ]
         images: list[EncodedImage] = []
         for index, transition in enumerate(history):
-            include_image = _selected(index, len(history), self.config.history.image_window)
-            include_action = _selected(index, len(history), self.config.history.action_window)
-            if not include_image and not include_action:
+            if not _selected(index, len(history), self.config.history.image_window):
                 continue
             observation_message, turn_images = self._observation_message(
                 transition.observation,
                 cameras,
-                include_images=include_image,
                 task_instruction=context.task_instruction,
             )
             messages.append(observation_message)
@@ -225,7 +220,6 @@ class MLLMPolicy(Agent):
                     "content": _history_action(
                         transition,
                         context.action_schema,
-                        include_action=include_action,
                     ),
                 }
             )
@@ -233,7 +227,6 @@ class MLLMPolicy(Agent):
         current_message, current_images = self._observation_message(
             context.observation,
             cameras,
-            include_images=True,
             task_instruction=context.task_instruction,
         )
         messages.append(current_message)
@@ -277,7 +270,6 @@ class MLLMPolicy(Agent):
         observation: Observation,
         cameras: tuple[str, ...],
         *,
-        include_images: bool,
         task_instruction: str | None = None,
     ) -> tuple[dict[str, Any], tuple[EncodedImage, ...]]:
         content: list[dict[str, Any]] = [
@@ -310,9 +302,6 @@ class MLLMPolicy(Agent):
         images: list[EncodedImage] = []
         for camera in cameras:
             content.append({"type": "text", "text": f"Camera {camera}:"})
-            if not include_images:
-                content.append({"type": "text", "text": IMAGE_OMITTED})
-                continue
             encoded = self._encoded_image(
                 observation.step_id,
                 camera,
@@ -341,24 +330,21 @@ class MLLMPolicy(Agent):
                     ),
                 }
             )
-            if not include_images:
-                content.append({"type": "text", "text": IMAGE_OMITTED})
-            else:
-                encoded = self._encoded_image(
-                    observation.step_id,
-                    f"magnifier:{observation.magnifier.source_rgb_key}",
-                    observation.magnifier.image,
-                    kind="magnifier",
-                    source_rgb_key=observation.magnifier.source_rgb_key,
-                    bbox_xyxy=observation.magnifier.bbox_xyxy,
-                )
-                images.append(encoded)
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": encoded.data_url},
-                    }
-                )
+            encoded = self._encoded_image(
+                observation.step_id,
+                f"magnifier:{observation.magnifier.source_rgb_key}",
+                observation.magnifier.image,
+                kind="magnifier",
+                source_rgb_key=observation.magnifier.source_rgb_key,
+                bbox_xyxy=observation.magnifier.bbox_xyxy,
+            )
+            images.append(encoded)
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": encoded.data_url},
+                }
+            )
         return {"role": "user", "content": content}, tuple(images)
 
     def _encoded_image(
@@ -542,11 +528,7 @@ def _static_instruction(
 def _history_action(
     transition: StepTransition,
     action_schema: dict[str, Any],
-    *,
-    include_action: bool,
 ) -> str:
-    if not include_action:
-        return ACTION_OMITTED
     if transition.validation.is_valid and transition.parsed_action is not None:
         payload: dict[str, Any] = {"channels": transition.parsed_action}
         if transition.reflection is not None:

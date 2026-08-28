@@ -45,7 +45,7 @@ actions and reflections:
 agent.model.api: chat_completions
 agent.model.api: chat_completions
 agent.history.image_window: 3
-agent.history.action_window: all
+agent.history.action_window: 3
 ```
 
 Choose the public fixed baseline:

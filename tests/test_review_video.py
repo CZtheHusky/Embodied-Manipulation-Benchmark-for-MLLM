@@ -423,7 +423,7 @@ def test_fake_mllm_episode_generates_two_real_review_videos(monkeypatch, tmp_pat
             api_key_env="TEST_MLLM_API_KEY",
         ),
         observation=AgentObservationConfig(cameras=("front",), image_max_side=32),
-        history=AgentHistoryConfig(image_window=0),
+        history=AgentHistoryConfig(action_window=0, image_window=0),
     )
     config = replace(
         config,

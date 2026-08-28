@@ -295,7 +295,7 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.model.max_output_tokens == 192
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.agent.history.image_window == 3
     assert config.agent.observation.cameras == PUBLIC_CAMERAS
     assert config.logging.save_video is False
@@ -385,7 +385,7 @@ def test_robocasa_mllm_configs_are_explicit_and_switchable(
 
     group = make_experiment_group(config)
     assert group is not None
-    assert "prompt-mllm_joystick_chat_completions_v10" in group
+    assert "prompt-mllm_joystick_chat_completions_v11" in group
     assert "__output-" not in group
     if visible:
         assert "mapping-permuted_sign_flipped" not in group
@@ -769,7 +769,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v10" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v11" in request_text
     assert f"Task: {public_instructions[0]}" in request_text
     assert "dx, dy, and dz denote end-effector translation" in request_text
     assert "droll, dpitch, and dyaw denote end-effector rotation" in request_text
@@ -882,7 +882,7 @@ def test_robocasa_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v11"
     assert manifest["observation"]["cameras"] == list(PUBLIC_CAMERAS)
     assert manifest["history"] == {
         "action_window": "all",

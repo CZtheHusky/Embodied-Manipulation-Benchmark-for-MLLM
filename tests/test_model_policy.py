@@ -15,7 +15,6 @@ from mllm_teleop_benchmark.agents.model_client import (
 )
 from mllm_teleop_benchmark.agents.model_policy import (
     HIDDEN_REASONING_REDACTION,
-    IMAGE_OMITTED,
     MLLMPolicy,
     _canonical_message_stream,
     sanitize_provider_response,
@@ -65,7 +64,7 @@ class RecordingClient(ModelClient):
 
 def _agent_config(
     image_window=2,
-    action_window="all",
+    action_window=None,
     max_images=128,
     max_request_bytes=67_108_864,
 ):
@@ -74,7 +73,7 @@ def _agent_config(
         model=ModelConfig(require_api_key=False),
         observation=AgentObservationConfig(cameras=("front",), image_max_side=32),
         history=AgentHistoryConfig(
-            action_window=action_window,
+            action_window=image_window if action_window is None else action_window,
             image_window=image_window,
             max_images_per_request=max_images,
             max_request_bytes=max_request_bytes,
@@ -209,9 +208,9 @@ def test_json_object_requirement_is_present_in_user_input():
 
     policy.act(_context(0))
 
-    assert policy.prompt_version == "mllm_joystick_chat_completions_v10"
+    assert policy.prompt_version == "mllm_joystick_chat_completions_v11"
     request = client.requests[0]
-    assert "mllm_joystick_chat_completions_v10" in request.messages[1]["content"]
+    assert "mllm_joystick_chat_completions_v11" in request.messages[1]["content"]
     user_text = " ".join(
         message["content"]
         for message in request.messages
@@ -299,7 +298,7 @@ def test_chat_completions_contract_and_history_preserve_reflection():
     assert request.messages[0]["role"] == "system"
     assert "top-level string key Reflection" in request.messages[0]["content"]
     static_instruction = request.messages[1]["content"]
-    assert "mllm_joystick_chat_completions_v10" in static_instruction
+    assert "mllm_joystick_chat_completions_v11" in static_instruction
     assert "\nTask: pick coke can\nControl:" in static_instruction
     assert "optional case-sensitive string key Reflection" in static_instruction
     assistant_payload = json.loads(
@@ -313,7 +312,7 @@ def test_chat_completions_contract_and_history_preserve_reflection():
         "Reflection": "joystick_0 appears to move right",
         "channels": {"joystick_0": 1.0, "joystick_1": 0.0},
     }
-    assert decision.trace.prompt_version == "mllm_joystick_chat_completions_v10"
+    assert decision.trace.prompt_version == "mllm_joystick_chat_completions_v11"
 
 
 def test_chat_completions_includes_only_three_prior_images():
@@ -334,15 +333,12 @@ def test_chat_completions_includes_only_three_prior_images():
 
     request = client.requests[0]
     assert _image_count(request) == 4
-    assert _request_text(request).count(IMAGE_OMITTED) == 2
     assistant_payloads = [
         json.loads(message["content"])
         for message in request.messages
         if message["role"] == "assistant"
     ]
     assert [payload["Reflection"] for payload in assistant_payloads] == [
-        "hypothesis 0",
-        "hypothesis 1",
         "hypothesis 2",
         "hypothesis 3",
         "hypothesis 4",
@@ -350,18 +346,17 @@ def test_chat_completions_includes_only_three_prior_images():
 
 
 @pytest.mark.parametrize(
-    ("image_window", "expected_images", "expected_omitted"),
+    ("image_window", "expected_steps"),
     [
-        (0, 1, 3),
-        (2, 3, 1),
-        (8, 4, 0),
-        ("all", 4, 0),
+        (0, [3]),
+        (2, [1, 2, 3]),
+        (8, [0, 1, 2, 3]),
+        ("all", [0, 1, 2, 3]),
     ],
 )
-def test_image_history_window_preserves_order_and_current_frame(
+def test_history_window_preserves_paired_turns_and_current_frame(
     image_window,
-    expected_images,
-    expected_omitted,
+    expected_steps,
 ):
     client = RecordingClient()
     policy = MLLMPolicy(_agent_config(image_window=image_window), client, "fake-model")
@@ -370,8 +365,7 @@ def test_image_history_window_preserves_order_and_current_frame(
     policy.act(_context(3, history))
 
     request = client.requests[0]
-    assert _image_count(request) == expected_images
-    assert _request_text(request).count(IMAGE_OMITTED) == expected_omitted
+    assert _image_count(request) == len(expected_steps)
     observation_labels = [
         item["text"]
         for message in request.messages
@@ -382,42 +376,12 @@ def test_image_history_window_preserves_order_and_current_frame(
         and item.get("text", "").startswith("Observation step")
     ]
     assert [label.split(".", 1)[0] for label in observation_labels] == [
-        "Observation step 0",
-        "Observation step 1",
-        "Observation step 2",
-        "Observation step 3",
+        f"Observation step {step}" for step in expected_steps
     ]
-
-
-def test_omitted_history_preserves_each_camera_label_and_replaces_only_images():
-    client = RecordingClient()
-    policy = MLLMPolicy(_agent_config(), client, "fake-model")
-    pixels = np.zeros((8, 8, 3), dtype=np.uint8)
-    observation = Observation(
-        step_id=0,
-        images={"front": pixels, "wrist": pixels},
-        state={},
-    )
-
-    included, included_images = policy._observation_message(
-        observation,
-        ("front", "wrist"),
-        include_images=True,
-    )
-    omitted, omitted_images = policy._observation_message(
-        observation,
-        ("front", "wrist"),
-        include_images=False,
-    )
-
-    included_structure = [
-        IMAGE_OMITTED if item.get("type") == "image_url" else item["text"]
-        for item in included["content"]
+    assistant_messages = [
+        message for message in request.messages if message["role"] == "assistant"
     ]
-    omitted_structure = [item["text"] for item in omitted["content"]]
-    assert omitted_structure == included_structure
-    assert len(included_images) == 2
-    assert omitted_images == ()
+    assert len(assistant_messages) == len(expected_steps) - 1
 
 
 def test_current_observation_includes_magnifier_image_feedback_and_manifest():
@@ -460,7 +424,7 @@ def test_current_observation_includes_magnifier_image_feedback_and_manifest():
 
 def test_history_replays_normalized_magnifier_command():
     client = RecordingClient()
-    policy = MLLMPolicy(_agent_config(image_window=0), client, "fake-model")
+    policy = MLLMPolicy(_agent_config(image_window=1), client, "fake-model")
     transition = replace(
         _transition(0),
         magnifier_update=MagnifierUpdate(
@@ -500,7 +464,6 @@ def test_magnifier_artifact_namespace_cannot_collide_with_camera_key():
     _message, images = policy._observation_message(
         observation,
         ("magnifier_front",),
-        include_images=True,
     )
 
     assert [image.artifact_path for image in images] == [
@@ -518,7 +481,7 @@ def test_noop_history_uses_fixed_public_status_without_error_details(
     expected_status,
 ):
     client = RecordingClient()
-    policy = MLLMPolicy(_agent_config(image_window=0), client, "fake-model")
+    policy = MLLMPolicy(_agent_config(image_window=1), client, "fake-model")
     transition = replace(
         _transition(0),
         parsed_action=None,
@@ -545,9 +508,9 @@ def test_noop_history_uses_fixed_public_status_without_error_details(
     assert "PRIVATE_ENDPOINT_ERROR" not in _request_text(request)
 
 
-def test_action_window_all_keeps_every_normalized_action():
+def test_history_window_drops_actions_without_selected_images():
     client = RecordingClient()
-    policy = MLLMPolicy(_agent_config(image_window=0, action_window="all"), client, "fake-model")
+    policy = MLLMPolicy(_agent_config(image_window=2), client, "fake-model")
     history = tuple(_transition(step, action_value=(-1 + step)) for step in range(3))
 
     policy.act(_context(3, history))
@@ -557,7 +520,7 @@ def test_action_window_all_keeps_every_normalized_action():
         for message in client.requests[0].messages
         if message["role"] == "assistant"
     ]
-    assert [payload["channels"]["joystick_0"] for payload in assistant_payloads] == [-1.0, 0.0, 1.0]
+    assert [payload["channels"]["joystick_0"] for payload in assistant_payloads] == [0.0, 1.0]
 
 
 def test_all_history_keeps_previous_canonical_stream_as_exact_prefix():

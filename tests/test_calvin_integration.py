@@ -302,7 +302,7 @@ def test_calvin_mllm_configs_are_explicit_and_switchable(
     assert config.agent.model.api == "chat_completions"
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.model.max_output_tokens == 192
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.agent.history.image_window == 3
     assert config.agent.observation.cameras == ("static", "gripper")
     assert config.camera.manager == "fixed"
@@ -1155,7 +1155,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     )
 
     request_text = _request_text(client.requests[-1])
-    assert "Prompt version: mllm_joystick_chat_completions_v10" in request_text
+    assert "Prompt version: mllm_joystick_chat_completions_v11" in request_text
     assert (
         "Open the drawer, pick up the red block, and place the red block "
         "inside the drawer."
@@ -1241,7 +1241,7 @@ def test_calvin_fake_client_closes_four_step_public_rgb_loop(
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["model"]["reasoning_effort"] == "low"
     assert "action_output_mode" not in manifest["model"]
-    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v10"
+    assert manifest["model"]["prompt_version"] == "mllm_joystick_chat_completions_v11"
     assert manifest["history"] == {
         "action_window": "all",
         "image_window": 3,

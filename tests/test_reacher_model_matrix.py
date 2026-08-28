@@ -111,7 +111,9 @@ def test_reacher_matrix_configs_are_explicit_and_distinct(
     assert config.agent.model is not None
     assert config.agent.model.api == api
     assert config.agent.model.reasoning_effort == "low"
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == (
+        "all" if api == "responses" else 3
+    )
     assert config.agent.history.image_window == (
         "all" if api == "responses" else 3
     )

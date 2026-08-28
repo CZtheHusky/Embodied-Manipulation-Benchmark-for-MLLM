@@ -93,7 +93,7 @@ agent:
     cameras: [front]
     image_max_side: 512
   history:
-    action_window: all
+    action_window: 3
     image_window: 3
     max_images_per_request: 128
     max_request_bytes: 67108864

@@ -120,7 +120,7 @@ def test_maniskill_pickcube_mllm_configs_define_reflection_and_public_controls(
     assert config.agent.model.response_format == "json_object"
     assert config.agent.model.reasoning_effort == "low"
     assert config.agent.history.image_window == 3
-    assert config.agent.history.action_window == "all"
+    assert config.agent.history.action_window == 3
     assert config.agent.observation.cameras == ("render_camera",)
     assert config.camera.manager == "fixed"
     assert config.camera.cameras[0].params["source"] == "human_render"
