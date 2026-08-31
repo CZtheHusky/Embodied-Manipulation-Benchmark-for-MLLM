@@ -334,6 +334,49 @@ def test_api_failure_terminates_without_stepping_environment(monkeypatch, tmp_pa
     assert summary["termination_reason"] == "agent_error"
 
 
+def test_http_200_without_final_content_persists_sanitized_response(
+    monkeypatch,
+    tmp_path,
+):
+    class EmptyFinalClient(FakeClient):
+        def complete(self, request):
+            self.requests.append(request)
+            raise ModelClientError(
+                "Model response message does not contain text content",
+                attempts=1,
+                status_code=200,
+                raw_response={
+                    "choices": [
+                        {
+                            "finish_reason": "length",
+                            "message": {
+                                "content": None,
+                                "reasoning_content": "private chain of thought",
+                            },
+                        }
+                    ]
+                },
+            )
+
+    episode = _run_with_fake(
+        monkeypatch,
+        _config(tmp_path, "all"),
+        EmptyFinalClient(),
+    )
+
+    response = json.loads(
+        (
+            Path(episode.log_dir)
+            / "model_calls/step_0000/response.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert response["choices"][0]["finish_reason"] == "length"
+    assert (
+        response["choices"][0]["message"]["reasoning_content"]
+        == "[REDACTED: hidden reasoning]"
+    )
+
+
 def test_invalid_model_json_executes_noop_without_extra_api_request(monkeypatch, tmp_path):
     client = FakeClient(response_text="{not-json")
     config = _config(tmp_path, 0)

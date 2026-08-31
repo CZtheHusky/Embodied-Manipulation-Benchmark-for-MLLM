@@ -10,6 +10,18 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
+_HIDDEN_REASONING_KEYS = {
+    "analysis",
+    "chain_of_thought",
+    "reasoning",
+    "reasoning_content",
+    "reasoning_details",
+    "thinking",
+    "thinking_content",
+    "thoughts",
+}
+
+
 @dataclass(frozen=True)
 class ModelRequest:
     model: str
@@ -111,12 +123,14 @@ class ModelClientError(RuntimeError):
         status_code: int | None = None,
         latency_ms: float | None = None,
         request_bytes: int = 0,
+        raw_response: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.attempts = attempts
         self.status_code = status_code
         self.latency_ms = latency_ms
         self.request_bytes = request_bytes
+        self.raw_response = raw_response
 
 
 class ModelClient(ABC):
@@ -191,8 +205,10 @@ class _OpenAIHTTPClient(ModelClient):
                 ) from exc
 
             if 200 <= status < 300:
+                safe_payload: dict[str, Any] | None = None
                 try:
                     payload = decode_response(response_body)
+                    safe_payload = _sanitize_response(payload, self._api_key)
                     text = _redact_text(response_text(payload), self._api_key)
                     request_id = _optional_string(payload.get("id"))
                     # Responses continuation silently loses its provider context without this id.
@@ -215,8 +231,8 @@ class _OpenAIHTTPClient(ModelClient):
                         status_code=error_status,
                         latency_ms=(time.perf_counter() - started) * 1000.0,
                         request_bytes=len(body),
+                        raw_response=safe_payload,
                     ) from exc
-                safe_payload = _sanitize_response(payload, self._api_key)
                 return ModelResponse(
                     text=text,
                     request_id=request_id,
@@ -513,7 +529,13 @@ def _error_message(payload: bytes, status: int) -> str:
 def _sanitize_response(value: Any, secret: str | None) -> Any:
     if isinstance(value, dict):
         return {
-            str(key): "[REDACTED]" if str(key).lower() == "authorization" else _sanitize_response(item, secret)
+            str(key): (
+                "[REDACTED]"
+                if str(key).lower() == "authorization"
+                else "[REDACTED: hidden reasoning]"
+                if str(key).lower() in _HIDDEN_REASONING_KEYS
+                else _sanitize_response(item, secret)
+            )
             for key, item in value.items()
         }
     if isinstance(value, list):

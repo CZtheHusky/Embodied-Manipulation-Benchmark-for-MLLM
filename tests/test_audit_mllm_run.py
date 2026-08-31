@@ -810,6 +810,66 @@ def test_nonblack_but_frozen_model_rgb_fails_temporal_audit(
     }
 
 
+def test_static_magnifier_crop_is_valid_when_source_camera_changes(
+    monkeypatch,
+    tmp_path,
+):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_dir = run_dir / "episode_0000"
+    trajectory_path = episode_dir / "trajectory.jsonl"
+    transition = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    transition["parsed_action"] = {"joystick_0": 1.0}
+    trajectory_path.write_text(json.dumps(transition) + "\n", encoding="utf-8")
+
+    first_request_path = episode_dir / "model_calls/step_0000/request.json"
+    first_request = json.loads(first_request_path.read_text(encoding="utf-8"))
+    magnifier_0 = episode_dir / "model_calls/images/step_0000/magnifier/front.png"
+    magnifier_0_digest = _png(magnifier_0)
+    first_request["images"].append(
+        {
+            "step_id": 0,
+            "camera": "magnifier:front",
+            "artifact": "model_calls/images/step_0000/magnifier/front.png",
+            "sha256": magnifier_0_digest,
+        }
+    )
+    _write_json(first_request_path, first_request)
+
+    front_1 = episode_dir / "model_calls/images/step_0001/front.png"
+    front_1_digest = _png(front_1, pixel_offset=1)
+    magnifier_1 = episode_dir / "model_calls/images/step_0001/magnifier/front.png"
+    magnifier_1.parent.mkdir(parents=True, exist_ok=True)
+    magnifier_1.write_bytes(magnifier_0.read_bytes())
+    _append_completed_step(
+        run_dir,
+        step_id=1,
+        response_model="test-model",
+        images=[
+            {
+                "step_id": 1,
+                "camera": "front",
+                "artifact": "model_calls/images/step_0001/front.png",
+                "sha256": front_1_digest,
+            },
+            {
+                "step_id": 1,
+                "camera": "magnifier:front",
+                "artifact": "model_calls/images/step_0001/magnifier/front.png",
+                "sha256": magnifier_0_digest,
+            },
+        ],
+    )
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "pass"
+    assert report["checks"]["images"]["cameras"] == {
+        "front": {"observed_steps": 2, "unique_hashes": 2},
+        "magnifier:front": {"observed_steps": 2, "unique_hashes": 1},
+    }
+
+
 def test_unchanged_rgb_is_valid_when_model_only_requests_noops(
     monkeypatch,
     tmp_path,
@@ -855,6 +915,26 @@ def test_unchanged_rgb_is_valid_when_model_only_requests_noops(
         "front": {"observed_steps": 2, "unique_hashes": 1}
     }
     assert "model_image_camera_frozen" not in {
+        item["code"] for item in report["anomalies"]
+    }
+
+
+def test_agent_error_termination_fails_formal_audit(monkeypatch, tmp_path):
+    run_dir, _image_path = _run_fixture(tmp_path)
+    episode_summary_path = run_dir / "episode_0000/summary.json"
+    episode_summary = json.loads(episode_summary_path.read_text(encoding="utf-8"))
+    episode_summary["termination_reason"] = "agent_error"
+    _write_json(episode_summary_path, episode_summary)
+    run_summary_path = run_dir / "run_summary.json"
+    run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+    run_summary["episodes"][0]["termination_reason"] = "agent_error"
+    _write_json(run_summary_path, run_summary)
+    _mock_ffprobe(monkeypatch)
+
+    report = audit_mllm_run.audit_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert "agent_error_termination" in {
         item["code"] for item in report["anomalies"]
     }
 

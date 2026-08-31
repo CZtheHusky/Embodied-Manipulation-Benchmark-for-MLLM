@@ -135,6 +135,16 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                 else:
                     exc = None
             if exc is not None:
+                response_artifacts = (
+                    (
+                        _json_artifact(
+                            f"{artifact_dir}/response.json",
+                            sanitize_provider_response(exc.raw_response),
+                        ),
+                    )
+                    if exc.raw_response is not None
+                    else ()
+                )
                 return AgentDecision(
                     action=None,
                     trace=AgentTrace(
@@ -158,6 +168,7 @@ class ResponsesMLLMPolicy(MLLMPolicy):
                     artifacts=(
                         *recovery_artifacts,
                         *request_artifacts,
+                        *response_artifacts,
                         _json_artifact(
                             f"{artifact_dir}/error.json",
                             {

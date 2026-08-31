@@ -178,6 +178,39 @@ def test_cached_token_usage_is_parsed_when_reported():
     assert usage.cache_metrics_status == "reported"
 
 
+def test_empty_final_content_preserves_sanitized_provider_response():
+    payload = {
+        "id": "thinking-call",
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {
+                    "content": None,
+                    "reasoning_content": "private chain of thought",
+                },
+            }
+        ],
+        "usage": {
+            "completion_tokens": 4096,
+            "completion_tokens_details": {"reasoning_tokens": 4096},
+        },
+    }
+
+    def sender(_url, _body, _headers, _timeout):
+        return 200, json.dumps(payload).encode("utf-8")
+
+    with pytest.raises(ModelClientError) as raised:
+        _client(sender).complete(_request())
+
+    assert raised.value.status_code == 200
+    assert raised.value.raw_response is not None
+    assert raised.value.raw_response["choices"][0]["finish_reason"] == "length"
+    assert (
+        raised.value.raw_response["choices"][0]["message"]["reasoning_content"]
+        == "[REDACTED: hidden reasoning]"
+    )
+
+
 def test_cache_metrics_are_unavailable_when_endpoint_omits_them():
     def sender(_url, _body, _headers, _timeout):
         return 200, _response({"prompt_tokens": 12, "completion_tokens": 2})

@@ -113,6 +113,16 @@ class MLLMPolicy(Agent):
         try:
             response = self.client.complete(request)
         except ModelClientError as exc:
+            response_artifacts = (
+                (
+                    _json_artifact(
+                        f"{artifact_dir}/response.json",
+                        sanitize_provider_response(exc.raw_response),
+                    ),
+                )
+                if exc.raw_response is not None
+                else ()
+            )
             return AgentDecision(
                 action=None,
                 trace=AgentTrace(
@@ -133,6 +143,7 @@ class MLLMPolicy(Agent):
                 ),
                 artifacts=(
                     *request_artifacts,
+                    *response_artifacts,
                     _json_artifact(
                         f"{artifact_dir}/error.json",
                         {

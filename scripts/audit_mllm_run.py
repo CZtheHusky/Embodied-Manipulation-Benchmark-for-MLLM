@@ -305,6 +305,12 @@ class RunAuditor:
         if summary is not None:
             report["success"] = summary.get("success")
             report["termination_reason"] = summary.get("termination_reason")
+            if report["termination_reason"] == "agent_error":
+                self.add(
+                    "error",
+                    "agent_error_termination",
+                    self.rel(episode_dir / "summary.json"),
+                )
             if report["termination_reason"] == "execution_budget_violation":
                 self.add(
                     "error",
@@ -831,6 +837,8 @@ class RunAuditor:
         if not visual_change_expected:
             return
         for camera, counts in camera_summary.items():
+            if camera.startswith("magnifier:"):
+                continue
             if counts["observed_steps"] < 2 or counts["unique_hashes"] != 1:
                 continue
             self.frozen_cameras.add((episode_id, camera))
