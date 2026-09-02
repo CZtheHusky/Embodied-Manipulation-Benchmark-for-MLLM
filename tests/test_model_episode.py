@@ -211,6 +211,7 @@ def test_fake_client_runs_three_step_episode_with_artifacts_and_history(
     assert manifest["simulator"]["type"] == "dummy"
     assert manifest["model"]["requested_model"] == "fake-model"
     assert manifest["model"]["reasoning_effort"] is None
+    assert manifest["model"]["thinking_token_budget"] is None
     assert manifest["model"]["api"] == "chat_completions"
     assert manifest["history"]["image_window"] == image_window
     assert manifest["control_interface"]["mapping_strategy"] == "fixed"
@@ -250,6 +251,27 @@ def test_experiment_group_identifies_control_perturbations(tmp_path):
         "__history-images-all-actions-all__episodes-1__maxsteps-3"
         "__mapping-permuted_sign_flipped__frame-random_rotation_2d"
     )
+
+
+def test_experiment_group_records_thinking_token_budget(tmp_path):
+    config = _config(tmp_path, 3)
+    config = replace(
+        config,
+        agent=replace(
+            config.agent,
+            model=replace(
+                config.agent.model,
+                reasoning_effort=None,
+                thinking_token_budget=4096,
+            ),
+        ),
+    )
+
+    group = make_experiment_group(config)
+
+    assert group is not None
+    assert "__reasoning-default__" in group
+    assert "__thinking-budget-4096__" in group
 
 
 def test_reflection_mode_records_and_replays_reflection_with_distinct_group(

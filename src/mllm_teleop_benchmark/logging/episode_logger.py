@@ -189,6 +189,9 @@ class EpisodeLogger:
                 "provider": model.provider if model is not None else None,
                 "api": model.api if model is not None else None,
                 "reasoning_effort": model.reasoning_effort if model is not None else None,
+                "thinking_token_budget": (
+                    model.thinking_token_budget if model is not None else None
+                ),
                 "stream": model.stream if model is not None else None,
                 "response_format": model.response_format if model is not None else None,
                 "prompt_version": (
@@ -273,6 +276,8 @@ def make_experiment_group(config: BenchmarkConfig) -> str | None:
         f"prompt-{_configured_prompt_version(config)}",
         f"history-{history}",
     ]
+    if model.thinking_token_budget is not None:
+        parts.append(f"thinking-budget-{model.thinking_token_budget}")
     if camera_condition is not None:
         parts.append(f"camera-{camera_condition}")
     parts.append(f"episodes-{config.benchmark.num_episodes}")

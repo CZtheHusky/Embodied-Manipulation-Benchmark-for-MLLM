@@ -432,6 +432,7 @@ class ModelConfig:
     retry_backoff_max_seconds: float = 30.0
     retry_until_success: bool = False
     reasoning_effort: str | None = None
+    thinking_token_budget: int | None = None
     temperature: float = 0.0
     max_output_tokens: int = 128
     response_format: str = "json_object"
@@ -455,6 +456,12 @@ class ModelConfig:
         reasoning_effort = (
             str(reasoning_effort_value) if reasoning_effort_value is not None else None
         )
+        thinking_token_budget_value = values.get("thinking_token_budget")
+        thinking_token_budget = (
+            int(thinking_token_budget_value)
+            if thinking_token_budget_value is not None
+            else None
+        )
         name = values.get("name")
         base_url = values.get("base_url")
         prompt_cache_key = values.get("prompt_cache_key")
@@ -473,6 +480,7 @@ class ModelConfig:
             retry_backoff_max_seconds=retry_backoff_max_seconds,
             retry_until_success=bool(values.get("retry_until_success", False)),
             reasoning_effort=reasoning_effort,
+            thinking_token_budget=thinking_token_budget,
             temperature=float(values.get("temperature", 0.0)),
             max_output_tokens=max_output_tokens,
             response_format=response_format,

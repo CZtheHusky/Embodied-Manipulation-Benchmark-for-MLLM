@@ -29,6 +29,7 @@ class ModelRequest:
     temperature: float
     max_output_tokens: int
     reasoning_effort: str | None = None
+    thinking_token_budget: int | None = None
     response_format: str = "json_object"
     prompt_cache_key: str | None = None
 
@@ -43,6 +44,8 @@ class ModelRequest:
             body["response_format"] = {"type": "json_object"}
         if self.reasoning_effort is not None:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.thinking_token_budget is not None:
+            body["thinking_token_budget"] = self.thinking_token_budget
         if self.prompt_cache_key:
             body["prompt_cache_key"] = self.prompt_cache_key
         return body

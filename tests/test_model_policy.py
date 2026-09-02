@@ -162,6 +162,20 @@ def test_projection_excludes_all_privileged_simulator_fields():
     assert "joystick_0" in request_text
 
 
+def test_policy_passes_thinking_token_budget_to_chat_request():
+    client = RecordingClient()
+    config = _agent_config()
+    config = replace(
+        config,
+        model=replace(config.model, thinking_token_budget=4096),
+    )
+    policy = MLLMPolicy(config, client, "fake-model")
+
+    policy.act(_context(0))
+
+    assert client.requests[0].thinking_token_budget == 4096
+
+
 @pytest.mark.parametrize(
     ("agent_step", "expects_reminder"),
     [(0, False), (9, False), (10, True), (11, False), (20, True)],

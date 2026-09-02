@@ -244,6 +244,14 @@ def test_reasoning_effort_uses_endpoint_specific_request_shape():
     assert responses_reasoning["reasoning"] == {"effort": "xhigh"}
 
 
+def test_chat_completions_sends_explicit_thinking_token_budget():
+    default = _request().body()
+    budgeted = replace(_request(), thinking_token_budget=4096).body()
+
+    assert "thinking_token_budget" not in default
+    assert budgeted["thinking_token_budget"] == 4096
+
+
 def test_response_and_error_payloads_redact_api_key_and_base64():
     payload = json.loads(_response())
     payload["debug"] = {

@@ -251,6 +251,7 @@ class MLLMPolicy(Agent):
             temperature=self.config.model.temperature,
             max_output_tokens=self.config.model.max_output_tokens,
             reasoning_effort=self.config.model.reasoning_effort,
+            thinking_token_budget=self.config.model.thinking_token_budget,
             response_format=self.config.model.response_format,
             prompt_cache_key=self.config.model.prompt_cache_key,
         )

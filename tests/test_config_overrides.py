@@ -175,6 +175,16 @@ def test_mllm_config_accepts_supported_reasoning_effort(effort):
     assert config.agent.model.reasoning_effort == effort
 
 
+def test_mllm_config_accepts_thinking_token_budget():
+    config = load_config(
+        "configs/reacher_delta_eef_mllm_chat_completions.yaml",
+        ("agent.model.thinking_token_budget=4096",),
+    )
+
+    assert config.agent.model is not None
+    assert config.agent.model.thinking_token_budget == 4096
+
+
 def test_review_video_is_disabled_by_default():
     config = load_config(
         "configs/simpler_env_google_robot_pick_coke_can_mllm_chat_completions.yaml"
